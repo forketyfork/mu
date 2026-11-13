@@ -1,0 +1,6 @@
+package-lock.json
+.mu/
+.tmp/
+tests/fixtures/
+# Markdown is prose and prompt text: aligned tables would repad on every edit, and the skills are read on every agent turn.
+*.md

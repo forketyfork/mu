@@ -1,0 +1,6 @@
+#!/bin/sh
+# git exports GIT_DIR and similar variables to hooks; a test that runs git would otherwise act on
+# this repository instead of its own scratch repository.
+unset $(git rev-parse --local-env-vars)
+npm run --silent check || exit 1
+exec npm test --silent

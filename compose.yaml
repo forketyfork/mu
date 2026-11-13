@@ -1,0 +1,22 @@
+services:
+  irc:
+    image: ghcr.io/ergochat/ergo:v2.19.1@sha256:ef885e44f7fa19101bbbc41baef11dc280dc8107465dccaf6f0860f41b48a682
+    # Docker starts the broker again with Docker itself, so a Mu launchd agent finds it after login.
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${MU_IRC_PORT:-6667}:6667'
+    environment:
+      ERGO__NETWORK__NAME: Mu
+      ERGO__SERVER__NAME: mu.local
+      ERGO__SERVER__IP_LIMITS: '{"count":false,"throttle":false}'
+      ERGO__FAKELAG__ENABLED: 'false'
+    volumes:
+      - irc-data-v219:/ircd
+    healthcheck:
+      test: ['CMD', 'nc', '-z', '127.0.0.1', '6667']
+      interval: 2s
+      timeout: 1s
+      retries: 20
+volumes:
+  irc-data-v219:
+    name: '${COMPOSE_PROJECT_NAME:-mu}_irc-data-v219${MU_IRC_PORT:+-${MU_IRC_PORT}}'

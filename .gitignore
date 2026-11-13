@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Runtime state: SQLite database, WAL/SHM files, and server pid (default MU_DATA_DIR)
+.mu/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.pid
+
+# Scratch space for development and testing
+.tmp/
+*.log
+
+# Machine-specific configuration; mu.config.example.json is the tracked template
+mu.config.json
+.claude/settings.local.json
+.env
+.env.*
+
+# Tool output
+.playwright-mcp/
+
+# OS files
+.DS_Store

@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" />
+    <title>Mu · Team workspace</title>
+    <link rel="icon" />
+    <script src="/themes.js"></script>
+    <link rel="stylesheet" href="/styles.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="rail" aria-label="Views">
+        <a class="brand" href="/" aria-label="Mu workspace">μ<span class="brand-dot"></span></a>
+        <a
+          class="rail-link selected"
+          href="#workspace"
+          data-view="workspace"
+          title="Team workspace"
+          aria-label="Team workspace"
+          aria-current="page"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+            <rect x="3.5" y="3.5" width="6" height="6" rx="1.4" />
+            <rect x="14.5" y="3.5" width="6" height="6" rx="1.4" />
+            <rect x="3.5" y="14.5" width="6" height="6" rx="1.4" />
+            <rect x="14.5" y="14.5" width="6" height="6" rx="1.4" />
+          </svg>
+        </a>
+        <a class="rail-link" href="#team-chat" data-view="chat" title="Team chat" aria-label="Team chat">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+            <path d="M20.5 11.5a8.5 8.5 0 0 1-8.5 8.5H4l.9-4.1A8.5 8.5 0 1 1 20.5 11.5Z" />
+            <path d="M8 9h8M8 13h5" />
+          </svg>
+          <span class="rail-badge" id="chat-unread" hidden></span>
+        </a>
+        <a class="rail-link" href="#brag-doc" data-view="brag" title="Brag doc" aria-label="Brag doc">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+            <path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" />
+            <path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7" />
+          </svg>
+        </a>
+        <label class="theme-control" title="Theme"
+          ><span class="theme-caption" aria-hidden="true">Theme</span
+          ><select id="theme-picker" aria-label="Theme"></select
+        ></label>
+      </aside>
+
+      <div class="workspace-shell">
+        <header class="topbar">
+          <div class="breadcrumb">
+            <span class="workspace-icon" aria-hidden="true">M</span><strong>Mu workspace</strong
+            ><span class="breadcrumb-slash">/</span><span id="view-label">Overview</span>
+          </div>
+          <div class="topbar-right">
+            <button class="button primary" id="new-agent" type="button">
+              <span aria-hidden="true">＋</span> New agent</button
+            ><label class="archive-toggle" title="Verified tasks, their rooms, and retired workers"
+              ><input type="checkbox" id="show-archived" /><span>Show archived</span
+              ><span class="archive-count" id="archived-count" hidden></span></label
+            ><span class="connection-badge" id="connection-badge"
+              ><span class="status-dot"></span><span id="connection-label">Connecting</span></span
+            ><span class="user-avatar" title="You">Y</span>
+          </div>
+        </header>
+
+        <div class="workspace-content">
+          <main class="main-pane" id="workspace">
+            <h1 class="sr-only">Team workspace</h1>
+
+            <div class="notice error-notice" id="page-error" role="alert" hidden></div>
+            <div class="notice transport-notice" id="transport-notice" role="status" hidden></div>
+
+            <section class="waiting-section" id="waiting-section" aria-labelledby="waiting-title" hidden>
+              <div class="section-heading">
+                <div class="section-title">
+                  <h2 id="waiting-title">Waiting for you</h2>
+                  <span class="count-pill" id="waiting-count">0</span>
+                </div>
+              </div>
+              <div class="waiting-list" id="waiting-list"></div>
+            </section>
+
+            <section class="activities-section" id="activities-section" aria-labelledby="activities-title">
+              <div class="section-heading">
+                <div class="section-title">
+                  <h2 id="activities-title">Focus list</h2>
+                  <span class="count-pill" id="activities-count">0</span>
+                </div>
+                <button
+                  class="button secondary activity-archive-toggle"
+                  id="activity-archive-toggle"
+                  type="button"
+                  aria-pressed="false"
+                >
+                  Archive <span class="archive-count" id="activity-archive-count" hidden></span>
+                </button>
+              </div>
+              <div class="activity-lanes">
+                <section class="activity-lane" data-lane="focus" aria-labelledby="lane-focus-title">
+                  <header class="lane-header">
+                    <h3 id="lane-focus-title">Focus</h3>
+                    <span class="lane-hint">On you</span>
+                    <button
+                      class="lane-add"
+                      type="button"
+                      data-add-activity="focus"
+                      aria-label="Add to Focus"
+                      title="Add to Focus"
+                    >
+                      ＋
+                    </button>
+                  </header>
+                  <div class="lane-cards" data-lane-cards="focus"></div>
+                </section>
+                <section class="activity-lane" data-lane="control" aria-labelledby="lane-control-title">
+                  <header class="lane-header">
+                    <h3 id="lane-control-title">Control</h3>
+                    <span class="lane-hint">On someone else</span>
+                    <button
+                      class="lane-add"
+                      type="button"
+                      data-add-activity="control"
+                      aria-label="Add to Control"
+                      title="Add to Control"
+                    >
+                      ＋
+                    </button>
+                  </header>
+                  <div class="lane-cards" data-lane-cards="control"></div>
+                </section>
+              </div>
+              <div class="activity-archive" id="activity-archive" hidden>
+                <h3>Archive</h3>
+                <p class="activity-archive-empty" id="activity-archive-empty">Nothing is checked off yet.</p>
+                <ul class="activity-archive-list" id="activity-archive-list"></ul>
+              </div>
+            </section>
+
+            <section class="metrics" aria-label="Team status">
+              <div class="metric">
+                <div class="metric-label">
+                  <span class="metric-icon agents-icon" aria-hidden="true"
+                    ><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+                      <circle cx="7" cy="6.5" r="2.5" />
+                      <path d="M2 16v-1a5 5 0 0 1 10 0v1M13 4a2.5 2.5 0 0 1 0 5M14 11a4 4 0 0 1 4 4v1" /></svg></span
+                  >Active agents
+                </div>
+                <div class="metric-value-row">
+                  <strong class="metric-value" id="active-count">—</strong
+                  ><span class="metric-detail" id="active-detail">Waiting for workspace</span>
+                </div>
+                <p class="metric-list metric-inline" id="active-list" aria-label="Active agents"></p>
+              </div>
+              <div class="metric">
+                <div class="metric-label">
+                  <span class="metric-icon working-icon" aria-hidden="true"
+                    ><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+                      <path d="m11.5 2-7 9h5l-1 7 7-10h-5l1-6Z" /></svg></span
+                  >In progress
+                </div>
+                <div class="metric-value-row">
+                  <strong class="metric-value" id="working-count">—</strong
+                  ><span class="metric-detail">Tasks being worked on</span>
+                </div>
+                <ul class="metric-list" id="working-list" aria-label="Tasks in progress"></ul>
+              </div>
+              <div class="metric">
+                <div class="metric-label">
+                  <span class="metric-icon attention-icon" aria-hidden="true"
+                    ><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+                      <circle cx="10" cy="10" r="7" />
+                      <path d="M10 6v5M10 13v1" /></svg></span
+                  >Needs attention
+                </div>
+                <div class="metric-value-row">
+                  <strong class="metric-value" id="attention-count">—</strong
+                  ><span class="metric-detail" id="attention-detail">Blocked or needs help</span>
+                </div>
+                <ul class="metric-list" id="attention-list" aria-label="Tasks needing attention"></ul>
+              </div>
+            </section>
+
+            <section class="task-section" id="task-section" aria-labelledby="tasks-title" hidden>
+              <div class="section-heading">
+                <div class="section-title">
+                  <h2 id="tasks-title">Tasks</h2>
+                  <span class="count-pill" id="task-count">0</span>
+                </div>
+              </div>
+              <div class="task-filters filters" role="group" aria-label="Filter tasks">
+                <button class="filter active" type="button" data-task-filter="all" aria-pressed="true">All tasks</button
+                ><button class="filter" type="button" data-task-filter="active" aria-pressed="false">Active</button
+                ><button class="filter" type="button" data-task-filter="ready" aria-pressed="false">
+                  Ready to verify</button
+                ><button class="filter" type="button" data-task-filter="verified" aria-pressed="false">Verified</button>
+              </div>
+              <p class="task-notice" id="task-notice" role="status"></p>
+              <div class="task-list" id="task-list"></div>
+            </section>
+            <section class="team-section" aria-labelledby="team-title">
+              <div class="section-heading">
+                <div class="section-title">
+                  <h2 id="team-title">Your team</h2>
+                  <span class="count-pill" id="team-count">0</span>
+                </div>
+                <span class="live-label" id="live-label"><span></span> Live updates</span>
+              </div>
+              <div class="team-toolbar">
+                <div class="filters" role="group" aria-label="Filter agents">
+                  <button class="filter active" type="button" data-filter="all" aria-pressed="true">All agents</button
+                  ><button class="filter" type="button" data-filter="working" aria-pressed="false">Working</button
+                  ><button class="filter" type="button" data-filter="attention" aria-pressed="false">
+                    Needs attention</button
+                  ><button class="filter" type="button" data-filter="finished" aria-pressed="false">Finished</button>
+                </div>
+                <label class="search"
+                  ><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <circle cx="8.5" cy="8.5" r="5.5" />
+                    <path d="m13 13 4 4" /></svg
+                  ><span class="sr-only">Search agents, tasks, or directories</span
+                  ><input id="agent-search" type="search" placeholder="Find an agent…" autocomplete="off"
+                /></label>
+              </div>
+              <div class="agent-grid" id="agent-grid" aria-live="polite" aria-busy="true"></div>
+              <div class="empty-state" id="empty-state">
+                <div class="empty-art" aria-hidden="true">
+                  <span class="empty-node small">·</span><span class="empty-line"></span
+                  ><span class="empty-node">μ</span><span class="empty-line"></span
+                  ><span class="empty-node small">·</span>
+                </div>
+                <h3 id="empty-title">No agents yet</h3>
+                <p id="empty-description">Create a team lead or register an existing CLI agent to begin.</p>
+                <button class="button secondary" id="empty-new-agent" type="button">
+                  Create agent <span aria-hidden="true">↗</span>
+                </button>
+              </div>
+            </section>
+            <footer class="workspace-footer">
+              <span><span class="footer-dot"></span> Local workspace</span
+              ><span id="last-updated">Waiting for a connection</span>
+            </footer>
+          </main>
+
+          <section class="brag-pane" id="brag-doc" aria-labelledby="brag-title" hidden>
+            <div class="section-heading">
+              <div class="section-title">
+                <h2 id="brag-title">Brag doc</h2>
+                <span class="count-pill" id="brag-count">0</span>
+              </div>
+              <div class="filters" role="group" aria-label="Summary period">
+                <button class="filter active" type="button" data-brag-scale="day" aria-pressed="true">Daily</button
+                ><button class="filter" type="button" data-brag-scale="week" aria-pressed="false">Weekly</button
+                ><button class="filter" type="button" data-brag-scale="month" aria-pressed="false">Monthly</button>
+              </div>
+            </div>
+            <div class="notice error-notice" id="brag-error" role="alert" hidden></div>
+            <p class="brag-skipped" id="brag-skipped" role="status" hidden></p>
+            <div class="brag-periods" id="brag-periods"></div>
+          </section>
+
+          <section class="chat-pane" id="team-chat" aria-labelledby="chat-title" hidden>
+            <header class="chat-header">
+              <details class="conversation-browser" id="conversation-browser">
+                <summary>
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                    <path d="M3.5 5.5h13M3.5 10h13M3.5 14.5h8" /></svg
+                  ><span class="browser-label">Conversations</span>
+                  <span id="conversation-total" class="count-pill">0</span
+                  ><span class="unread-count" id="conversation-unread" hidden></span>
+                </summary>
+                <nav id="conversation-list" class="conversation-list" aria-label="Conversations"></nav>
+              </details>
+              <div class="chat-heading">
+                <div class="chat-title">
+                  <span class="channel-hash" id="conversation-symbol" aria-hidden="true" hidden>#</span>
+                  <h2 id="chat-title">Conversations</h2>
+                </div>
+                <div class="conversation-meta" id="conversation-meta" hidden>
+                  <p id="conversation-members" class="conversation-members"></p>
+                </div>
+              </div>
+              <div class="chat-actions">
+                <span class="chat-count" id="chat-count">0 messages</span
+                ><button class="text-button" type="button" id="invite-members" hidden>Invite agents</button
+                ><button class="button secondary" type="button" id="new-room">＋ Room</button>
+              </div>
+            </header>
+            <div
+              class="messages"
+              id="messages"
+              role="log"
+              aria-label="Selected conversation"
+              aria-live="polite"
+              aria-relevant="additions text"
+            ></div>
+            <button type="button" id="new-messages" class="new-messages" hidden>New messages ↓</button>
+            <form class="composer" id="message-form">
+              <div class="composer-box">
+                <p
+                  id="activity-ticker"
+                  class="activity-ticker"
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                  hidden
+                ></p>
+                <label class="sr-only" id="message-label" for="message-input">Message selected conversation</label
+                ><textarea id="message-input" rows="3" placeholder="Choose a conversation…" required></textarea>
+                <div class="composer-controls">
+                  <div class="mention-controls">
+                    <button
+                      class="mention-button"
+                      type="button"
+                      id="mention-toggle"
+                      aria-label="Mention a room member"
+                      aria-expanded="false"
+                      aria-controls="mention-menu"
+                    >
+                      @</button
+                    ><span class="composer-identity">Sending as <strong>you</strong></span>
+                  </div>
+                  <button class="send-button" id="send-message" type="submit" aria-label="Send message">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+                      <path d="M10 15V5M6 9l4-4 4 4" />
+                    </svg>
+                  </button>
+                </div>
+                <div class="mention-menu" id="mention-menu" hidden></div>
+              </div>
+              <p class="composer-hint">
+                <span><kbd>Enter</kbd> to send · <kbd>Shift + Enter</kbd> for a new line</span
+                ><span id="message-length">0 B / 64 KiB</span>
+              </p>
+              <p class="composer-error" id="message-size-error" role="alert" hidden></p>
+              <p class="composer-error" id="chat-error" role="alert" hidden></p>
+            </form>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <dialog id="agent-dialog" class="agent-dialog">
+      <form id="agent-form">
+        <div class="dialog-heading">
+          <div><h2>Start an agent</h2></div>
+          <button class="icon-button" type="button" id="close-dialog" aria-label="Close dialog">×</button>
+        </div>
+        <p class="dialog-intro">
+          Choose a CLI and a working directory. Workers are assigned to a tracked task and a room with the lead. Every
+          agent also has a private chat.
+        </p>
+        <div class="form-row">
+          <label
+            >Agent name<input
+              name="id"
+              id="agent-id"
+              required
+              pattern="[a-z][a-z0-9-]{0,23}"
+              maxlength="24"
+              placeholder="e.g. team-lead"
+              autocomplete="off"
+            /><span class="field-hint">Lowercase letters, numbers, and hyphens.</span></label
+          ><label
+            >Role<select name="role" id="agent-role">
+              <option value="lead">Team lead</option>
+              <option value="worker">Worker</option></select
+            ><span class="field-hint" id="role-hint">Coordinates and delegates work.</span></label
+          >
+        </div>
+        <label
+          >CLI adapter<select name="adapter" id="agent-adapter" required></select
+          ><span class="field-hint" id="adapter-hint">Uses the CLI already installed on this machine.</span></label
+        ><label
+          >Working directory<input
+            name="cwd"
+            id="agent-cwd"
+            required
+            placeholder="/absolute/path/to/your/project"
+            autocomplete="off"
+            spellcheck="false"
+          /><span class="field-hint">The agent runs in this directory.</span></label
+        >
+        <div id="agent-task-fields">
+          <label>Task<select name="taskId" id="agent-task-record"></select></label
+          ><label id="agent-task-title-label"
+            >Task title<input
+              name="taskTitle"
+              id="agent-task-title"
+              maxlength="160"
+              placeholder="Investigate the reported issue"
+              required /></label
+          ><label
+            >Task room<select name="conversationId" id="agent-conversation"></select
+            ><span class="field-hint"
+              >The lead and assigned workers coordinate here. Private follow-ups remain separate.</span
+            ></label
+          >
+        </div>
+        <label
+          >Initial task<textarea
+            name="task"
+            id="agent-task"
+            required
+            rows="4"
+            placeholder="What should this agent work on?"
+          ></textarea>
+        </label>
+        <div class="notice error-notice" id="agent-error" role="alert" hidden></div>
+        <div class="dialog-actions">
+          <button class="button secondary" type="button" id="cancel-dialog">Cancel</button
+          ><button class="button primary" type="submit" id="create-agent">
+            Start agent <span aria-hidden="true">↗</span>
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="room-dialog" class="agent-dialog">
+      <form id="room-form">
+        <div class="dialog-heading">
+          <h2 id="room-dialog-title">Create task room</h2>
+          <button class="icon-button" type="button" id="close-room-dialog" aria-label="Close room dialog">×</button>
+        </div>
+        <p class="dialog-intro" id="room-dialog-description">
+          Choose the agents who will work together here. You can read and join every task room.
+        </p>
+        <label id="room-name-label"
+          >Room name<input
+            name="name"
+            id="room-name"
+            maxlength="80"
+            required
+            placeholder="Issue 42 investigation"
+            autocomplete="off"
+        /></label>
+        <fieldset class="member-picker">
+          <legend>Agents</legend>
+          <div id="room-member-options"></div>
+        </fieldset>
+        <p class="field-hint" id="room-members-hint">
+          You are included automatically. New workers can be assigned to this room when launched.
+        </p>
+        <div class="notice error-notice" id="room-error" role="alert" hidden></div>
+        <div class="dialog-actions">
+          <button class="button secondary" type="button" id="cancel-room-dialog">Cancel</button
+          ><button class="button primary" type="submit" id="save-room">Create room</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="transcript-dialog" class="agent-dialog transcript-dialog" aria-labelledby="transcript-title">
+      <div class="dialog-heading">
+        <div>
+          <h2 id="transcript-title">Transcript</h2>
+          <p class="transcript-meta" id="transcript-meta"></p>
+        </div>
+        <button class="icon-button" type="button" id="close-transcript" aria-label="Close transcript">×</button>
+      </div>
+      <div class="transcript-toolbar">
+        <label class="transcript-conversation">Conversation<select id="transcript-conversation"></select></label
+        ><button class="button secondary" type="button" id="transcript-reload">Reload</button>
+      </div>
+      <p class="transcript-note" id="transcript-note" hidden></p>
+      <div class="notice error-notice" id="transcript-error" role="alert" hidden></div>
+      <button class="text-button transcript-earlier" type="button" id="transcript-earlier" hidden>
+        Load earlier turns
+      </button>
+      <div class="transcript-turns" id="transcript-turns" aria-live="polite"></div>
+    </dialog>
+    <dialog id="result-dialog" class="agent-dialog result-dialog" aria-labelledby="result-title">
+      <div id="result-card" class="result-card"></div>
+    </dialog>
+    <div class="toast" id="toast" role="status" hidden></div>
+  </body>
+</html>

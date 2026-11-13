@@ -1,0 +1,18 @@
+{"timestamp":"2026-11-06T10:00:00.000Z","ordinal":0,"type":"session_meta","payload":{"id":"01a1a6f8-2372-75a3-95f9-7ba31dd6b210","cli_version":"0.166.0","originator":"codex_exec"}}
+{"timestamp":"2026-11-06T10:00:01.000Z","ordinal":1,"type":"event_msg","payload":{"type":"task_started","turn_id":"t1","started_at":1793775413}}
+{"timestamp":"2026-11-06T10:00:01.100Z","ordinal":2,"type":"turn_context","payload":{"turn_id":"t1","model":"gpt-5.5"}}
+{"timestamp":"2026-11-06T10:00:01.200Z","ordinal":3,"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"raw wire copy"}]}}
+{"timestamp":"2026-11-06T10:00:01.300Z","ordinal":4,"type":"event_msg","payload":{"type":"item_completed","turn_id":"t1","item":{"type":"UserMessage","id":"i1","content":[{"type":"text","text":"Skill.\nIncoming chat message #12 from @lead:\nCheck the tests.","text_elements":[]}]}}}
+{"timestamp":"2026-11-06T10:00:02.000Z","ordinal":5,"type":"event_msg","payload":{"type":"item_completed","turn_id":"t1","item":{"type":"Reasoning","id":"i2","summary_text":[],"raw_content":[]}}}
+{"timestamp":"2026-11-06T10:00:03.000Z","ordinal":6,"type":"event_msg","payload":{"type":"item_completed","turn_id":"t1","item":{"type":"CommandExecution","id":"i3","command":["/bin/zsh","-lc","npm test"],"cwd":"/project","status":"completed","aggregated_output":"1 failing","exit_code":1}}}
+{"timestamp":"2026-11-06T10:00:04.000Z","ordinal":7,"type":"event_msg","payload":{"type":"item_completed","turn_id":"t1","item":{"type":"FileChange","id":"i4","changes":{"/project/a.txt":{"type":"add","content":"hello\n"}},"status":"completed","stdout":"Success. Updated the following files:\nA /project/a.txt","stderr":""}}}
+{"timestamp":"2026-11-06T10:00:05.000Z","ordinal":8,"type":"event_msg","payload":{"type":"item_completed","turn_id":"t1","item":{"type":"McpToolCall","id":"i5","server":"issue_tracker","tool":"get_issue","arguments":{"id":"ISSUE-1"},"status":"completed","result":{"content":[{"type":"text","text":"Issue ISSUE-1"}]}}}}
+{"timestamp":"2026-11-06T10:00:06.000Z","ordinal":9,"type":"event_msg","payload":{"type":"item_completed","turn_id":"t1","item":{"type":"SubAgentActivity","id":"i6","kind":"spawned"}}}
+{"timestamp":"2026-11-06T10:00:07.000Z","ordinal":10,"type":"event_msg","payload":{"type":"item_completed","turn_id":"t1","item":{"type":"AgentMessage","id":"i7","content":[{"type":"Text","text":"One test fails."}],"phase":"final"}}}
+{"timestamp":"2026-11-06T10:00:07.100Z","ordinal":11,"type":"event_msg","payload":{"type":"token_count","info":null}}
+{"timestamp":"2026-11-06T10:00:07.200Z","ordinal":12,"type":"event_msg","payload":{"type":"task_complete","turn_id":"t1"}}
+{"timestamp":"2026-11-06T10:10:00.000Z","ordinal":13,"type":"event_msg","payload":{"type":"task_started","turn_id":"t2","started_at":1793776000}}
+{"timestamp":"2026-11-06T10:10:00.100Z","ordinal":14,"type":"event_msg","payload":{"type":"item_completed","turn_id":"t2","item":{"type":"UserMessage","id":"i8","content":[{"type":"text","text":"Incoming chat message #15 from @lead:\nContinue."}]}}}
+{"timestamp":"2026-11-06T10:10:01.000Z","ordinal":15,"type":"event_msg","payload":{"type":"item_completed","turn_id":"t2","item":{"type":"ContextCompaction","id":"i9"}}}
+{"timestamp":"2026-11-06T10:10:02.000Z","ordinal":16,"type":"compacted","payload":{"message":"","replacement_history":[]}}
+{"timestamp":"2026-11-06T10:10:03.000Z","ordinal":17,"type":"event_msg","payload":{"type":"turn_aborted","turn_id":"t2","reason":"interrupted"}}

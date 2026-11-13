@@ -1,0 +1,9 @@
+{
+  "cliArgs": {
+    "codex": [],
+    "claude": ["--permission-mode", "auto"]
+  },
+  "pricing": {
+    "enabled": true
+  }
+}
