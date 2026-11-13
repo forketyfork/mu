@@ -548,7 +548,7 @@
   }
 
   // The ten digit positions own climate, accent, chroma/mood, type, corners, weight, companion,
-  // grid, tempo and shadow depth respectively. The README records the vocabulary and formulas.
+  // grid, tempo and shadow depth respectively. docs/development.md records the vocabulary and formulas.
   function fromSeed(seed) {
     const digits = [...seed].map(Number);
     const [climate, accent, chroma, type, corners, weight, companion, grid, tempo, depth] = digits;

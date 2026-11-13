@@ -1,5 +1,5 @@
-// Installs and removes Mu as a launchd user agent; see "Run Mu as a launchd agent" in README.md and
-// "Running under launchd" in docs/architecture.md.
+// Installs and removes Mu as a launchd user agent; see docs/launchd.md and "Running under launchd" in
+// docs/architecture.md.
 import { spawnSync } from 'node:child_process';
 import { accessSync, constants, realpathSync } from 'node:fs';
 import { chmod, mkdir, open, readFile, rm, stat, writeFile } from 'node:fs/promises';

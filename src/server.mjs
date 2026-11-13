@@ -392,7 +392,7 @@ export async function createApp({
       throw bad('Only the lead and the user restart Mu; workers never restart, stop or signal the service', 403);
     if (!launchd)
       throw bad(
-        'This Mu instance was not started by launchd, so nothing would start it again after it exits. Restart it where it runs, or install the launchd agent (see "Run Mu as a launchd agent" in README.md).',
+        'This Mu instance was not started by launchd, so nothing would start it again after it exits. Restart it where it runs, or install the launchd agent (see docs/launchd.md).',
         409,
       );
     if (restart)

@@ -609,7 +609,7 @@ export async function main(
         // Only a refused connection proves that no service received the request; after a timeout the service may still restart.
         if (['ECONNREFUSED', 'ENOENT'].includes(error.cause?.code))
           throw new Error(
-            `${error.message}. Nothing was restarted. If Mu runs as a launchd agent, the user can restart it with: launchctl kickstart -k gui/$(id -u)/LABEL, and read its log (see "Run Mu as a launchd agent" in README.md).`,
+            `${error.message}. Nothing was restarted. If Mu runs as a launchd agent, the user can restart it with: launchctl kickstart -k gui/$(id -u)/LABEL, and read its log (see docs/launchd.md).`,
             { cause: error },
           );
         if (['TimeoutError', 'AbortError'].includes(error.cause?.name))
