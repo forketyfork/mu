@@ -323,6 +323,31 @@ test('a failing start check refuses the restart, and Mu keeps running turns', as
   assert.equal((await call('GET', '/api/service')).body.restart, null);
 });
 
+test('outdated packages refuse the restart with what to run, and Mu keeps running turns', async (t) => {
+  const clean = cleanup(t);
+  // A checkout after a merge that added a package: the lockfile names it, node_modules does not hold it.
+  const root = await clean.dir('outdated');
+  await mkdir(join(root, 'src'));
+  await writeFile(
+    join(root, 'src/server.mjs'),
+    "console.log('Mu dashboard: the start check must not get this far');\n",
+  );
+  await writeFile(
+    join(root, 'package-lock.json'),
+    JSON.stringify({ packages: { '': {}, 'node_modules/diagrams': { version: '12.3.0' } } }),
+  );
+  const { exits, call, app } = await service(clean, { dataDir: await clean.dir('restart'), root });
+  const refused = await call('POST', '/api/service/restart', {});
+  assert.equal(refused.status, 409);
+  assert.equal(
+    refused.body.error,
+    `Restart refused: The packages in ${join(root, 'node_modules')} are not the ones of package-lock.json: 1 is missing or in another version (diagrams 12.3.0). Run \`npm ci\` in ${root}.`,
+  );
+  assert.deepEqual(exits, []);
+  assert.equal(app.runner.paused, false);
+  assert.equal((await call('GET', '/api/service')).body.restart, null);
+});
+
 test('a code change after the start check cancels the restart and resumes turns', async (t) => {
   const clean = cleanup(t);
   // A copy of the checkout, so that the lead's turn can change its code.

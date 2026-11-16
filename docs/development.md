@@ -13,7 +13,7 @@ npm run test:integration   # only the integration tests; already part of npm tes
 
 `npm run check` runs `tsc` over the JSDoc types, ESLint, stylelint and a Prettier check. When it reports formatting, run `npm run format`. Prettier does not format Markdown.
 
-`npm test` runs `npm ci` first when `node_modules` is missing or older than `package-lock.json`, so it works in a fresh clone or Git worktree.
+`npm test` runs `npm ci` first when the installed packages are not the ones of `package-lock.json`, so it works in a fresh clone or Git worktree, and after a merge that changed the dependencies. The service does not install anything: it refuses to start, and to restart, until you run `npm ci` (see [Installed packages](architecture.md#running-under-launchd)).
 
 The integration tests (`tests/*.integration.mjs`) run against a real Ergo chat server. Each test starts its own temporary container from the image in `compose.yaml`, on a port that Docker picks, and removes it afterwards. The suite therefore needs a running Docker daemon, but not `npm run chat:up`, and it never touches the chat server of a running Mu. Without a Docker daemon the suite fails and says why.
 

@@ -15,6 +15,7 @@ import { createActivities } from './activities.mjs';
 import { createVisuals } from './visuals.mjs';
 import { FRAME_POLICY, PAGE_POLICY, commonJsModule, frameAssetOf } from './browser-policy.mjs';
 import { createDashboardStream } from './dashboard.mjs';
+import { dependencyError } from './dependencies.mjs';
 import { PricingCatalog } from './pricing.mjs';
 import { readBrag } from './brag.mjs';
 import { Transcripts } from './transcripts.mjs';
@@ -413,6 +414,9 @@ export async function createApp({
       digest: null,
     };
     try {
+      // The start check would fail on this too, but only with what the checked process printed.
+      const outdated = await dependencyError(root);
+      if (outdated) throw new Error(outdated);
       restart.digest = await digest();
       await startCheck({
         root,
@@ -1333,6 +1337,8 @@ export function pricingEnabledFromConfig(config) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   let app;
   try {
+    const outdated = await dependencyError(ROOT);
+    if (outdated) throw Object.assign(new Error(outdated), { expected: true });
     const home = resolveHome(process.env);
     const leftover = await leftoverError({ root: ROOT, env: process.env, home });
     if (leftover) throw Object.assign(new Error(leftover), { expected: true });
