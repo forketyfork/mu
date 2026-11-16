@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { dependencyError } from '../src/dependencies.mjs';
 import { ROOT } from '../src/server.mjs';
+import { freePort, shortTempDir } from './isolation.mjs';
 
 const scratch = async (t) => {
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'mu-deps-')));
@@ -90,14 +91,30 @@ test('the service refuses to start on outdated packages, with one line that says
     join(root, 'package-lock.json'),
     JSON.stringify({ packages: { '': {}, 'node_modules/not-installed-anywhere': at('9.9.9') } }),
   );
+  // A service that does not refuse would start for real, so it gets a port, a broker port and a data directory of
+  // its own, and it does not outlive the test.
   const child = spawn(process.execPath, [join(root, 'src/server.mjs')], {
-    env: { PATH: process.env.PATH, MU_HOME: join(root, 'home') },
+    env: {
+      PATH: process.env.PATH,
+      MU_HOME: join(root, 'home'),
+      MU_DATA_DIR: await shortTempDir(t, 'deps'),
+      MU_PORT: String(await freePort()),
+      MU_IRC_PORT: String(await freePort()),
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  t.after(() => {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+  });
   let output = '';
-  for (const stream of [child.stdout, child.stderr]) stream.setEncoding('utf8').on('data', (data) => (output += data));
-  const code = await new Promise((resolve) => child.once('exit', resolve));
-  assert.equal(code, 1);
+  const started = Promise.withResolvers();
+  for (const stream of [child.stdout, child.stderr])
+    stream.setEncoding('utf8').on('data', (data) => {
+      output += data;
+      if (output.includes('Mu dashboard:')) started.resolve('started');
+    });
+  const code = await Promise.race([new Promise((resolve) => child.once('exit', resolve)), started.promise]);
+  assert.equal(code, 1, output);
   assert.match(
     output,
     new RegExp(

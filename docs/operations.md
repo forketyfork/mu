@@ -86,6 +86,8 @@ This removes all agents, tasks, chats, undelivered messages and session referenc
 
 **`The packages in … are not the ones of package-lock.json`.** The checkout's dependencies changed, for example with a `git pull`, and `node_modules` still holds the earlier ones. Run `npm ci` in the checkout, then start Mu again. Under launchd the next attempt starts by itself.
 
+**`Cannot find package '…' imported from …/src/…`.** The same cause, for a package that the service itself imports: Node stops before Mu can compare the packages. Run `npm ci` in the checkout, then start Mu again.
+
 **`IRC unavailable`.** The chat server is not running or not on the expected port. Run `npm run chat:up`, check `docker ps`, and restart Mu.
 
 **The dashboard says "This browser is not signed in" or that the sign-in is not valid.** Open the sign-in link again; `node src/cli.mjs dashboard` prints it. The browser stores the credential for one address; a different port, for example, needs its own sign-in.
