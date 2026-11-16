@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { startEventLoopMonitor } from './event-loop-monitor.mjs';
 import { mkdir, readFile, realpath, stat } from 'node:fs/promises';
-import { dirname, join, resolve, isAbsolute, extname } from 'node:path';
+import { dirname, join, relative, resolve, isAbsolute, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { Store, STATUSES, mentions } from './store.mjs';
@@ -12,6 +12,8 @@ import { AgentSockets, Identity, bearer } from './identity.mjs';
 import { createTasks } from './tasks.mjs';
 import { createWaiting } from './waiting.mjs';
 import { createActivities } from './activities.mjs';
+import { createVisuals } from './visuals.mjs';
+import { FRAME_POLICY, PAGE_POLICY, commonJsModule, frameAssetOf } from './browser-policy.mjs';
 import { createDashboardStream } from './dashboard.mjs';
 import { PricingCatalog } from './pricing.mjs';
 import { readBrag } from './brag.mjs';
@@ -198,6 +200,7 @@ export async function createApp({
   const waiting = createWaiting({ store, tasks });
   leadPromptState.waiting = waiting;
   const activities = createActivities({ store, tasks });
+  const visuals = createVisuals({ store, runner, tasks });
   let stopEventLoopMonitor = null;
   const adapters = ['codex', 'claude', 'pi', 'manual', 'demo', ...Object.keys(custom)];
   const withPid = (agent) => {
@@ -524,6 +527,8 @@ export async function createApp({
         get: (id) => activities.list().find((activity) => activity.id === id) ?? null,
       },
       conversations: { list: () => store.conversations(), get: (id) => store.conversation(id) },
+      // A visual's record only; the viewer loads the content of the version it shows.
+      visuals: { list: () => visuals.list(), get: (id) => visuals.find(id) },
     },
     lastMessageIds: () => store.lastMessageIds(),
     transport: () => ({ ...chat.state }),
@@ -537,17 +542,22 @@ export async function createApp({
   chat.on('change', () => dashboard.transportChanged());
   const handle = async (request, response, binding = null) => {
     try {
+      const parsed = new URL(request.url, url);
+      const pathname = parsed.pathname;
+      // The visual frame is sandboxed into an opaque origin, so the browser marks its requests for its own files as
+      // cross-site, with the origin "null". Those files are public code and hold no data.
+      const frameAsset = request.method === 'GET' ? frameAssetOf(pathname) : null;
       if (binding) {
         if (request.headers.origin) throw bad('Browser requests are not accepted on an agent socket', 403);
       } else {
         const allowedHosts = [`127.0.0.1:${port}`, `localhost:${port}`];
         if (!allowedHosts.includes(request.headers.host)) throw bad('Host must be the local Mu address', 403);
-        if (request.headers.origin && !allowedHosts.map((host) => `http://${host}`).includes(request.headers.origin))
-          throw bad('Requests from other browser origins are not allowed', 403);
-        if (request.headers['sec-fetch-site'] === 'cross-site') throw bad('Cross-site requests are not allowed', 403);
+        if (!frameAsset) {
+          if (request.headers.origin && !allowedHosts.map((host) => `http://${host}`).includes(request.headers.origin))
+            throw bad('Requests from other browser origins are not allowed', 403);
+          if (request.headers['sec-fetch-site'] === 'cross-site') throw bad('Cross-site requests are not allowed', 403);
+        }
       }
-      const parsed = new URL(request.url, url);
-      const pathname = parsed.pathname;
       if (pathname.startsWith('/api/')) request.caller = authenticate(request, binding, parsed);
       else if (binding) throw bad('Not found', 404);
       if (request.method === 'GET' && (pathname === '/api/state' || pathname === '/api/events'))
@@ -924,6 +934,7 @@ export async function createApp({
       if (await tasks.handle({ request, response, pathname, body, send, actor })) return;
       if (await waiting.handle({ request, response, pathname, body, send, actor })) return;
       if (await activities.handle({ request, response, pathname, body, send, actor })) return;
+      if (await visuals.handle({ request, response, pathname, body, send, actor })) return;
       const match = pathname.match(/^\/api\/agents\/([a-z][a-z0-9-]{0,23})(?:\/(stop|inbox|ack))?$/);
       if (match) {
         const [, id, action] = match;
@@ -1070,26 +1081,32 @@ export async function createApp({
       if (request.method === 'GET' && !pathname.startsWith('/api/')) {
         const file = pathname === '/' ? 'index.html' : pathname.slice(1);
         if (file.includes('..') || !/^[a-zA-Z0-9_./-]+$/.test(file)) throw bad('Not found', 404);
-        const vendors = {
-          '/vendor/marked.js': join(root, 'node_modules/marked/lib/marked.esm.js'),
-          '/vendor/purify.js': join(root, 'node_modules/dompurify/dist/purify.es.mjs'),
-        };
-        const full = vendors[pathname] || join(root, 'public', file);
+        const full = frameAsset ? join(root, frameAsset.file) : join(root, 'public', file);
+        // The frame's files answer only at their listed paths, which carry the frame's policy and no other. Another
+        // spelling that reaches the same file, such as a doubled slash or another letter case on a file system that
+        // ignores case, would serve the frame page with the dashboard's policy.
+        if (!frameAsset && relative(join(root, 'public'), full).toLowerCase().split(sep)[0] === 'visual')
+          throw bad('Not found', 404);
         let contents;
         try {
           contents = await readFile(full);
         } catch {
           throw bad('Not found', 404);
         }
+        if (frameAsset?.commonJs) contents = commonJsModule(contents.toString('utf8'));
         const mime =
-          { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml' }[
-            extname(file)
-          ] || 'application/octet-stream';
+          {
+            '.html': 'text/html',
+            '.css': 'text/css',
+            '.js': 'text/javascript',
+            '.mjs': 'text/javascript',
+            '.svg': 'image/svg+xml',
+          }[extname(file)] || 'application/octet-stream';
         response.writeHead(200, {
           'Content-Type': `${mime}; charset=utf-8`,
           'X-Content-Type-Options': 'nosniff',
-          'Content-Security-Policy':
-            "default-src 'self'; connect-src 'self'; style-src 'self'; img-src 'self' data:; script-src 'self'; frame-ancestors 'none'",
+          'Content-Security-Policy': frameAsset?.page ? FRAME_POLICY : PAGE_POLICY,
+          ...(frameAsset ? { 'Access-Control-Allow-Origin': '*' } : {}),
         });
         response.end(contents);
         return;
@@ -1110,6 +1127,7 @@ export async function createApp({
     tasks,
     waiting,
     activities,
+    visuals,
     pricing,
     transcripts,
     state,

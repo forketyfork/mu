@@ -95,6 +95,10 @@ The lead can add, edit, move and link cards for you, and checks off or deletes t
 - Only you can open transcripts. Agents cannot, and no CLI command shows them.
 - If the session file is gone, for example because Claude Code deleted it after its cleanup period, the viewer shows an error that names the file.
 
+## Visuals
+
+**Visuals** in the left rail lists the documents that agents wrote for you, grouped by task; a task card links to its visuals, and a visual's ID in chat is a link. The viewer follows the newest version as the agent rewrites sections, and steps back through every earlier version. See [Visuals](visuals.md).
+
 ## Brag doc
 
 **Brag doc** in the left rail shows what the team achieved: a short summary per day, and in **Weekly** and **Monthly**, one per period. The lead writes these pages when you ask it to *dream*: to review how the team worked (see [The lead](lead.md#dreams)). You can edit them too.

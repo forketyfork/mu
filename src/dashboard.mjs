@@ -125,6 +125,7 @@ export function createDashboardStream({
     waiting: sources.waiting.list(),
     activities: sources.activities.list(),
     conversations: sources.conversations.list(),
+    visuals: sources.visuals.list(),
     lastMessageIds: lastMessageIds(),
     transport: transport(),
     adapters,

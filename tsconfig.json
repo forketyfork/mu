@@ -14,7 +14,11 @@
     "tsBuildInfoFile": "node_modules/.cache/tsc/tsbuildinfo",
     "paths": {
       "/vendor/marked.js": ["./node_modules/marked/lib/marked.d.ts"],
-      "/vendor/purify.js": ["./node_modules/dompurify/dist/purify.es.d.mts"]
+      "/vendor/purify.js": ["./node_modules/dompurify/dist/purify.es.d.mts"],
+      "/vendor/highlight/core.js": ["./node_modules/highlight.js/lib/core.d.ts"],
+      "/vendor/mermaid/mermaid.esm.min.mjs": ["./node_modules/mermaid/dist/mermaid.d.ts"],
+      "/visual/format.js": ["./src/visual-format.mjs"],
+      "/visual/render.js": ["./public/visual/render.js"]
     }
   },
   "include": ["src", "scripts", "tests", "public", "*.mjs"]

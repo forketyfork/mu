@@ -102,7 +102,9 @@ export function splitMentions(text, recipients) {
 // Only an exact identifier, or a message ID written as `#123`, becomes a reference; any other inline code, including near misses, stays literal.
 // The dashboard holds only the messages of the chats it opened, so a message it does not hold is a reference when Mu has
 // issued its ID: message IDs count up from 1 without gaps, and no message is deleted. Its conversation is then unknown.
-export function codeReference(text, { agents = [], tasks = [], messages = [], lastMessageId = 0 }) {
+const VISUAL_ID = /^vis-[0-9a-f]{8}$/;
+
+export function codeReference(text, { agents = [], tasks = [], visuals = [], messages = [], lastMessageId = 0 }) {
   const messageId = /^#([1-9]\d*)$/.exec(text);
   if (messageId) {
     const id = Number(messageId[1]);
@@ -111,6 +113,8 @@ export function codeReference(text, { agents = [], tasks = [], messages = [], la
     return id <= lastMessageId ? { kind: 'message', id, conversationId: null } : null;
   }
   if (agents.some((agent) => agent.id === text)) return { kind: 'agent', id: text };
+  const visual = VISUAL_ID.test(text) ? visuals.find((item) => item.id === text) : undefined;
+  if (visual) return { kind: 'visual', id: visual.id, title: visual.title, agentId: visual.agentId };
   const task = Array.isArray(tasks) ? tasks.find((item) => item.id === text) : undefined;
   return task ? { kind: 'task', id: task.id, title: task.title } : null;
 }
@@ -179,10 +183,25 @@ export function isNewMessage(message, boundary) {
   return message.id > boundary && message.from !== 'user';
 }
 
-export const viewHashes = Object.freeze({ workspace: '#workspace', chat: '#team-chat', brag: '#brag-doc' });
+export const viewHashes = Object.freeze({
+  workspace: '#workspace',
+  chat: '#team-chat',
+  brag: '#brag-doc',
+  visuals: '#visuals',
+});
 
 export function viewFromHash(hash) {
+  if (visualFromHash(hash)) return 'visuals';
   return Object.keys(viewHashes).find((view) => viewHashes[view] === hash) ?? 'workspace';
+}
+
+// A visual has its own address, so that the browser's history steps through the visuals and versions the user opened.
+// Without a version the address follows the newest one.
+export const visualHash = (id, version = null) => `${viewHashes.visuals}/${id}${version ? `/v${version}` : ''}`;
+
+export function visualFromHash(hash) {
+  const match = /^#visuals\/(vis-[0-9a-f]{8})(?:\/v([1-9]\d{0,8}))?$/.exec(hash);
+  return match ? { id: match[1], version: match[2] ? Number(match[2]) : null } : null;
 }
 
 export function totalUnread(messages, conversations, readThrough) {
@@ -530,7 +549,7 @@ export function mergeLatestPage(messages, conversationId, page, complete) {
 }
 
 // The record kinds of the dashboard stream that are lists of records with IDs.
-export const recordKinds = Object.freeze(['agents', 'tasks', 'waiting', 'activities', 'conversations']);
+export const recordKinds = Object.freeze(['agents', 'tasks', 'waiting', 'activities', 'conversations', 'visuals']);
 
 // Applies one batch of the dashboard stream: whole records keyed by ID, a null value for a removed record, new messages,
 // and the chat transport. Returns the new state and the kinds the batch touched; the input state is not modified.

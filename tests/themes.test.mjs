@@ -7,6 +7,8 @@ import { themeValue } from '../public/motion.js';
 
 const styles = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
 const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+// The visual frame is a page of its own; the dashboard sends it the theme's tokens.
+const frameStyles = readFileSync(new URL('../public/visual/frame.css', import.meta.url), 'utf8');
 
 function expanded(value, tokens, seen = new Set()) {
   return value.replace(/var\(--([a-z0-9-]+)\)/g, (_, name) => {
@@ -22,7 +24,7 @@ test('every registered theme defines the whole token contract, without unresolve
   assert.ok(themes.length >= 4);
   assert.equal(new Set(themes.map((theme) => theme.id)).size, themes.length);
   assert.equal(new Set(themes.map((theme) => theme.name)).size, themes.length);
-  const required = new Set([...styles.matchAll(/var\(--([a-z0-9-]+)\)/g)].map((match) => match[1]));
+  const required = new Set([...`${styles}${frameStyles}`.matchAll(/var\(--([a-z0-9-]+)\)/g)].map((match) => match[1]));
   required.delete('glyph'); // Each harness icon supplies its own mask URL; it inherits the theme's color.
   for (const name of ['canvas', 'surface', 'accent', 'muted', 'ink', 'font']) required.delete(`theme-swatch-${name}`);
   for (const kind of ['panel', 'conversation', 'message', 'status', 'expand', 'agent'])
@@ -53,13 +55,18 @@ test('every registered theme defines the whole token contract, without unresolve
 });
 
 test('component styles get colors, typography, corners, shadows and spacing accents from tokens', () => {
-  assert.doesNotMatch(styles, /#[\da-f]{3,8}\b|\brgba?\(|\bhsla?\(/i);
-  assert.doesNotMatch(
-    styles,
-    /(?:font-family|font-size|font-weight|letter-spacing|box-shadow|text-shadow):\s*(?!var\(|inherit|none|normal|0[;\s])[\w'-]/,
-  );
-  assert.doesNotMatch(styles, /border-radius:\s*\d+(?:\.\d+)?px/);
-  assert.doesNotMatch(styles.replace(/var\(--[a-z0-9-]+\)/g, 'TOKEN'), /(?:padding|margin|gap)(?:-[a-z]+)?:[^;]*\d+px/);
+  for (const sheet of [styles, frameStyles]) {
+    assert.doesNotMatch(sheet, /#[\da-f]{3,8}\b|\brgba?\(|\bhsla?\(/i);
+    assert.doesNotMatch(
+      sheet,
+      /(?:font-family|font-size|font-weight|letter-spacing|box-shadow|text-shadow):\s*(?!var\(|inherit|none|normal|0[;\s])[\w'-]/,
+    );
+    assert.doesNotMatch(sheet, /border-radius:\s*\d+(?:\.\d+)?px/);
+    assert.doesNotMatch(
+      sheet.replace(/var\(--[a-z0-9-]+\)/g, 'TOKEN'),
+      /(?:padding|margin|gap)(?:-[a-z]+)?:[^;]*\d+px/,
+    );
+  }
   assert.doesNotMatch(html, /#[\da-f]{6}\b/i);
 });
 

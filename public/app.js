@@ -33,6 +33,8 @@ import {
   unreadCount,
   viewFromHash,
   viewHashes,
+  visualFromHash,
+  visualHash,
 } from './model.js';
 import { markdownElement } from './markdown.js';
 import { emptyMessages, groupBrag } from './brag.js';
@@ -40,6 +42,7 @@ import { bragSections } from './brag-view.js';
 import { createMotion, stateChanges, themeValue } from './motion.js';
 import { rawInput, toolView } from './tools.js';
 import { createPicker, enhanceSelects } from './picker.js';
+import { createVisualsView } from './visuals-view.js';
 
 // An ID names an input, a dialog, a form or another element; the checker cannot tell which from the string.
 /** @type {(id: string) => any} */
@@ -150,13 +153,15 @@ function codeReferenceElement(text) {
   const reference = codeReference(text, state);
   if (!reference) return null;
   if (reference.kind === 'agent') return agentReference(reference.id);
+  if (reference.kind === 'visual') return visualsView.reference(reference);
   return reference.kind === 'message' ? messageReference(reference) : taskReference(reference);
 }
 
 // Rendered Markdown embeds references, so it must be rebuilt when the known agents or task titles change.
 // Message references need no part: a message ID links once Mu has issued it, and text names only issued IDs.
 function referenceSignature() {
-  return `${state.agents.map((agent) => agent.id).join(',')}|${(state.tasks ?? []).map((task) => `${task.id}:${task.title}`).join('\n')}`;
+  const titled = (items) => items.map((item) => `${item.id}:${item.title}`).join('\n');
+  return `${state.agents.map((agent) => agent.id).join(',')}|${titled(state.tasks ?? [])}|${titled(state.visuals)}`;
 }
 
 function markdown(className, source, recipients) {
@@ -501,8 +506,8 @@ function renderChatUnread() {
     .setAttribute('aria-label', unread ? `Team chat, ${unread} unread` : 'Team chat');
 }
 
-const viewLabels = { workspace: 'Overview', chat: 'Chat', brag: 'Brag doc' };
-const viewPanes = { workspace: 'workspace', chat: 'team-chat', brag: 'brag-doc' };
+const viewLabels = { workspace: 'Overview', chat: 'Chat', brag: 'Brag doc', visuals: 'Visuals' };
+const viewPanes = { workspace: 'workspace', chat: 'team-chat', brag: 'brag-doc', visuals: 'visuals' };
 
 function showView(next) {
   const changed = next !== view;
@@ -526,6 +531,7 @@ function showView(next) {
     scrollChat();
   }
   if (view === 'brag') void loadBrag();
+  if (view === 'visuals' && state) visualsView.show(visualFromHash(location.hash));
   if (changed) motion.play($(viewPanes[view]), 'panel');
 }
 
@@ -585,6 +591,26 @@ function navigate(next) {
   history.pushState(null, '', viewHashes[next]);
   showView(next);
 }
+
+// Opens a visual, or one of its versions, or the list of visuals for a null ID.
+function openVisual(id, version = null) {
+  closeDialogs();
+  const hash = id ? visualHash(id, version) : viewHashes.visuals;
+  if (location.hash !== hash) history.pushState(null, '', hash);
+  showView('visuals');
+}
+
+const visualsView = createVisualsView({
+  document,
+  window,
+  request,
+  getState: () => state,
+  agentReference,
+  taskReference,
+  navigate: openVisual,
+  hashOf: visualHash,
+  isBusy: isAgentBusy,
+});
 
 // A reference inside a dialog brings its target to the page behind it, so the dialog gives way.
 function closeDialogs() {
@@ -1590,6 +1616,8 @@ function taskCard(task, expanded = false) {
   assignment.append(roomButton);
   for (const id of task.agentIds) assignment.append(agentReference(id, 'task-worker'));
   card.append(assignment);
+  const visuals = visualsView.taskVisuals(task.id);
+  if (visuals) card.append(visuals);
   if (task.verificationNotice?.state === 'error')
     card.append(
       node('p', 'task-notification-error', `Verified, but the lead was not notified: ${task.verificationNotice.error}`),
@@ -1901,7 +1929,16 @@ function renderStatusMotion(changes) {
 }
 
 // Each part of the page is drawn again only when a batch touched the records it shows.
-const allKinds = new Set(['agents', 'tasks', 'waiting', 'activities', 'conversations', 'messages', 'transport']);
+const allKinds = new Set([
+  'agents',
+  'tasks',
+  'waiting',
+  'activities',
+  'conversations',
+  'visuals',
+  'messages',
+  'transport',
+]);
 function render(touched, changes = { messages: new Set(), agents: new Set(), tasks: new Set() }) {
   const has = (...kinds) => kinds.some((kind) => touched.has(kind));
   // Archiving follows verified tasks: their agents and rooms, and the private chats of those agents. Of an agent it
@@ -1918,12 +1955,13 @@ function render(touched, changes = { messages: new Set(), agents: new Set(), tas
   if (has('waiting', 'tasks')) renderWaiting();
   if (has('activities', 'tasks')) renderActivities();
   if (has('agents', 'tasks')) renderMetrics();
-  if (has('tasks', 'activities', 'conversations')) renderTasks();
+  if (has('tasks', 'activities', 'conversations', 'visuals')) renderTasks();
   if (has('agents', 'tasks')) renderAgents();
   if (has('agents', 'tasks')) renderStatusMotion(changes);
   if (has('agents', 'tasks', 'conversations', 'messages')) renderConversations();
-  if (has('agents', 'tasks', 'conversations', 'messages')) renderMessages(changes.messages);
-  if (has('agents', 'tasks')) renderBrag();
+  if (has('agents', 'tasks', 'conversations', 'messages', 'visuals')) renderMessages(changes.messages);
+  if (has('agents', 'tasks', 'visuals')) renderBrag();
+  if (has('agents', 'tasks', 'visuals')) visualsView.update();
   if (has('transport')) renderConnection();
   if (has('agents')) refreshBusyAgents();
   $('last-updated').textContent =
@@ -1955,6 +1993,7 @@ function applySnapshot(snapshot) {
     waiting: snapshot.waiting,
     activities: snapshot.activities,
     conversations: snapshot.conversations,
+    visuals: snapshot.visuals,
     transport: snapshot.transport,
     adapters: snapshot.adapters,
     lastMessageIds: snapshot.lastMessageIds,
@@ -1976,6 +2015,8 @@ function applySnapshot(snapshot) {
         });
     }
   render(allKinds);
+  // A page that was opened at the address of a visual shows it once the workspace is known.
+  if (!previous && view === 'visuals') visualsView.show(visualFromHash(location.hash));
 }
 
 function applyBatch(batch) {
