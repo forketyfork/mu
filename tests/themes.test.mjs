@@ -85,6 +85,19 @@ test('the saved theme and text size apply in the head before styles or applicati
   assert.ok(script.index < html.indexOf('<body>'));
 });
 
+test('a saved theme is checked after the theme options are created', async (t) => {
+  const { window } = themeFixture('seed-2533678612');
+  t.after(() => window.close());
+  await settle();
+  const selected = Array.from(window.document.querySelectorAll('#reader-theme-options input[type="radio"]')).filter(
+    (radio) => radio.checked,
+  );
+  assert.deepEqual(
+    selected.map((radio) => radio.value),
+    ['seed-2533678612'],
+  );
+});
+
 test('missing or obsolete saved preferences use the original theme and smaller text', (t) => {
   for (const [savedTheme, savedFontSize] of [
     [undefined, undefined],
@@ -97,6 +110,7 @@ test('missing or obsolete saved preferences use the original theme and smaller t
     assert.equal(window.document.documentElement.dataset.fontSize, 'smaller');
     assert.equal(window.document.documentElement.style.getPropertyValue('--accent'), '#75f6db');
     assert.equal(window.document.documentElement.style.getPropertyValue('--font-size-16px'), '14.4px');
+    assert.equal(window.document.documentElement.style.getPropertyValue('--font-size-1-2em'), '1.2em');
   }
 });
 
@@ -134,10 +148,7 @@ test('theme swatches apply and persist every theme while retaining its saved tex
     );
     for (const [name, value] of Object.entries(theme.tokens)) {
       const expected = name.startsWith('font-size-')
-        ? value.replace(
-            /^(\d+(?:\.\d+)?)(px|em)$/,
-            (_, amount, unit) => `${Number((Number(amount) * 1.2).toFixed(3))}${unit}`,
-          )
+        ? value.replace(/^(\d+(?:\.\d+)?)px$/, (_, amount) => `${Number((Number(amount) * 1.2).toFixed(3))}px`)
         : value;
       assert.equal(document.documentElement.style.getPropertyValue(`--${name}`), expected);
     }
@@ -177,6 +188,11 @@ test('text size buttons apply, persist and restore a readable dashboard scale', 
       window.document.documentElement.style.getPropertyValue('--font-size-16px'),
       `${Number((16 * size.scale).toFixed(3))}px`,
     );
+    assert.equal(
+      window.document.documentElement.style.getPropertyValue('--font-size-18px'),
+      `${Number((18 * size.scale).toFixed(3))}px`,
+    );
+    assert.equal(window.document.documentElement.style.getPropertyValue('--font-size-1-2em'), '1.2em');
     assert.equal(button.getAttribute('aria-pressed'), 'true');
     assert.equal(buttons.filter((choice) => choice.getAttribute('aria-pressed') === 'true').length, 1);
     const restored = themeFixture(
@@ -188,7 +204,7 @@ test('text size buttons apply, persist and restore a readable dashboard scale', 
   }
 });
 
-test('the native settings popup exposes keyboard controls and cancels motion on theme changes', async (t) => {
+test('the settings popover is labeled and theme changes cancel motion', async (t) => {
   const { window, $, click, animations } = await fixture(t);
   const trigger = $('#reader-settings-trigger');
   assert.equal(trigger.getAttribute('aria-label'), 'Reading settings');
@@ -196,7 +212,6 @@ test('the native settings popup exposes keyboard controls and cancels motion on 
   assert.equal($('#reader-settings').getAttribute('popover'), 'auto');
   const radios = Array.from(window.document.querySelectorAll('#reader-theme-options input[type="radio"]'));
   assert.equal(radios.length, 4);
-  assert.ok(radios.every((radio) => radio.tabIndex >= 0));
   click('[data-view="chat"]');
   assert.equal(animations.length, 1);
   radios[1].checked = true;

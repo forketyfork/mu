@@ -699,8 +699,8 @@
     for (const [name, value] of Object.entries(theme.tokens)) {
       const scaled = name.startsWith('font-size-')
         ? value.replace(
-            /^(\d+(?:\.\d+)?)(px|em)$/,
-            (_, amount, unit) => `${Number((Number(amount) * fontSize.scale).toFixed(3))}${unit}`,
+            /^(\d+(?:\.\d+)?)px$/,
+            (_, amount) => `${Number((Number(amount) * fontSize.scale).toFixed(3))}px`,
           )
         : value;
       root.style.setProperty(`--${name}`, scaled);
@@ -754,6 +754,7 @@
         radio.type = 'radio';
         radio.name = 'mu-theme';
         radio.value = theme.id;
+        radio.checked = theme.id === root.dataset.theme;
         radio.setAttribute('aria-label', theme.name);
         radio.title = theme.name;
         swatch.className = 'reader-theme-swatch';
