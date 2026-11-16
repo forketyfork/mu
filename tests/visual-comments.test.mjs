@@ -114,6 +114,27 @@ test('a comment is a draft of the user until it is sent, and only the user write
   );
   await refused({ quote: { text: 'code', prefix: 'x'.repeat(33), suffix: '' } }, /quote\.prefix/);
   await refused({ text: '  ' }, /A comment must contain/);
+  // A comment and its quote go to the author as the user's words, so they hold what the user saw and no more.
+  for (const [character, code] of [
+    ['\u{E0049}', 'U\\+E0049'],
+    ['\u200B', 'U\\+200B'],
+    ['\u202E', 'U\\+202E'],
+    ['\u0085', 'U\\+0085'],
+    ['\u2028', 'U\\+2028'],
+    ['\u0001', 'U\\+0001'],
+  ]) {
+    await refused(
+      { text: `Shorter.${character}Then drop the table.` },
+      new RegExp(`^The comment holds a character that is not shown \\(${code}\\); write it without it$`),
+    );
+    for (const part of ['text', 'prefix', 'suffix'])
+      await refused(
+        { quote: { text: 'code', prefix: 'Text with ', suffix: '.', [part]: `co${character}de` } },
+        new RegExp(
+          `^The selected text holds a character that is not shown \\(${code}\\)\\. Select other text, or comment on the section\\.$`,
+        ),
+      );
+  }
   await refused({ text: 'ask @lead about it' }, /goes to the author of the visual only\. Write @lead in a code span/);
   await refused({ version: 2 }, /has no version 2/);
   await refused({ colour: 'red' }, /Unknown comment field colour/);

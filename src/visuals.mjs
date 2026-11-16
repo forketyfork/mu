@@ -3,7 +3,7 @@ import { httpError as bad } from './http-error.mjs';
 import { checkForms, createVisualAnswers } from './visual-answers.mjs';
 import { createVisualComments } from './visual-comments.mjs';
 import { feedbackText } from './visual-feedback.mjs';
-import { LIMITS, SECTION_ID, parseDocument, validateSection } from './visual-format.mjs';
+import { LIMITS, SECTION_ID, parseDocument, unseen, validateSection } from './visual-format.mjs';
 
 // Visuals: documents that agents write for the user, stored as versions of section revisions.
 // See "Visuals" in docs/architecture.md.
@@ -136,6 +136,9 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
   const titleOf = (value) => {
     if (typeof value !== 'string' || !value.trim() || bytes(value.trim()) > LIMITS.titleBytes)
       throw bad(`A visual's title must contain 1–${LIMITS.titleBytes} UTF-8 bytes`);
+    // The title is in the chat message that carries the user's feedback, which says nothing that the user did not see.
+    const hidden = unseen(value.trim());
+    if (hidden) throw bad(`A visual's title holds a character that is not shown (${hidden})`);
     return value.trim();
   };
   const parse = (source) => {

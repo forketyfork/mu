@@ -4775,6 +4775,17 @@ kbd {
   border-left-color: var(--accent);
 }
 
+/* A line that changed just before a click on Send, which the user has not read here. */
+.visual-question.unread {
+  border-color: var(--amber);
+  background: var(--attention-icon-surface);
+}
+
+.visual-question.unread .visual-question-state {
+  color: var(--amber);
+  font-weight: var(--font-weight-600);
+}
+
 .visual-question-head {
   display: flex;
   align-items: baseline;

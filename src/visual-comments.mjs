@@ -2,15 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { httpError as bad } from './http-error.mjs';
 import { mentions } from './store.mjs';
 import { MESSAGE_QUOTE_CHARS, feedbackText, locator, quoted } from './visual-feedback.mjs';
-import { COMMENT_LIMITS, SECTION_ID, parseBlocks } from './visual-format.mjs';
+import { COMMENT_LIMITS, SECTION_ID, parseBlocks, unseen } from './visual-format.mjs';
 
 // The user's comments on a visual. A comment belongs to one version and names the section, the block and the quoted
 // text it is about; it is a draft until the user sends it, and then reaches the author as a chat message from the
 // user in the visual's conversation. See "Visuals" in docs/architecture.md.
 
 const COMMENT_ID = /^vc-[0-9a-f]{8}$/;
-// NUL and the CTCP marker cannot travel in the chat message that carries a comment.
-const control = (text) => text.includes('\0') || text.includes('\u0001');
 const parseData = (row) => JSON.parse(/** @type {string} */ (row.data));
 
 /**
@@ -69,8 +67,11 @@ export function createVisualComments({ store, visuals, sendAsUser }) {
 
   const textOf = (value) => {
     const text = typeof value === 'string' ? value.trim() : '';
-    if (!text || Buffer.byteLength(text) > COMMENT_LIMITS.textBytes || control(text))
+    if (!text || Buffer.byteLength(text) > COMMENT_LIMITS.textBytes)
       throw bad(`A comment must contain 1–${COMMENT_LIMITS.textBytes} UTF-8 bytes`);
+    // The comment and its quote are sent as the user's words: they say what the user saw, and nothing else.
+    const hidden = unseen(text, true);
+    if (hidden) throw bad(`The comment holds a character that is not shown (${hidden}); write it without it`);
     const named = mentions(text);
     if (named.length)
       throw bad(
@@ -82,8 +83,13 @@ export function createVisualComments({ store, visuals, sendAsUser }) {
     if (value === undefined || value === null) return null;
     const part = (key, max, needed) => {
       const text = value[key];
-      if (typeof text !== 'string' || [...text].length > max || control(text) || (needed && !text.trim()))
+      if (typeof text !== 'string' || [...text].length > max || (needed && !text.trim()))
         throw bad(`quote.${key} must be text of at most ${max} characters`);
+      const hidden = unseen(text, true);
+      if (hidden)
+        throw bad(
+          `The selected text holds a character that is not shown (${hidden}). Select other text, or comment on the section.`,
+        );
       return text;
     };
     if (typeof value !== 'object' || Array.isArray(value)) throw bad('quote must be an object');

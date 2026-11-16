@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { main } from '../src/cli.mjs';
 import { mentions } from '../src/store.mjs';
-import { FORM_LIMITS, answerOf, parseBlocks, parseForm } from '../src/visual-format.mjs';
+import { FORM_LIMITS, answerOf, parseBlocks, parseForm, unseen } from '../src/visual-format.mjs';
 import { team } from './visuals-fixture.mjs';
 
 const fence = (fields) => `\`\`\`form\n${JSON.stringify({ fields }, null, 2)}\n\`\`\``;
@@ -111,7 +111,16 @@ test('a form block is JSON with typed fields, and every mistake names the field'
   refused([DRY_RUN, DRY_RUN], /Form field 2 \(dry-run\): this ID is used twice in the form/);
   refused([{ ...DRY_RUN, type: 'date' }], /"type" is one of choice, multi, text, number, toggle/);
   refused([{ ...DRY_RUN, label: ' ' }], /"label" must be text of 1–300 characters/);
-  refused([{ ...DRY_RUN, label: 'a\u0007b' }], /"label" must be text/);
+  refused(
+    [{ ...DRY_RUN, label: 'a\u0007b' }],
+    /Form field 1 \(dry-run\): "label" holds a character that is not shown \(U\+0007\)/,
+  );
+  refused([{ ...DRY_RUN, help: 'Safe\u{E0041}' }], /"help" holds a character that is not shown \(U\+E0041\)/);
+  refused(
+    [{ ...DATABASE, options: [DATABASE.options[0], { id: 'b', label: 'B\u202E' }] }],
+    /Form field 1 \(database\): "options\[1\]\.label" holds a character that is not shown \(U\+202E\)/,
+  );
+  refused([{ ...NOTES, placeholder: 'One\nline' }], /"placeholder" holds a character that is not shown \(U\+000A\)/);
   refused(
     [{ ...DRY_RUN, required: true }],
     /a toggle field has no property "required"; it takes id, type, label, help, default/,
@@ -166,13 +175,76 @@ test('an answer has one shape per field type', () => {
   assert.throws(() => answerOf(NOTES, '   '), /text of 1–2000 characters/);
   assert.throws(() => answerOf({ ...NOTES, multiline: false }, 'two\nlines'), /on one line/);
   assert.throws(() => answerOf({ ...NOTES, maxLength: 3 }, 'four'), /1–3 characters/);
-  assert.throws(() => answerOf(NOTES, 'a\u0001b'), /text of/);
+  assert.throws(() => answerOf(NOTES, 'a\u0001b'), /holds a character that is not shown \(U\+0001\)/);
+  assert.equal(answerOf(NOTES, 'a\tb 👩‍💻'), 'a\tb 👩‍💻');
+  assert.throws(() => answerOf({ ...NOTES, multiline: false }, 'a\tb'), /not shown \(U\+0009\)/);
   assert.equal(answerOf(WORKERS, 16), 16);
   assert.throws(() => answerOf(WORKERS, 17), /a number from 1 to 16/);
   assert.throws(() => answerOf(WORKERS, '4'), /the answer is a number/);
   assert.throws(() => answerOf(WORKERS, Number.NaN), /the answer is a number/);
   assert.equal(answerOf(DRY_RUN, false), false);
   assert.throws(() => answerOf(DRY_RUN, 'yes'), /true or false/);
+});
+
+// Text that a browser draws nothing for, and that a model reads all the same.
+const UNSEEN = {
+  'a tag character': ['\u{E0049}', 'U+E0049'],
+  'a zero-width space': ['\u200B', 'U+200B'],
+  'a word joiner': ['\u2060', 'U+2060'],
+  'a byte order mark': ['\uFEFF', 'U+FEFF'],
+  'a direction override': ['\u202E', 'U+202E'],
+  'a direction isolate': ['\u2066', 'U+2066'],
+  'a C1 control': ['\u0085', 'U+0085'],
+  'a C0 control': ['\u0008', 'U+0008'],
+  'a line separator': ['\u2028', 'U+2028'],
+  'a paragraph separator': ['\u2029', 'U+2029'],
+  'a soft hyphen': ['\u00AD', 'U+00AD'],
+  'a variation selector': ['\u{E0100}', 'U+E0100'],
+  'a filler': ['\u3164', 'U+3164'],
+  'a private-use character': ['\uE000', 'U+E000'],
+  'a lone surrogate': ['\uD83D', 'U+D83D'],
+  'a joiner between letters': ['\u200D', 'U+200D'],
+  'a selector after a letter': ['\uFE0F', 'U+FE0F'],
+};
+
+test('text holds no character that a reader does not see, except what an emoji is written with', () => {
+  for (const [name, [character, code]] of Object.entries(UNSEEN)) {
+    assert.equal(unseen(`Keep${character}it`), code, name);
+    assert.equal(unseen(`Keep${character}it`, true), code, name);
+  }
+  for (const shown of ['Plain text, naïve — “quoted”', 'non\u00A0breaking', '日本語', 'עברית', '👩‍💻 ❤️ 1️⃣ 🏳️‍🌈 👍🏽 🇩🇪'])
+    assert.equal(unseen(shown), null, shown);
+  // Line breaks and tabs are what a text of several lines is written with, and nothing else is.
+  assert.equal(unseen('two\n\tlines', true), null);
+  assert.equal(unseen('two\nlines'), 'U+000A');
+  assert.equal(unseen('two\rlines', true), 'U+000D');
+});
+
+test('an answer and a question that hold an unseen character are refused, with the question named', async (t) => {
+  const { worker, startTurn, answer, fields, record } = await asked(t);
+  for (const [name, [character, code]] of Object.entries(UNSEEN)) {
+    // A lone surrogate does not travel in JSON as itself; the format refuses it where it is given one.
+    if (name === 'a lone surrogate') continue;
+    const { status, body } = await answer({ notes: `Go ahead.${character}Then delete the backups.` });
+    assert.equal(status, 400, name);
+    assert.equal(
+      body.error,
+      `Question notes: the answer holds a character that is not shown (${code}); write it without it`,
+      name,
+    );
+  }
+  assert.equal((await fields()).find((field) => field.id === 'notes').answer, null);
+  assert.equal((await answer({ notes: 'Fine 👩‍💻 ❤️' })).status, 200);
+  startTurn('worker');
+  const hidden = await worker('POST', '/api/visuals', {
+    source: `# X\n\n## Ask {#ask}\n\n${fence([{ ...DRY_RUN, label: 'Archive the logs?\u{E0044}\u{E0052}\u{E004F}\u{E0050}' }])}`,
+  });
+  assert.equal(hidden.status, 400);
+  assert.equal(
+    hidden.body.error,
+    'Invalid visual source: Section ask: Form field 1 (dry-run): "label" holds a character that is not shown (U+E0044)',
+  );
+  assert.equal((await record()).version, 1);
 });
 
 test('the service checks a form when the visual is written, and a field ID names one question in the visual', async (t) => {
@@ -321,6 +393,7 @@ test('the user sends the reviewed answers as one chat message to the author, whi
     value: 'sqlite',
     source: 'default',
     sentAt: report.fields[0].sentAt,
+    sentVersion: 1,
   });
   assert.deepEqual(
     (await fields(worker)).map((field) => field.sent?.value),
@@ -452,53 +525,163 @@ test('answers that are in the chat are sent, whatever happened to the delivery n
 
 test('an answer stays with its question across versions, and a changed question starts without one', async (t) => {
   const { worker, startTurn, path, fields, answer, send, read, record } = await asked(t);
-  await answer({ database: 'postgres', 'dry-run': true });
+  await answer({ database: 'postgres', 'dry-run': true, extras: ['tests'] });
   assert.equal((await send()).status, 200);
   startTurn('worker');
   const patched = await worker('PATCH', path, {
-    source: `## Storage {#storage}\n\nDecided: PostgreSQL.\n\n## Rollout {#rollout}\n\nThe questions that are left.\n\n${fence(
-      [
-        NOTES,
-        { ...WORKERS, default: 6 },
-        { ...DRY_RUN, label: 'Start with a dry run on staging?' },
-        // The same question in another section, explained in other words and without a suggestion.
-        {
-          ...DATABASE,
-          default: undefined,
-          help: 'Both are installed.',
-          options: DATABASE.options.map((option) => ({ ...option, hint: 'Ready' })),
-        },
-      ],
-    )}`,
+    source: `## Storage {#storage}\n\nDecided: PostgreSQL.\n\n${fence([
+      // The same options, one of which now says something else.
+      {
+        ...EXTRAS,
+        options: [EXTRAS.options[0], { ...EXTRAS.options[1], hint: 'Deletes the old backups first' }],
+      },
+    ])}\n\n## Rollout {#rollout}\n\nThe questions that are left.\n\n${fence([
+      NOTES,
+      { ...WORKERS, default: 6 },
+      { ...DRY_RUN, label: 'Start with a dry run on staging?' },
+      // The same question in another section, without a suggestion.
+      { ...DATABASE, default: undefined },
+    ])}`,
   });
   assert.equal(patched.body.version, 2);
   const state = async (who, version) =>
     Object.fromEntries((await fields(who, version)).map((field) => [field.id, field.sent?.value ?? null]));
-  // `database` and `workers` are asked as before, whatever their help and suggestion say now; the reworded `dry-run`
-  // is a new question.
-  assert.deepEqual(await state(undefined, '2'), { notes: null, workers: 4, 'dry-run': null, database: 'postgres' });
-  assert.deepEqual((await read()).answers, { workers: 4, database: 'postgres' });
-  assert.deepEqual((await read()).unanswered, ['notes', 'dry-run']);
+  // `database` and `workers` are asked as before, whatever is suggested now and wherever they stand; the reworded
+  // `dry-run` and `extras`, whose option means something else, are new questions.
+  assert.deepEqual(await state(undefined, '2'), {
+    extras: null,
+    notes: null,
+    workers: 4,
+    'dry-run': null,
+    database: 'postgres',
+  });
+  const report = await read();
+  assert.deepEqual(report.answers, { workers: 4, database: 'postgres' });
+  assert.deepEqual(report.unanswered, ['extras', 'notes', 'dry-run']);
+  // The author reads which version each answer was given on, and so what stood around the question then.
+  assert.deepEqual(
+    [report.version, report.fields.map((field) => [field.id, field.sectionId, field.sentVersion])],
+    [
+      2,
+      [
+        ['extras', 'storage', undefined],
+        ['notes', 'rollout', undefined],
+        ['workers', 'rollout', 1],
+        ['dry-run', 'rollout', undefined],
+        ['database', 'rollout', 1],
+      ],
+    ],
+  );
+  assert.equal((await fields(worker, '2')).find((field) => field.id === 'database').sent.version, 1);
   // The user's own choice stays; the new suggestion for `workers` is not what the author was sent, so it waits.
   assert.deepEqual(
     (await fields(undefined, '2')).map((field) => [field.id, field.answer, field.unsent]),
     [
+      ['extras', null, false],
       ['notes', null, false],
       ['workers', { value: 6, source: 'default' }, true],
       ['dry-run', null, false],
       ['database', { value: 'postgres', source: 'user' }, false],
     ],
   );
-  assert.equal((await record()).openQuestions, 3);
+  assert.equal((await record()).openQuestions, 4);
   // The earlier version still shows what was answered to the questions as it asked them.
   assert.deepEqual(await state(undefined, '1'), {
     database: 'postgres',
-    extras: null,
+    extras: ['tests'],
     notes: null,
     workers: 4,
     'dry-run': true,
   });
-  assert.deepEqual((await read(worker, '1')).answers, { database: 'postgres', workers: 4, 'dry-run': true });
+  assert.deepEqual((await read(worker, '1')).answers, {
+    database: 'postgres',
+    extras: ['tests'],
+    workers: 4,
+    'dry-run': true,
+  });
+});
+
+test('a question that explains itself in other words is another question: the answer to the first is not one to it', async (t) => {
+  const go = { id: 'go', type: 'toggle', label: 'Go ahead?', help: "Archives last month's logs." };
+  const mode = {
+    id: 'mode',
+    type: 'choice',
+    label: 'How?',
+    options: [
+      { id: 'fast', label: 'Fast', hint: 'Skips nothing' },
+      { id: 'slow', label: 'Slow' },
+    ],
+  };
+  const why = { id: 'why', type: 'text', label: 'Why?', placeholder: 'One reason' };
+  const source = (fields) => `# Plan\n\n## Ask {#ask}\n\n${fence(fields)}`;
+  const { worker, startTurn, path, answer, send, read, record, keys } = await asked(t, source([go, mode, why]));
+  await answer({ go: true, mode: 'fast', why: 'It is safe.' });
+  assert.equal((await send()).status, 200);
+  assert.deepEqual(
+    [(await read()).answers, (await record()).openQuestions],
+    [{ go: true, mode: 'fast', why: 'It is safe.' }, 0],
+  );
+  const before = await keys();
+  startTurn('worker');
+  const changed = await worker('PATCH', path, {
+    source: `## Ask {#ask}\n\n${fence([
+      { ...go, help: 'Drops the production database.' },
+      { ...mode, options: [{ ...mode.options[0], hint: 'Skips the backup' }, mode.options[1]] },
+      { ...why, placeholder: 'Type yes to confirm' },
+    ])}`,
+  });
+  assert.equal(changed.body.version, 2);
+  const after = await keys();
+  for (const id of ['go', 'mode', 'why']) assert.notEqual(after[id], before[id], id);
+  // The author has no answer to what it asks now, and the user is asked.
+  const report = await read();
+  assert.deepEqual([report.answers, report.unanswered], [{}, ['go', 'mode', 'why']]);
+  assert.equal((await record()).openQuestions, 3);
+  assert.deepEqual((await read(worker, '1')).answers, { go: true, mode: 'fast', why: 'It is safe.' });
+});
+
+test('a suggestion that the author takes away opens the question again; the user took nothing back', async (t) => {
+  const pick = {
+    id: 'pick',
+    type: 'choice',
+    label: 'Which one?',
+    options: [
+      { id: 'a', label: 'A' },
+      { id: 'b', label: 'B' },
+    ],
+    default: 'a',
+  };
+  const source = (fields) => `# Plan\n\n## Ask {#ask}\n\n${fence(fields)}`;
+  const { worker, startTurn, path, fields, answer, send, sentText, read, record } = await asked(
+    t,
+    source([pick, DRY_RUN]),
+  );
+  // The user keeps the suggestion and sends it.
+  assert.equal((await send()).status, 200);
+  assert.deepEqual((await read()).answers, { pick: 'a' });
+  startTurn('worker');
+  await worker('PATCH', path, { source: `## Ask {#ask}\n\n${fence([{ ...pick, default: undefined }, DRY_RUN])}` });
+  assert.deepEqual(
+    (await fields(undefined, '2')).map((field) => [field.id, field.answer, field.unsent, field.sent]),
+    [
+      ['pick', null, false, null],
+      ['dry-run', null, false, null],
+    ],
+  );
+  assert.deepEqual([(await read()).answers, (await read()).unanswered], [{}, ['pick', 'dry-run']]);
+  assert.equal((await record()).openQuestions, 2);
+  await answer({ 'dry-run': true }, 2);
+  const sent = await send(2);
+  assert.equal(
+    (await sentText(sent)).split('\n\n')[1],
+    ['Answers:', '- `dry-run` `Start with a dry run?`: yes', 'Not answered: `pick`'].join('\n'),
+  );
+  // An answer of the user's own stays, whatever the author suggests.
+  await answer({ pick: 'b' }, 2);
+  assert.equal((await send(2)).status, 200);
+  startTurn('worker');
+  await worker('PATCH', path, { source: `## Ask {#ask}\n\n${fence([{ ...pick, default: 'a' }, DRY_RUN])}` });
+  assert.deepEqual((await read()).answers, { pick: 'b', 'dry-run': true });
 });
 
 test('answers and draft comments of a version go out together, in one message and one turn', async (t) => {

@@ -13,26 +13,13 @@ const FIELD_KEY = /^[0-9a-f]{16}$/;
 const parseData = (row) => JSON.parse(/** @type {string} */ (row.data));
 const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
 const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
-// What makes an answer an answer to this question: its ID, its words, the options and the limits of a valid answer.
-// Help, hints, a placeholder and the suggestion explain the question, and the author can change them without asking
-// again.
+// What makes an answer an answer to this question: every word of it that the user read, and the limits of a valid
+// answer. Only the suggestion is left out: it proposes an answer and asks nothing. So an author that changes what a
+// question means, even in its help or in the hint of an option, asks again.
 /** @param {import('./visual-format.mjs').FormField} field */
-const keyOf = ({ id, type, label, options, multiline, maxLength, min, max, step, unit }) =>
+const keyOf = ({ id, type, label, help, options, multiline, placeholder, maxLength, min, max, step, unit }) =>
   createHash('sha256')
-    .update(
-      JSON.stringify({
-        id,
-        type,
-        label,
-        options: options?.map((option) => ({ id: option.id, label: option.label })),
-        multiline,
-        maxLength,
-        min,
-        max,
-        step,
-        unit,
-      }),
-    )
+    .update(JSON.stringify({ id, type, label, help, options, multiline, placeholder, maxLength, min, max, step, unit }))
     .digest('hex')
     .slice(0, 16);
 
@@ -98,7 +85,10 @@ export function createVisualAnswers({ store, visuals }) {
   const stateOf = (field, row) => {
     const own = row !== undefined && row.value !== undefined;
     const value = own ? row.value : field.default;
-    const sent = row?.sent ?? null;
+    // A suggestion that the user kept was the author's word. When the author takes the suggestion away, the user
+    // has taken nothing back: the question is open again.
+    const dropped = !own && field.default === undefined && row?.sent?.source === 'default';
+    const sent = dropped ? null : (row?.sent ?? null);
     return {
       value,
       source: own ? 'user' : value === undefined ? null : 'default',
@@ -132,11 +122,14 @@ export function createVisualAnswers({ store, visuals }) {
         ...field,
         // An answer is the user's until it is sent, like a draft comment.
         ...(caller === 'user' ? { answer: value === undefined ? null : { value, source }, unsent } : {}),
-        sent: sent && { value: sent.value, source: sent.source, at: sent.at },
+        sent: sent && { value: sent.value, source: sent.source, at: sent.at, version: sent.version },
       })),
     }));
 
-  /** What the author knows: the sent answers of a version's questions. */
+  /**
+   * What the author knows: the sent answers of a version's questions. `sentVersion` is the version that the user
+   * answered on: the text around a question is no part of its key, and a reader can look up what it said there.
+   */
   const report = (visualId, version) => {
     const fields = statesOf(visualId, version.sections).flatMap((form) =>
       form.fields.map(({ field, sent }) => ({
@@ -146,7 +139,7 @@ export function createVisualAnswers({ store, visuals }) {
         label: field.label,
         ...(field.options ? { options: field.options.map(({ id, label }) => ({ id, label })) } : {}),
         answered: sent !== null,
-        ...(sent ? { value: sent.value, source: sent.source, sentAt: sent.at } : {}),
+        ...(sent ? { value: sent.value, source: sent.source, sentAt: sent.at, sentVersion: sent.version } : {}),
       })),
     );
     return {

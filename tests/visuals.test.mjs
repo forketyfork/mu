@@ -197,6 +197,11 @@ test('an agent writes a visual in its turn conversation, linked to its task and 
     (await worker('POST', '/api/visuals', { source: '## Only {#x}\ntext' })).body.error,
     /title must contain/,
   );
+  for (const title of ['Plan\u{E0049}', 'Pl\u200Ban', 'Plan\u202E'])
+    assert.match(
+      (await worker('POST', '/api/visuals', { source: PLAN, title })).body.error,
+      /^A visual's title holds a character that is not shown \(U\+(E0049|200B|202E)\)$/,
+    );
   assert.match((await worker('POST', '/api/visuals', { source: '# Empty' })).body.error, /at least one section/);
   assert.match(
     (await worker('POST', '/api/visuals', { source: '# T\n## A\n```js\nopen' })).body.error,

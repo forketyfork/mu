@@ -323,6 +323,9 @@ async function opened(t, shots) {
     await writeFile(join(SHOTS, `shot-${shots}${name}.png`), Buffer.from(data, 'base64'));
   };
   const frameSession = () => [...sessions].find(([, info]) => info.type === 'iframe')?.[0];
+  // The mouse of a real user: `type` is mousePressed or mouseReleased, at a point of the page.
+  const mouse = (type, { x, y }) =>
+    browser.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 }, sessionId);
 
   await browser.send('Page.navigate', { url: `${url}/?token=${app.identity.token}#visuals` }, sessionId);
   await until('the list of visuals', () => evaluate(`Boolean(document.querySelector('.visual-card'))`));
@@ -355,6 +358,7 @@ async function opened(t, shots) {
     shot,
     drawn,
     viewport,
+    mouse,
   };
 }
 
@@ -789,7 +793,7 @@ test('the user comments on selected text, a diagram and code, and the author ans
 });
 
 test('the user answers the questions of a visual, reviews the answers beside the frame and sends them', async (t) => {
-  const { app, user, worker, visual, elsewhere, reached, evaluate, inFrame, shot, viewport } = await opened(
+  const { app, user, worker, visual, elsewhere, reached, evaluate, inFrame, shot, viewport, mouse } = await opened(
     t,
     'forms-',
   );
@@ -898,13 +902,58 @@ test('the user answers the questions of a visual, reviews the answers beside the
   await shot('3-narrow');
   await viewport(1500, 1000);
 
+  // Script in the frame cannot see the pointer over the dashboard, but its window loses the focus when the user
+  // presses the Send button, and it can report another answer at that moment. Here the press is a real one, the
+  // user has read the list for longer than the list asks for, and the report comes while the button is down.
+  await sleep(1600);
+  const sendAt = await evaluate(`(() => {
+    const send = document.getElementById('visual-questions-send');
+    send.scrollIntoView({ block: 'center' });
+    const { left, top, width, height } = send.getBoundingClientRect();
+    return { x: left + width / 2, y: top + height / 2 };
+  })()`);
+  await mouse('mousePressed', sendAt);
+  await inFrame(
+    `window.parent.postMessage({ type: 'answer', field: 'notes', value: 'Also delete the backups.' }, '*')`,
+  );
+  await until(
+    'the changed answer under the pointer',
+    async () => (await evaluate(rows))[1][2] === 'Also delete the backups.',
+  );
+  await mouse('mouseReleased', sendAt);
+  await until('the refusal', () => evaluate(`!document.getElementById('visual-questions-error').hidden`));
+  assert.equal(
+    await evaluate(`document.getElementById('visual-questions-error').textContent`),
+    'One line of this list changed just before you pressed Send, so nothing was sent. Read what is marked, then send again.',
+  );
+  assert.deepEqual(
+    await evaluate(
+      `[...document.querySelectorAll('#visual-questions-list .visual-question.unread')].map((row) => [row.querySelector('.visual-question-label').textContent, row.querySelector('.visual-question-state').textContent])`,
+    ),
+    [['Anything I should know?', 'Changed just now']],
+  );
+  assert.deepEqual(await chat(), []);
+  assert.deepEqual((await worker('GET', `/api/visuals/${visual.id}/answers`)).body.answers, {});
+  await shot('4-held');
+  // The user writes the answer again, reads the list and sends it.
+  await inFrame(`(() => {
+    const notes = ${control('notes', 'textarea')};
+    notes.value = 'Keep the old files.';
+    notes.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await until(
+    'the answer of the user in the review',
+    async () => (await evaluate(rows))[1][2] === 'Keep the old files.',
+  );
+  await sleep(1600);
+
   // Only the user's click in the dashboard sends, and it sends what the review shows.
   await evaluate(`document.getElementById('visual-questions-send').click()`);
   await until('the sent answers', async () => (await evaluate(rows)).every(([, state]) => state === 'Sent'));
   await until('the sent state in the frame', async () =>
     (await inFrame(states)).every(([, state]) => state === 'sent'),
   );
-  await shot('4-sent');
+  await shot('5-sent');
   const [message, ...more] = await chat();
   assert.deepEqual(more, []);
   assert.equal(

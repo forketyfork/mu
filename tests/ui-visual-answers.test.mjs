@@ -33,6 +33,8 @@ const forms = () => [
 
 /** @param {any} t @param {{ visual?: any, versions?: Record<string, any> }} [options] */
 async function answering(t, { visual = record({ openQuestions: 3 }), versions } = {}) {
+  // The time of the list, which holds a click on Send back until the user could read what it shows.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-04T12:00:00Z') });
   const ui = await viewer(t, {
     hash: `#visuals/${ID}`,
     visuals: [visual],
@@ -51,7 +53,9 @@ async function answering(t, { visual = record({ openQuestions: 3 }), versions } 
     ui.fromFrame({ type: 'answer', field, value });
     await settle();
   };
-  return { ...ui, rows, report };
+  /** The user reads the list. */
+  const read = () => t.mock.timers.tick(1500);
+  return { ...ui, rows, report, read };
 }
 
 test('the dashboard lists the questions with what would be sent, and tells the frame what to show', async (t) => {
@@ -175,6 +179,7 @@ test('Send answers sends the list that the panel shows, with the draft comments 
   await settle();
   assert.equal(ui.$('#visual-questions-send').textContent, 'Send answers and 1 comment');
 
+  ui.read();
   ui.click('#visual-questions-send');
   await settle();
   // The suggestion that the user kept and the answer that the user gave; a question without an answer is left out.
@@ -204,10 +209,67 @@ test('Send answers sends the list that the panel shows, with the draft comments 
   // A refusal is shown, and the list is the service's again.
   await ui.report('workers', 2);
   ui.served.failAnswer = 'The questions or your answers changed since you reviewed them. Review them again, then send.';
+  ui.read();
   ui.click('#visual-questions-send');
   await settle();
   assert.equal(ui.$('#visual-questions-error').textContent, ui.served.failAnswer);
   assert.equal(ui.$('#visual-questions-send').disabled, false);
+});
+
+test('a click on Send sends nothing that came into the list just before it', async (t) => {
+  const ui = await answering(t);
+  const { $ } = ui;
+  const posts = () => ui.calls.filter(([method, path]) => method === 'POST' && path === '/feedback');
+  const marked = () =>
+    [...ui.window.document.querySelectorAll('#visual-questions-list .visual-question.unread')].map(
+      (row) => row.querySelector('.visual-question-label').textContent,
+    );
+  // The list is new on the screen: the user has read none of it.
+  ui.click('#visual-questions-send');
+  await settle();
+  assert.deepEqual([posts(), marked().length], [[], 3]);
+  assert.equal(
+    $('#visual-questions-error').textContent,
+    '3 lines of this list changed just before you pressed Send, so nothing was sent. Read what is marked, then send again.',
+  );
+  ui.read();
+
+  // Script in the frame reports an answer while the user presses the button: the list holds it at the click.
+  await ui.report('notes', 'Also delete the backups');
+  t.mock.timers.tick(30);
+  ui.click('#visual-questions-send');
+  await settle();
+  assert.deepEqual(posts(), []);
+  assert.deepEqual(marked(), ['Notes']);
+  assert.deepEqual(ui.rows()[1], ['Notes', 'Changed just now', 'Also delete the backups']);
+  assert.equal(
+    $('#visual-questions-error').textContent,
+    'One line of this list changed just before you pressed Send, so nothing was sent. Read what is marked, then send again.',
+  );
+  // An answer that is taken away changes what would be sent as well.
+  ui.read();
+  await ui.report('notes', null);
+  t.mock.timers.tick(1499);
+  ui.click('#visual-questions-send');
+  await settle();
+  assert.deepEqual([posts(), marked()], [[], ['Notes']]);
+
+  // A line counts from when it changed, whatever else the service reports in between.
+  await ui.report('notes', 'Keep the files');
+  t.mock.timers.tick(1000);
+  await ui.report('workers', 2);
+  t.mock.timers.tick(500);
+  ui.click('#visual-questions-send');
+  await settle();
+  assert.deepEqual([posts(), marked()], [[], ['Workers']]);
+  t.mock.timers.tick(1000);
+  ui.click('#visual-questions-send');
+  await settle();
+  assert.deepEqual(posts().at(-1)[2], {
+    version: 2,
+    answers: { [DATABASE.key]: 'sqlite', [NOTES.key]: 'Keep the files', [WORKERS.key]: 2 },
+  });
+  assert.deepEqual([posts().length, marked(), $('#visual-questions-error').hidden], [1, [], true]);
 });
 
 test('an earlier version shows its answers and takes none; a visual without questions shows no panel', async (t) => {

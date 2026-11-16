@@ -4,6 +4,9 @@
 // for the user nor send anything. See "Visuals" in docs/architecture.md.
 
 const TEXT_CHARS = 2000;
+// The user sends what the list shows, so an answer must have stood in the list for this long before a click on Send
+// sends it. The frame can report an answer while the pointer is on its way to the button, or during the click.
+const READ_MS = 1500;
 
 /**
  * What the frame reports as the answer to a question, when it has the form of an answer to it; undefined otherwise.
@@ -49,8 +52,9 @@ const CHIPS = { open: 'No answer', suggested: 'Suggested', unsent: 'Not sent', s
  * @param {(path: string, options?: object) => Promise<any>} options.request
  * @param {(message: object) => void} options.post Sends a message to the frame.
  * @param {() => Promise<void>} options.reload Loads the visual again, after an answer changed.
+ * @param {() => number} [options.now] The time in milliseconds.
  */
-export function createAnswersPanel({ document, request, post, reload }) {
+export function createAnswersPanel({ document, request, post, reload, now = () => Date.now() }) {
   const $ = (id) => /** @type {any} */ (document.getElementById(id));
   const node = (tag, className, text) => {
     const element = document.createElement(tag);
@@ -64,9 +68,26 @@ export function createAnswersPanel({ document, request, post, reload }) {
   let busy = false;
   // One change at a time, in the order the reader made them.
   let queue = Promise.resolve();
+  // What the list showed last for each question of one version of one visual, and when that last changed.
+  let listed = { scope: '', answers: new Map(), changedAt: new Map() };
+  // The questions whose answer was too new in the list when the user clicked Send; that click sent nothing.
+  let unread = new Set();
 
-  const fields = () =>
-    (data?.shown.forms ?? []).flatMap((form) => form.fields.map((field) => ({ ...field, sectionId: form.sectionId })));
+  const fieldsOf = (shown) =>
+    shown.forms.flatMap((form) => form.fields.map((field) => ({ ...field, sectionId: form.sectionId })));
+  function noteChanges(next) {
+    const scope = `${next.id} ${next.shown.number}`;
+    const answers = new Map(fieldsOf(next.shown).map((field) => [field.key, JSON.stringify(field.answer ?? null)]));
+    // In another version every answer is new to the list, also one that the version before had.
+    const before = scope === listed.scope ? listed : { answers: new Map(), changedAt: new Map() };
+    if (scope !== listed.scope) unread = new Set();
+    const changedAt = new Map();
+    for (const [key, answer] of answers)
+      changedAt.set(key, before.answers.get(key) === answer ? before.changedAt.get(key) : now());
+    listed = { scope, answers, changedAt };
+  }
+
+  const fields = () => (data ? fieldsOf(data.shown) : []);
   const answerable = () => Boolean(data) && data.shown.number === data.version;
   const drafts = () => (data?.shown.comments ?? []).filter((comment) => comment.status === 'draft').length;
 
@@ -105,13 +126,14 @@ export function createAnswersPanel({ document, request, post, reload }) {
     $('visual-questions-list').replaceChildren(
       ...all.map((field) => {
         const state = answerState(field);
-        const row = node('button', `visual-question ${state}`);
+        const late = unread.has(field.key);
+        const row = node('button', `visual-question ${state}${late ? ' unread' : ''}`);
         row.type = 'button';
         row.title = 'Show the question in the visual';
         const head = node('span', 'visual-question-head');
         head.append(
           node('span', 'visual-question-label', field.label),
-          node('span', 'visual-question-state', CHIPS[state]),
+          node('span', 'visual-question-state', late ? 'Changed just now' : CHIPS[state]),
         );
         row.append(
           head,
@@ -161,6 +183,16 @@ export function createAnswersPanel({ document, request, post, reload }) {
 
   $('visual-questions-send').addEventListener('click', () => {
     if (busy || !data) return;
+    const at = now();
+    const late = fields().filter((field) => at - listed.changedAt.get(field.key) < READ_MS);
+    unread = new Set(late.map((field) => field.key));
+    if (late.length) {
+      showError(
+        `${late.length === 1 ? 'One line' : `${late.length} lines`} of this list changed just before you pressed Send, so nothing was sent. Read what is marked, then send again.`,
+      );
+      render();
+      return;
+    }
     busy = true;
     render();
     // What the list above shows: the answer of every question that has one.
@@ -187,6 +219,7 @@ export function createAnswersPanel({ document, request, post, reload }) {
   return {
     /** Shows the questions of a version; `data` is the service's answer for it. */
     show(next) {
+      noteChanges(next);
       data = next;
       render();
       sendState();
@@ -215,6 +248,9 @@ export function createAnswersPanel({ document, request, post, reload }) {
     close() {
       data = null;
       busy = false;
+      // The list is off the screen: what it shows next, the user has not read.
+      listed = { scope: '', answers: new Map(), changedAt: new Map() };
+      unread = new Set();
       showError('');
       render();
     },

@@ -52,9 +52,26 @@ export const FIELD_TYPES = Object.freeze(['choice', 'multi', 'text', 'number', '
  */
 
 const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
-// Control characters draw nothing and can hide text; a line break is allowed only where a text spans lines.
-// eslint-disable-next-line no-control-regex -- the patterns are about control characters
-const hasControl = (text, lines) => (lines ? /[\0-\x08\x0b-\x1f\x7f]/ : /[\0-\x1f\x7f]/).test(text);
+
+// Characters that a reader does not see: controls, format characters such as zero-width spaces, direction overrides
+// and tag characters, private-use characters, separators of lines, lone surrogates, and every code point that fonts
+// ignore. Text can hide in them, and some models read it. What goes into a chat message as the user's words, and
+// the words of a question, hold none of them, so the message says what the user saw.
+const UNSEEN = /[\p{Cc}\p{Cf}\p{Co}\p{Cs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u;
+// How emoji are written: a joiner between two pictographs, and a selector after a pictograph or in a keycap.
+const EMOJI_GLUE =
+  /(?<=\p{Extended_Pictographic}\uFE0F?)\u200D(?=\p{Extended_Pictographic})|(?<=\p{Extended_Pictographic})\uFE0F|(?<=[0-9#*])\uFE0F(?=\u20E3)/gu;
+/**
+ * The first character of a text that a reader does not see, as `U+200B`, or null. A text that spans lines may hold
+ * line breaks and tabs.
+ * @param {string} text
+ * @param {boolean} [lines]
+ */
+export function unseen(text, lines = false) {
+  const plain = text.replace(EMOJI_GLUE, '');
+  const found = UNSEEN.exec(lines ? plain.replace(/[\n\t]/g, '') : plain);
+  return found && `U+${found[0].codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`;
+}
 const FIELD_KEYS = {
   choice: ['options', 'default'],
   multi: ['options', 'default'],
@@ -102,8 +119,10 @@ export function parseForm(text) {
     const textOf = (value, name, max, { lines = false, needed = false } = {}) => {
       if (value === undefined && !needed) return undefined;
       const trimmed = typeof value === 'string' ? value.trim() : null;
-      if (trimmed === null || (needed && !trimmed) || [...trimmed].length > max || hasControl(trimmed, lines))
+      if (trimmed === null || (needed && !trimmed) || [...trimmed].length > max)
         fail(`"${name}" must be text of ${needed ? '1–' : 'at most '}${max} characters`);
+      const hidden = unseen(trimmed, lines);
+      if (hidden) fail(`"${name}" holds a character that is not shown (${hidden})`);
       return trimmed;
     };
     const numberOf = (value, name) => {
@@ -191,8 +210,11 @@ export function answerOf(field, value) {
   if (field.type === 'text') {
     const max = field.maxLength ?? FORM_LIMITS.answerChars;
     const text = typeof value === 'string' ? value.replace(/\r\n?/g, '\n').trim() : null;
-    if (text === null || !text || [...text].length > max || hasControl(text, field.multiline === true))
+    if (text === null || !text || [...text].length > max || (!field.multiline && text.includes('\n')))
       throw new Error(`the answer is text of 1–${max} characters${field.multiline ? '' : ' on one line'}`);
+    // The user sends what the list beside the visual shows, and it cannot show these.
+    const hidden = unseen(text, field.multiline === true);
+    if (hidden) throw new Error(`the answer holds a character that is not shown (${hidden}); write it without it`);
     return text;
   }
   if (field.type === 'number') {
