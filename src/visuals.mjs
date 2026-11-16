@@ -41,12 +41,15 @@ export function createVisuals({ store, runner, tasks }) {
     return visual;
   };
   const list = () => store.db.prepare('SELECT data FROM visuals ORDER BY rowid').all().map(parseData);
-  const save = (visual) => {
-    store.db
-      .prepare('INSERT INTO visuals (id,data) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data')
-      .run(visual.id, JSON.stringify(visual));
+  // A new visual is inserted and never written over: its ID is a short random number, and an ID that another visual
+  // already has must fail instead of replacing that visual.
+  const insert = (visual) => {
+    store.db.prepare('INSERT INTO visuals (id,data) VALUES (?,?)').run(visual.id, JSON.stringify(visual));
     store.changed(['visuals', visual.id]);
-    return visual;
+  };
+  const save = (visual) => {
+    store.db.prepare('UPDATE visuals SET data=? WHERE id=?').run(JSON.stringify(visual), visual.id);
+    store.changed(['visuals', visual.id]);
   };
   const canRead = (visual, caller) =>
     caller === 'user' || Boolean(store.conversation(visual.conversationId)?.members.includes(caller));
@@ -71,11 +74,11 @@ export function createVisuals({ store, runner, tasks }) {
     };
   };
   const writeVersion = (id, version, sections) => {
-    const insert = store.db.prepare('INSERT OR IGNORE INTO visual_sections (visual_id,rev,data) VALUES (?,?,?)');
+    const insertSection = store.db.prepare('INSERT OR IGNORE INTO visual_sections (visual_id,rev,data) VALUES (?,?,?)');
     const entries = sections.map((section) => {
       const { id: sectionId, title, body } = section;
       const hash = rev(section);
-      insert.run(id, hash, JSON.stringify({ id: sectionId, title, body }));
+      insertSection.run(id, hash, JSON.stringify({ id: sectionId, title, body }));
       return { id: sectionId, rev: hash };
     });
     store.db
@@ -128,6 +131,11 @@ export function createVisuals({ store, runner, tasks }) {
   const checkSize = (sections) => {
     if (!sections.length) throw bad('A visual needs at least one section');
     if (sections.length > LIMITS.sections) throw bad(`A visual holds at most ${LIMITS.sections} sections`);
+    const size = sections.reduce((total, section) => total + bytes(section.title) + bytes(section.body), 0);
+    if (size > LIMITS.documentBytes)
+      throw bad(
+        `A visual holds at most ${LIMITS.documentBytes / 1024} KiB of text in all its sections; this one would hold ${Math.ceil(size / 1024)} KiB`,
+      );
   };
   // The task a visual is listed under: the one given, else the author's assigned task when it belongs to the
   // conversation, else the only unverified task of that conversation.
@@ -156,13 +164,14 @@ export function createVisuals({ store, runner, tasks }) {
       if (!['from', 'title', 'source', 'conversationId', 'taskId'].includes(key))
         throw bad(`Unknown visual field ${key}`);
     const turn = runner.active.get(from) ?? null;
-    const document = parse(input.source);
-    checkSize(document.sections);
-    const title = titleOf(input.title ?? document.title);
     const conversationId = input.conversationId ?? turn?.conversationId ?? agent.conversationId;
     const conversation = typeof conversationId === 'string' ? store.conversation(conversationId) : null;
     if (!conversation) throw bad(`Unknown conversation ${conversationId}`);
     if (!conversation.members.includes(from)) throw bad(`@${from} is not a member of ${conversationId}`, 403);
+    // Parsing is the costly part of the request, so it comes after the checks of who asks.
+    const document = parse(input.source);
+    checkSize(document.sections);
+    const title = titleOf(input.title ?? document.title);
     const id = `vis-${randomUUID().slice(0, 8)}`;
     const now = new Date().toISOString();
     const visual = {
@@ -180,8 +189,8 @@ export function createVisuals({ store, runner, tasks }) {
       updatedAt: now,
     };
     store.transaction(() => {
+      insert(visual);
       writeVersion(id, { number: 1, title, createdAt: now, updatedAt: now }, document.sections);
-      save(visual);
     });
     if (turn) turnVersions.set(turn, new Map([...(turnVersions.get(turn) ?? []), [id, 1]]));
     return { ...visual, sections: document.sections.map((section) => ({ id: section.id, title: section.title })) };

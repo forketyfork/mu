@@ -57,8 +57,9 @@ node "$MU_CLI" visual patch --id vis-1a2b3c4d --file .tmp/changes.md
 ```
 
 - A section whose ID exists is replaced. A section with a new ID is added after the section before it in the file, or at the end; `--after ID`, `--before ID` or `--first` place it elsewhere.
+- Start the file with the `## Heading {#id}` of the first section you change. Text before the first `##` replaces the lead section `intro`, and a first line `# Title` renames the visual.
 - `--remove ID[,ID]` removes sections. `--move ID` with `--after`, `--before` or `--first` moves one. `--title TEXT` renames the visual.
-- `--replace` makes the file the whole document. Use it only for a rewrite: the user sees every section marked as changed.
+- `--replace` makes the file the whole document: a section that is not in the file is removed. Only the sections that differ from the stored ones are marked as changed. Use it for a restructuring; for a change to a few sections, send those sections.
 - All changes of one turn make one new version. The user sees the changed sections flash and can step back to every earlier version, so say in chat what changed only when it is not obvious from the visual.
 
 Read back what is stored before you change it, so that you patch the current text and not what you remember:
@@ -66,7 +67,7 @@ Read back what is stored before you change it, so that you patch the current tex
 ```bash
 node "$MU_CLI" visual show --id vis-1a2b3c4d                  # outline: sections, sizes, block types
 node "$MU_CLI" visual show --id vis-1a2b3c4d --section steps  # the Markdown of one section
-node "$MU_CLI" visual list                                    # the visuals of this conversation
+node "$MU_CLI" visual list --conversation ID                  # the visuals of one conversation; without it, every visual you can read
 ```
 
 ## Make it worth reading

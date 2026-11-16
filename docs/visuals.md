@@ -25,7 +25,7 @@ Each turn in which the agent changes a visual makes one new version. The header 
 
 ## Links and images
 
-A visual cannot load anything from the network. An image is shown only when the document carries it; a remote image is replaced by a note. A click on a link does not navigate: the dashboard shows the address above the document and opens it in a new tab when you click **Open**.
+A visual cannot load anything from the network. An image is shown only when the document carries it; a remote image is replaced by a note. A click on a link, in the text or in a diagram, does not navigate: the dashboard shows the address above the document and opens it in a new tab when you click **Open**.
 
 A diagram or another block that cannot be drawn is replaced by the error and its source, and a notice above the document says in which section.
 
@@ -56,7 +56,7 @@ node src/cli.mjs visual guide                                         # the visu
 
 Only the author changes a visual; you and the members of its conversation read it. A visual belongs to the conversation of the turn that created it and to that conversation's task. See the [CLI reference](cli.md#visuals) for every option, and `skills/visuals/SKILL.md` for the instructions the agents follow.
 
-Limits: 200 sections per visual, 128 KiB per section. Code is highlighted in Bash, C, C++, CSS, diff, Dockerfile, Go, INI and TOML, Java, JavaScript, JSON, Kotlin, Markdown, Python, Ruby, Rust, shell sessions, SQL, Swift, TypeScript, XML and HTML, and YAML; other languages are shown as plain code.
+Limits: 200 sections per visual, 128 KiB per section, and 1 MiB for all sections of one version together. Code is highlighted in Bash, C, C++, CSS, diff, Dockerfile, Go, INI and TOML, Java, JavaScript, JSON, Kotlin, Markdown, Python, Ruby, Rust, shell sessions, SQL, Swift, TypeScript, XML and HTML, and YAML; other languages are shown as plain code.
 
 ## Where visuals are stored
 

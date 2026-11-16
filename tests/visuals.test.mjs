@@ -1,11 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import nodeCrypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import { syncBuiltinESMExports } from 'node:module';
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createApp, ROOT } from '../src/server.mjs';
 import { main } from '../src/cli.mjs';
-import { CODE_LANGUAGES, documentSource, parseBlocks, parseDocument, validateSection } from '../src/visual-format.mjs';
+import {
+  CODE_LANGUAGES,
+  LIMITS,
+  documentSource,
+  parseBlocks,
+  parseDocument,
+  validateSection,
+} from '../src/visual-format.mjs';
 import { offlinePricing } from './offline-pricing.mjs';
 import { userHeaders } from './identity-fixture.mjs';
 import { freePort, shortTempDir, temporaryMuHome } from './isolation.mjs';
@@ -76,6 +85,43 @@ test('section IDs come from the heading, are unique, and a heading inside a fenc
   assert.throws(() => parseDocument('## A {#same}\n## B {#same}'), /Line 2: section ID \{#same\} is used twice/);
   assert.throws(() => parseDocument('## A {#Bad_Id}'), /Line 1: section ID/);
   assert.throws(() => parseDocument('lead text\n## Lead {#intro}'), /used twice/);
+});
+
+test('a closing run of # ends a heading only after white space, and an ID is the last word of a heading', () => {
+  const titleOf = (line) => parseDocument(`${line}\n\ntext`).title;
+  assert.equal(titleOf('# C#'), 'C#');
+  assert.equal(titleOf('#  Plan ##  '), 'Plan');
+  assert.equal(titleOf('#\tPlan\t#'), 'Plan');
+  assert.equal(titleOf('# Plan #1'), 'Plan #1');
+  assert.equal(titleOf('#Plan'), null);
+  assert.equal(titleOf('# \t '), null);
+  const heading = (line) => {
+    const [{ id, title }] = parseDocument(line).sections;
+    return [id, title];
+  };
+  assert.deepEqual(heading('## C# {#c-sharp}'), ['c-sharp', 'C#']);
+  assert.deepEqual(heading('##   Steps   {#steps} ##'), ['steps', 'Steps']);
+  assert.deepEqual(heading('## {#only}'), ['only', '']);
+  assert.deepEqual(heading('## Use {#a} here'), ['use-a-here', 'Use {#a} here']);
+  assert.deepEqual(heading('## Map {#a b}'), ['map-a-b', 'Map {#a b}']);
+  assert.deepEqual(heading('## Set {#a}}'), ['set-a', 'Set {#a}}']);
+  assert.deepEqual(heading('## A {#x}{#y}'), ['y', 'A {#x}']);
+  assert.deepEqual(parseDocument('##\n## \n##x').sections, [{ id: 'intro', title: '', body: '##\n## \n##x' }]);
+});
+
+test('a long heading line is read in time proportional to its length', () => {
+  // Each of these lines kept a pattern with adjacent optional runs busy for seconds.
+  const sources = [
+    `# a${' '.repeat(4000)}b\n\ntext`,
+    `## a${' \t'.repeat(30_000)}b`,
+    `## a #${' '.repeat(60_000)}#b`,
+    `## a ${'{#'.repeat(30_000)} }`,
+    `## a${' '.repeat(60_000)}{#b}x`,
+  ];
+  const start = performance.now();
+  for (const source of sources) parseDocument(source);
+  const took = performance.now() - start;
+  assert.ok(took < 1000, `parsing took ${Math.round(took)} ms`);
 });
 
 test('an unclosed fence is refused, because it would swallow the sections after it', () => {
@@ -211,6 +257,11 @@ test('an agent writes a visual in its turn conversation, linked to its task and 
   assert.equal((await user('POST', '/api/visuals', { source: PLAN })).status, 403);
   assert.equal((await worker('POST', '/api/visuals', { source: PLAN, from: 'lead' })).status, 403);
   assert.equal((await outsider('POST', '/api/visuals', { source: PLAN, conversationId: 'work' })).status, 403);
+  assert.equal(
+    (await outsider('POST', '/api/visuals', { source: '# T\n## A\n```js\nopen', conversationId: 'work' })).status,
+    403,
+    'who asks is checked before the source is parsed',
+  );
   assert.match(
     (await worker('POST', '/api/visuals', { source: '## Only {#x}\ntext' })).body.error,
     /title must contain/,
@@ -234,6 +285,43 @@ test('an agent writes a visual in its turn conversation, linked to its task and 
   );
   assert.equal((await user('GET', '/api/visuals/vis-missing')).status, 404);
   assert.equal((await user('GET', `/api/visuals/${visual.id}?version=7`)).status, 404);
+});
+
+test('a new visual never takes the ID of another one', async (t) => {
+  const { app, user } = await team(t);
+  const randomUUID = t.mock.method(nodeCrypto, 'randomUUID', () => '0a1b2c3d-0000-4000-8000-000000000000');
+  syncBuiltinESMExports();
+  t.after(() => {
+    randomUUID.mock.restore();
+    syncBuiltinESMExports();
+  });
+  const first = app.visuals.create({ source: PLAN }, 'worker');
+  assert.equal(first.id, 'vis-0a1b2c3d');
+  assert.throws(() => app.visuals.create({ source: '# Other\n\nOther text.' }, 'worker'), /UNIQUE constraint failed/);
+  const read = (await user('GET', `/api/visuals/${first.id}`)).body;
+  assert.deepEqual([read.title, read.version, read.shown.sections.length], ['Storage plan', 1, 4]);
+  assert.equal(read.shown.sections[0].body, 'Why we move.');
+});
+
+test('all sections of a version together have a size limit', async (t) => {
+  const { worker } = await team(t);
+  const big = (ids) => ids.map((id) => `## ${id} {#${id}}\n\n${'x'.repeat(120 * 1024)}`).join('\n\n');
+  const { body: visual } = await worker('POST', '/api/visuals', { source: `# Big\n\n${big(['a', 'b', 'c', 'd'])}` });
+  assert.equal(visual.version, 1);
+  assert.equal((await worker('PATCH', `/api/visuals/${visual.id}`, { source: big(['e', 'f', 'g', 'h']) })).status, 200);
+  const over = await worker('PATCH', `/api/visuals/${visual.id}`, { source: big(['i']) });
+  assert.equal(over.status, 400);
+  assert.equal(
+    over.body.error,
+    `A visual holds at most ${LIMITS.documentBytes / 1024} KiB of text in all its sections; this one would hold 1081 KiB`,
+  );
+  assert.equal((await worker('GET', `/api/visuals/${visual.id}`)).body.sectionCount, 8);
+  // Replacing a section with a smaller one makes room.
+  assert.equal(
+    (await worker('PATCH', `/api/visuals/${visual.id}`, { source: '## a {#a}\n\nShort.\n\n## i {#i}\n\nAlso short.' }))
+      .status,
+    200,
+  );
 });
 
 test('the changes of one turn make one version; the next turn makes the next', async (t) => {
@@ -368,15 +456,15 @@ test('the frame page is sandboxed without network, and only its own files answer
   const crossSite = { Origin: 'null', 'Sec-Fetch-Site': 'cross-site' };
   const page = await fetch(`${url}/visual/frame.html`, { headers: crossSite });
   assert.equal(page.status, 200);
-  const policy = page.headers.get('content-security-policy');
-  for (const directive of [
-    "default-src 'none'",
-    'sandbox allow-scripts',
-    "frame-ancestors 'self'",
-    "script-src 'self'",
-  ])
-    assert.ok(policy.includes(directive), directive);
-  assert.doesNotMatch(policy, /connect-src|allow-same-origin|unsafe-eval|https?:/);
+  // The whole policy, word for word: it is what stops a handler that gets past the sanitizers, so a source added to
+  // any directive has to be a decision that changes this test.
+  assert.equal(
+    page.headers.get('content-security-policy'),
+    "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox allow-scripts",
+  );
+  // The frame's files answer at their listed paths only; no other spelling serves the page under another policy.
+  for (const path of ['/visual//frame.html', '//visual/frame.html', '/VISUAL/frame.html', '/visual//frame.js'])
+    assert.equal((await fetch(`${url}${path}`)).status, 404, path);
   const html = await page.text();
   assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)/, 'the policy allows no inline script');
   for (const [, asset] of html.matchAll(/(?:src|href)="([^"]+)"/g)) {

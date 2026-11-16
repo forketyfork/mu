@@ -7,6 +7,8 @@ export const LIMITS = Object.freeze({
   titleBytes: 160,
   sectionBytes: 128 * 1024,
   sections: 200,
+  // All sections of one version together: what the dashboard loads and the frame draws at once.
+  documentBytes: 1024 * 1024,
 });
 
 export const SECTION_ID = /^[a-z][a-z0-9-]{0,47}$/;
@@ -123,6 +125,39 @@ function slug(title) {
   return /^[a-z]/.test(base) ? base : `s-${base}`;
 }
 
+const isBlank = (char) => char === ' ' || char === '\t';
+
+// The text of a heading line of the given level, or null when the line is not one. A closing run of `#` counts only
+// after white space, as in CommonMark, so a title can end in `C#`. The scans are written out because a pattern with
+// two adjacent optional runs takes quadratic or cubic time on a long line of spaces, and this text comes from any
+// agent, parsed on the service's only thread.
+function headingText(line, level) {
+  if (!line.startsWith('#'.repeat(level)) || !isBlank(line[level])) return null;
+  let start = level;
+  while (start < line.length && isBlank(line[start])) start += 1;
+  let end = line.length;
+  while (end > start && isBlank(line[end - 1])) end -= 1;
+  if (end === start) return null;
+  let closing = end;
+  while (closing > start && line[closing - 1] === '#') closing -= 1;
+  if (closing < end && closing > start && isBlank(line[closing - 1])) {
+    end = closing;
+    while (end > start && isBlank(line[end - 1])) end -= 1;
+  }
+  return line.slice(start, end);
+}
+
+// Splits `Title {#id}` into its parts. The ID ends the heading and holds no closing brace and no white space; of
+// several `{#` that fit, the first one starts it.
+function headingId(heading) {
+  if (!heading.endsWith('}')) return { title: heading, id: null };
+  let from = heading.length - 1;
+  while (from > 0 && heading[from - 1] !== '}' && !/\s/.test(heading[from - 1])) from -= 1;
+  const at = heading.indexOf('{#', from);
+  if (at === -1) return { title: heading, id: null };
+  return { title: heading.slice(0, at).trim(), id: heading.slice(at + 2, -1) };
+}
+
 const trimBlankLines = (lines) => {
   let start = 0,
     end = lines.length;
@@ -147,26 +182,20 @@ export function parseDocument(source) {
   let seenContent = false;
   const unclosed = walk(text, (line, fence, index) => {
     if (!fence) {
-      const documentTitle = !seenContent && /^#[ \t]+(.+?)[ \t]*#*[ \t]*$/.exec(line);
-      if (documentTitle) {
-        title = documentTitle[1].trim();
+      const documentTitle = seenContent ? null : headingText(line, 1);
+      if (documentTitle !== null) {
+        title = documentTitle;
         seenContent = true;
         return;
       }
-      const heading = /^##[ \t]+(.+?)[ \t]*$/.exec(line);
-      if (heading) {
+      const heading = headingText(line, 2);
+      if (heading !== null) {
         seenContent = true;
-        let headingTitle = heading[1].replace(/[ \t]+#+$/, '');
-        let id = null;
-        const explicit = /^(.*?)[ \t]*\{#([^}\s]*)\}$/.exec(headingTitle);
-        if (explicit) {
-          headingTitle = explicit[1].trim();
-          id = explicit[2];
-          if (!SECTION_ID.test(id))
-            throw new Error(
-              `Line ${index + 1}: section ID {#${id}} must start with a lowercase letter and use at most 48 lowercase letters, digits or hyphens`,
-            );
-        }
+        const { title: headingTitle, id } = headingId(heading);
+        if (id !== null && !SECTION_ID.test(id))
+          throw new Error(
+            `Line ${index + 1}: section ID {#${id}} must start with a lowercase letter and use at most 48 lowercase letters, digits or hyphens`,
+          );
         drafts.push({ id, title: headingTitle, lines: [], line: index + 1 });
         return;
       }

@@ -76,6 +76,9 @@ test('a visual has an address, and its ID in text is a reference to it', () => {
   assert.equal(visualHash(ID, 3), `#visuals/${ID}/v3`);
   assert.deepEqual(visualFromHash(`#visuals/${ID}`), { id: ID, version: null });
   assert.deepEqual(visualFromHash(`#visuals/${ID}/v12`), { id: ID, version: 12 });
+  // As many digits as the service takes for a version.
+  assert.deepEqual(visualFromHash(`#visuals/${ID}/v123456789`), { id: ID, version: 123456789 });
+  assert.equal(visualFromHash(`#visuals/${ID}/v1234567890`), null);
   for (const hash of ['#visuals', '#visuals/', '#visuals/vis-xyz', `#visuals/${ID}/v0`, `#visuals/${ID}/../x`])
     assert.equal(visualFromHash(hash), null, hash);
   assert.equal(viewFromHash(`#visuals/${ID}/v2`), 'visuals');
@@ -314,6 +317,40 @@ test('the user steps through versions; an older version stays put when a newer o
   assert.equal($('#visual-viewer').hidden, true);
   assert.equal($('#visuals-index').hidden, false);
   assert.equal(ui.frame(), null, 'the frame is removed with its content');
+});
+
+test('the newest version changes while its turn runs, also for a user who pinned it', async (t) => {
+  const visual = record({ version: 2, revision: 3 });
+  const ui = await viewer(t, {
+    hash: `#visuals/${ID}/v2`,
+    visuals: [visual],
+    versions: { 2: versionOf(visual, 2, [section('a', 'a1'), section('b', 'b1')]) },
+  });
+  await settle();
+  ui.attach();
+  ui.fromFrame({ type: 'ready' });
+  assert.deepEqual(ui.asked, [`/api/visuals/${ID}?version=2`]);
+
+  const amended = record({ version: 2, revision: 4 });
+  ui.served.versions[2] = versionOf(amended, 2, [section('a', 'a2'), section('b', 'b1')]);
+  ui.update(withVisuals(amended));
+  await settle();
+  assert.equal(ui.asked.length, 2);
+  assert.deepEqual(ui.posted.at(-1).sections, [section('a', 'a2'), section('b', 'b1')]);
+  assert.deepEqual(ui.posted.at(-1).flash, ['a']);
+  assert.equal(ui.posted.at(-1).top, false);
+
+  // The next turn makes version 3; from then on version 2 stays as it is, and is not asked for again.
+  const next = record({ version: 3, revision: 5 });
+  ui.served.versions[2] = versionOf(next, 2, [section('a', 'a2'), section('b', 'b1')]);
+  ui.update(withVisuals(next));
+  await settle();
+  assert.equal(ui.asked.length, 3);
+  assert.deepEqual(ui.posted.at(-1).flash, []);
+  ui.update(withVisuals(record({ version: 3, revision: 6 })));
+  await settle();
+  assert.equal(ui.asked.length, 3);
+  assert.equal(ui.$('#visual-version-latest').textContent, 'Newest: v3');
 });
 
 test('what the frame says is checked: only its own messages count, and a link opens only as a confirmed web address', async (t) => {

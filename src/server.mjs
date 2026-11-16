@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { startEventLoopMonitor } from './event-loop-monitor.mjs';
 import { mkdir, readFile, realpath, stat } from 'node:fs/promises';
-import { dirname, join, resolve, isAbsolute, extname } from 'node:path';
+import { dirname, join, relative, resolve, isAbsolute, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { Store, STATUSES, mentions } from './store.mjs';
@@ -13,7 +13,7 @@ import { createTasks } from './tasks.mjs';
 import { createWaiting } from './waiting.mjs';
 import { createActivities } from './activities.mjs';
 import { createVisuals } from './visuals.mjs';
-import { CODE_LANGUAGES } from './visual-format.mjs';
+import { FRAME_POLICY, PAGE_POLICY, commonJsModule, frameAssetOf } from './browser-policy.mjs';
 import { createDashboardStream } from './dashboard.mjs';
 import { PricingCatalog } from './pricing.mjs';
 import { readBrag } from './brag.mjs';
@@ -43,42 +43,6 @@ import {
 import { httpError as bad } from './http-error.mjs';
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-// See "Visuals" in docs/architecture.md. The dashboard may embed only Mu's own pages, and the frame-src rule also
-// governs where an embedded frame can navigate itself.
-const PAGE_POLICY =
-  "default-src 'self'; connect-src 'self'; style-src 'self'; img-src 'self' data:; script-src 'self'; frame-src 'self'; frame-ancestors 'none'";
-// The page that renders a visual's content, written by agents. The sandbox directive gives it an opaque origin even
-// when it is opened outside the dashboard's sandboxed frame, and nothing in the policy allows a connection.
-const FRAME_PAGE = '/visual/frame.html';
-const FRAME_POLICY =
-  "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox allow-scripts";
-// Every file the frame loads, by its URL path; the frame gets no other file. highlight.js publishes its core as
-// CommonJS only, so that file is served inside a module wrapper.
-const FRAME_ASSETS = Object.freeze({
-  [FRAME_PAGE]: { file: 'public/visual/frame.html' },
-  '/visual/frame.css': { file: 'public/visual/frame.css' },
-  '/visual/frame.js': { file: 'public/visual/frame.js' },
-  '/visual/render.js': { file: 'public/visual/render.js' },
-  '/visual/format.js': { file: 'src/visual-format.mjs' },
-  '/vendor/marked.js': { file: 'node_modules/marked/lib/marked.esm.js' },
-  '/vendor/purify.js': { file: 'node_modules/dompurify/dist/purify.es.mjs' },
-  '/vendor/highlight/core.js': { file: 'node_modules/highlight.js/lib/core.js', commonJs: true },
-  ...Object.fromEntries(
-    CODE_LANGUAGES.map((language) => [
-      `/vendor/highlight/${language}.js`,
-      { file: `node_modules/highlight.js/es/languages/${language}.js` },
-    ]),
-  ),
-});
-// Mermaid loads the code of a diagram type when a diagram first needs it, from files it names itself.
-const MERMAID_FILE = /^\/vendor\/mermaid\/(mermaid\.esm\.min\.mjs|chunks\/mermaid\.esm\.min\/[A-Za-z0-9_-]+\.mjs)$/;
-function frameAssetOf(pathname) {
-  if (Object.hasOwn(FRAME_ASSETS, pathname)) return FRAME_ASSETS[pathname];
-  const mermaid = MERMAID_FILE.exec(pathname);
-  return mermaid ? { file: `node_modules/mermaid/dist/${mermaid[1]}` } : null;
-}
-const commonJsModule = (source) =>
-  `const module = { exports: {} };\n(function (module, exports) {\n${source}\n})(module, module.exports);\nexport default module.exports;\n`;
 // NUL and the CTCP marker would corrupt the IRC line that carries a message.
 // eslint-disable-next-line no-control-regex -- the pattern is about control characters
 const IRC_CONTROL = /[\0\x01]/;
@@ -1118,6 +1082,11 @@ export async function createApp({
         const file = pathname === '/' ? 'index.html' : pathname.slice(1);
         if (file.includes('..') || !/^[a-zA-Z0-9_./-]+$/.test(file)) throw bad('Not found', 404);
         const full = frameAsset ? join(root, frameAsset.file) : join(root, 'public', file);
+        // The frame's files answer only at their listed paths, which carry the frame's policy and no other. Another
+        // spelling that reaches the same file, such as a doubled slash or another letter case on a file system that
+        // ignores case, would serve the frame page with the dashboard's policy.
+        if (!frameAsset && relative(join(root, 'public'), full).toLowerCase().split(sep)[0] === 'visual')
+          throw bad('Not found', 404);
         let contents;
         try {
           contents = await readFile(full);
@@ -1136,7 +1105,7 @@ export async function createApp({
         response.writeHead(200, {
           'Content-Type': `${mime}; charset=utf-8`,
           'X-Content-Type-Options': 'nosniff',
-          'Content-Security-Policy': pathname === FRAME_PAGE ? FRAME_POLICY : PAGE_POLICY,
+          'Content-Security-Policy': frameAsset?.page ? FRAME_POLICY : PAGE_POLICY,
           ...(frameAsset ? { 'Access-Control-Allow-Origin': '*' } : {}),
         });
         response.end(contents);

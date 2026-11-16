@@ -236,9 +236,9 @@ export function createVisualsView({
       showError('');
       renderHeader();
       renderOutline();
-      // A change that arrives while the user follows the newest version is marked in place; a version the user
-      // switched to starts at its top.
-      const live = flash && previous && target.pinned === null;
+      // A change that arrives is marked in place: a new version for a user who follows the newest one, or new content
+      // of the version on screen. A version the user switched to starts at its top.
+      const live = flash && previous && (target.pinned === null || previous.shown.number === data.shown.number);
       sendContent(
         live ? changedSections(previous.shown.sections, data.shown.sections) : [],
         !live && previous?.shown.number !== data.shown.number,
@@ -351,7 +351,14 @@ export function createVisualsView({
       }
       const visual = record(open.id);
       renderHeader();
-      if (visual && open.data && visual.revision !== open.data.revision && open.pinned === null)
+      // The newest version changes for as long as the turn that made it runs, so a user who pinned it sees those
+      // changes too. A version before it never changes.
+      if (
+        visual &&
+        open.data &&
+        visual.revision !== open.data.revision &&
+        (open.pinned === null || open.pinned >= open.data.version)
+      )
         void load({ flash: true });
     },
     /** The visuals of a task, as links for its card; null when it has none. */

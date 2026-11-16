@@ -110,11 +110,14 @@ window.addEventListener('resize', reportActive);
 // A diagram that finishes drawing, or a new text size, moves the sections without a scroll.
 new ResizeObserver(reportActive).observe(container);
 
+// No link navigates the frame: the dashboard shows the address and the user decides. A link of a diagram is an SVG
+// element, which names its target in the XLink attribute.
 container.addEventListener('click', (event) => {
-  const link = /** @type {Element} */ (event.target).closest?.('a[href]');
+  const link = /** @type {Element} */ (event.target).closest?.('a');
   if (!link) return;
   event.preventDefault();
-  const href = link.getAttribute('href');
+  const href = link.getAttribute('href') ?? link.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+  if (href === null) return;
   if (href.startsWith('#')) document.getElementById(`section-${href.slice(1)}`)?.scrollIntoView({ behavior: 'smooth' });
   else tell({ type: 'link', href });
 });

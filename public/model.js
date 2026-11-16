@@ -200,7 +200,7 @@ export function viewFromHash(hash) {
 export const visualHash = (id, version = null) => `${viewHashes.visuals}/${id}${version ? `/v${version}` : ''}`;
 
 export function visualFromHash(hash) {
-  const match = /^#visuals\/(vis-[0-9a-f]{8})(?:\/v([1-9]\d{0,5}))?$/.exec(hash);
+  const match = /^#visuals\/(vis-[0-9a-f]{8})(?:\/v([1-9]\d{0,8}))?$/.exec(hash);
   return match ? { id: match[1], version: match[2] ? Number(match[2]) : null } : null;
 }
 
