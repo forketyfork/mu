@@ -118,14 +118,17 @@ test('the header carries the new-agent button and the dashboard drops the local 
   assert.equal(window.document.querySelector('h1').classList.contains('sr-only'), true);
 });
 
-test('the composer hint describes the message input and stays inside its field', async (t) => {
+test('the composer hint describes the message input and shares its controls row', async (t) => {
   const { $, window } = await fixture(t, { initial: state() });
   const input = $('#message-input');
   const hint = window.document.getElementById(input.getAttribute('aria-describedby'));
+  const controls = $('.composer-controls');
 
   assert.equal(hint.id, 'composer-hint');
-  assert.equal(hint.parentElement.classList.contains('composer-input'), true);
-  assert.equal(hint.parentElement.parentElement.classList.contains('composer-box'), true);
+  assert.equal(hint.parentElement, controls);
+  assert.equal(hint.previousElementSibling, $('.mention-controls'));
+  assert.equal(hint.nextElementSibling, $('#send-message'));
+  assert.equal(controls.parentElement.classList.contains('composer-box'), true);
   assert.equal($('#message-length').parentElement, hint);
   assert.match(hint.textContent, /Enter to send/);
   assert.match(hint.textContent, /64 KiB/);

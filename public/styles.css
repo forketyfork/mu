@@ -2845,7 +2845,7 @@ button.task-result {
   resize: none;
   border: 0;
   background: transparent;
-  padding: var(--space-14px) var(--space-16px) var(--space-32px);
+  padding: var(--space-14px) var(--space-16px);
   color: var(--composer-box-textarea-ink);
   font-size: var(--font-size-18px);
   line-height: var(--line-height-1-6);
@@ -2863,15 +2863,11 @@ button.task-result {
 }
 
 .composer-hint {
-  position: absolute;
-  right: var(--space-16px);
-  bottom: var(--space-7px);
-  left: var(--space-16px);
-  display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-6px);
+  min-width: 0;
   margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6px);
   color: var(--composer-hint-ink);
   font-size: var(--font-size-14px);
   line-height: var(--line-height-1-1);
@@ -2879,17 +2875,23 @@ button.task-result {
 }
 
 .composer-hint > span:first-child {
+  flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .composer-hint #message-length {
+  flex: none;
   white-space: nowrap;
 }
 
 .composer-controls {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
+  gap: var(--space-12px);
   padding: var(--space-8px) var(--space-12px) var(--space-12px);
 }
 
@@ -2897,6 +2899,7 @@ button.task-result {
   display: flex;
   align-items: center;
   gap: var(--space-11px);
+  min-width: 0;
 }
 
 .mention-button {
@@ -2917,6 +2920,7 @@ button.task-result {
 .composer-identity {
   font-size: var(--font-size-14px);
   color: var(--composer-identity-ink);
+  white-space: nowrap;
 }
 
 .composer-identity strong {
@@ -3758,21 +3762,14 @@ kbd {
 
   .composer-box textarea {
     font-size: var(--font-size-18px);
-    padding-bottom: var(--space-64px);
-  }
-
-  html[data-font-size='largest'] .composer-box textarea {
-    padding-bottom: calc(var(--space-64px) + var(--space-24px));
   }
 
   .composer-identity {
     font-size: var(--font-size-14px);
   }
 
-  .composer-hint {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--space-4px) var(--space-6px);
+  .composer-controls {
+    gap: var(--space-8px);
   }
 
   .chat-count {
@@ -3807,43 +3804,42 @@ kbd {
   }
 }
 
-@media (width <= 360px) {
-  .composer-box textarea {
-    padding-bottom: calc(var(--space-72px) + var(--space-4px));
-  }
-
-  html[data-font-size='larger'] .composer-box textarea {
-    padding-bottom: calc(var(--space-72px) + var(--space-8px));
-  }
-
-  html[data-font-size='largest'] .composer-box textarea {
-    padding-bottom: calc(var(--space-72px) + var(--space-16px));
-  }
-}
-
 @media (width <= 400px) {
-  .composer-hint {
-    grid-template-columns: minmax(0, 1fr);
+  .composer-controls {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    column-gap: var(--space-6px);
+    padding-left: var(--space-8px);
+    padding-right: var(--space-8px);
   }
 
-  .composer-hint #message-length {
-    justify-self: end;
+  .mention-controls {
+    gap: var(--space-6px);
+  }
+
+  .mention-button {
+    width: 30px;
+    height: 30px;
+  }
+
+  .composer-identity {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .composer-hint-instruction {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 
 @media (width > 360px) and (width <= 400px) {
   html[data-font-size='larger'] .composer-box textarea {
     padding-bottom: calc(var(--space-64px) + var(--space-8px));
-  }
-}
-
-@media (width <= 340px) {
-  html[data-font-size='larger'] .composer-box textarea {
-    padding-bottom: calc(var(--space-72px) + var(--space-16px));
-  }
-
-  html[data-font-size='largest'] .composer-box textarea {
-    padding-bottom: calc(var(--space-72px) + var(--space-24px));
   }
 }
 

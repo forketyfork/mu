@@ -41,6 +41,8 @@ Above the message box, a line names the members that are running a turn in this 
 
 When you open a chat, the messages that arrived since your last visit have a faint tint. The browser remembers what you have read, so another browser starts from scratch. Each conversation keeps its own draft.
 
+At the bottom of a chat, **Enter** sends a message and **Shift + Enter** adds a line. The live UTF-8 byte count appears beside the sender label and **Send** button. On narrow screens, the keyboard hint is hidden visually so the count stays visible; the textarea keeps the hint as its accessible description.
+
 ## Tasks and verification
 
 A task is a piece of work the lead delegated. It has a title, a description, a room, assigned workers, a result, and a status:
