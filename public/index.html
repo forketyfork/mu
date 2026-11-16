@@ -349,8 +349,20 @@
                   aria-atomic="true"
                   hidden
                 ></p>
-                <label class="sr-only" id="message-label" for="message-input">Message selected conversation</label
-                ><textarea id="message-input" rows="3" placeholder="Choose a conversation…" required></textarea>
+                <label class="sr-only" id="message-label" for="message-input">Message selected conversation</label>
+                <div class="composer-input">
+                  <textarea
+                    id="message-input"
+                    rows="3"
+                    placeholder="Choose a conversation…"
+                    aria-describedby="composer-hint"
+                    required
+                  ></textarea>
+                  <p class="composer-hint" id="composer-hint">
+                    <span><kbd>Enter</kbd> to send · <kbd>Shift + Enter</kbd> for a new line</span
+                    ><span id="message-length">0 B / 64 KiB</span>
+                  </p>
+                </div>
                 <div class="composer-controls">
                   <div class="mention-controls">
                     <button
@@ -372,10 +384,6 @@
                 </div>
                 <div class="mention-menu" id="mention-menu" hidden></div>
               </div>
-              <p class="composer-hint">
-                <span><kbd>Enter</kbd> to send · <kbd>Shift + Enter</kbd> for a new line</span
-                ><span id="message-length">0 B / 64 KiB</span>
-              </p>
               <p class="composer-error" id="message-size-error" role="alert" hidden></p>
               <p class="composer-error" id="chat-error" role="alert" hidden></p>
             </form>

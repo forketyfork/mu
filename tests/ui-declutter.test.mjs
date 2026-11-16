@@ -118,6 +118,19 @@ test('the header carries the new-agent button and the dashboard drops the local 
   assert.equal(window.document.querySelector('h1').classList.contains('sr-only'), true);
 });
 
+test('the composer hint describes the message input and stays inside its field', async (t) => {
+  const { $, window } = await fixture(t, { initial: state() });
+  const input = $('#message-input');
+  const hint = window.document.getElementById(input.getAttribute('aria-describedby'));
+
+  assert.equal(hint.id, 'composer-hint');
+  assert.equal(hint.parentElement.classList.contains('composer-input'), true);
+  assert.equal(hint.parentElement.parentElement.classList.contains('composer-box'), true);
+  assert.equal($('#message-length').parentElement, hint);
+  assert.match(hint.textContent, /Enter to send/);
+  assert.match(hint.textContent, /64 KiB/);
+});
+
 test('summary blocks list the active agents and the tasks they count, with untrusted text as text', async (t) => {
   const hostile = '<img src=x onerror=alert(1)>';
   const worker = (id, status) => ({ ...agent, id, role: 'worker', status });

@@ -480,9 +480,10 @@ p {
 }
 
 .topbar-right .button {
-  min-height: 0;
+  min-height: var(--space-40px);
   padding: var(--space-8px) var(--space-16px);
   font-size: var(--font-size-15px);
+  line-height: var(--line-height-1);
 }
 
 .archive-toggle {
@@ -2332,7 +2333,7 @@ button.task-result {
   display: flex;
   align-items: center;
   gap: var(--space-18px);
-  padding: var(--space-12px) var(--space-24px);
+  padding: var(--space-8px) var(--space-20px);
   border-bottom: 1px solid var(--chat-header-edge);
   background: linear-gradient(130deg, var(--chat-header-surface), var(--chat-header-surface-2));
   flex-shrink: 0;
@@ -2348,7 +2349,7 @@ button.task-result {
   display: flex;
   align-items: center;
   gap: var(--space-8px);
-  min-height: 42px;
+  min-height: var(--space-40px);
   padding: 0 var(--space-12px);
   border: 1px solid var(--conversation-browser-summary-edge);
   border-radius: var(--border-radius-8px);
@@ -2587,6 +2588,12 @@ button.task-result {
 
 .chat-actions .text-button {
   white-space: nowrap;
+}
+
+.chat-header #new-room {
+  min-height: var(--space-40px);
+  padding: var(--space-8px) var(--space-16px);
+  line-height: var(--line-height-1);
 }
 
 .chat-header .conversation-members {
@@ -2838,7 +2845,7 @@ button.task-result {
   resize: none;
   border: 0;
   background: transparent;
-  padding: var(--space-16px) var(--space-16px) var(--space-6px);
+  padding: var(--space-14px) var(--space-16px) var(--space-32px);
   color: var(--composer-box-textarea-ink);
   font-size: var(--font-size-18px);
   line-height: var(--line-height-1-6);
@@ -2849,6 +2856,34 @@ button.task-result {
 
 .composer-box textarea::placeholder {
   color: var(--composer-box-textarea-placeholder-ink);
+}
+
+.composer-input {
+  position: relative;
+}
+
+.composer-hint {
+  position: absolute;
+  right: var(--space-16px);
+  bottom: var(--space-7px);
+  left: var(--space-16px);
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-6px);
+  margin: 0;
+  color: var(--composer-hint-ink);
+  font-size: var(--font-size-12px);
+  line-height: var(--line-height-1-1);
+  pointer-events: none;
+}
+
+.composer-hint > span:first-child {
+  min-width: 0;
+}
+
+.composer-hint #message-length {
+  white-space: nowrap;
 }
 
 .composer-controls {
@@ -2908,17 +2943,6 @@ button.task-result {
 .send-button svg {
   width: 24px;
   height: 24px;
-}
-
-.composer-hint {
-  margin-top: var(--space-11px);
-  display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-6px);
-  color: var(--composer-hint-ink);
-  font-size: var(--font-size-14px);
-  line-height: var(--line-height-1-6);
 }
 
 kbd {
@@ -3238,8 +3262,8 @@ kbd {
   }
 
   .chat-header {
-    padding-left: var(--space-29px);
-    padding-right: var(--space-29px);
+    padding-left: var(--space-20px);
+    padding-right: var(--space-20px);
   }
 
   .messages {
@@ -3368,8 +3392,8 @@ kbd {
   }
 
   .chat-header {
-    padding-left: var(--space-22px);
-    padding-right: var(--space-22px);
+    padding-left: var(--space-20px);
+    padding-right: var(--space-20px);
   }
 
   .messages {
@@ -3474,8 +3498,8 @@ kbd {
   }
 
   .chat-header {
-    padding-left: var(--space-27px);
-    padding-right: var(--space-27px);
+    padding-left: var(--space-20px);
+    padding-right: var(--space-20px);
   }
 
   .messages {
@@ -3492,10 +3516,6 @@ kbd {
 
   .message-text {
     font-size: var(--font-size-18px);
-  }
-
-  .composer-hint {
-    font-size: var(--font-size-14px);
   }
 
   .workspace-footer {
@@ -3738,6 +3758,7 @@ kbd {
 
   .composer-box textarea {
     font-size: var(--font-size-18px);
+    padding-bottom: var(--space-64px);
   }
 
   .composer-identity {
@@ -3745,8 +3766,9 @@ kbd {
   }
 
   .composer-hint {
-    font-size: var(--font-size-14px);
-    gap: var(--space-7px);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-4px) var(--space-6px);
   }
 
   .chat-count {
@@ -3778,6 +3800,20 @@ kbd {
 
   .field-hint {
     font-size: var(--font-size-14px);
+  }
+}
+
+@media (width <= 360px) {
+  .composer-box textarea {
+    padding-bottom: calc(var(--space-72px) + var(--space-4px));
+  }
+
+  .composer-hint {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .composer-hint #message-length {
+    justify-self: end;
   }
 }
 
