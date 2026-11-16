@@ -2873,7 +2873,7 @@ button.task-result {
   gap: var(--space-6px);
   margin: 0;
   color: var(--composer-hint-ink);
-  font-size: var(--font-size-12px);
+  font-size: var(--font-size-14px);
   line-height: var(--line-height-1-1);
   pointer-events: none;
 }
@@ -3761,6 +3761,10 @@ kbd {
     padding-bottom: var(--space-64px);
   }
 
+  html[data-font-size='largest'] .composer-box textarea {
+    padding-bottom: calc(var(--space-64px) + var(--space-24px));
+  }
+
   .composer-identity {
     font-size: var(--font-size-14px);
   }
@@ -3808,12 +3812,38 @@ kbd {
     padding-bottom: calc(var(--space-72px) + var(--space-4px));
   }
 
+  html[data-font-size='larger'] .composer-box textarea {
+    padding-bottom: calc(var(--space-72px) + var(--space-8px));
+  }
+
+  html[data-font-size='largest'] .composer-box textarea {
+    padding-bottom: calc(var(--space-72px) + var(--space-16px));
+  }
+}
+
+@media (width <= 400px) {
   .composer-hint {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .composer-hint #message-length {
     justify-self: end;
+  }
+}
+
+@media (width > 360px) and (width <= 400px) {
+  html[data-font-size='larger'] .composer-box textarea {
+    padding-bottom: calc(var(--space-64px) + var(--space-8px));
+  }
+}
+
+@media (width <= 340px) {
+  html[data-font-size='larger'] .composer-box textarea {
+    padding-bottom: calc(var(--space-72px) + var(--space-16px));
+  }
+
+  html[data-font-size='largest'] .composer-box textarea {
+    padding-bottom: calc(var(--space-72px) + var(--space-24px));
   }
 }
 
