@@ -299,11 +299,13 @@ async function opened(t, shots) {
   const { sessionId } = await browser.send('Target.attachToTarget', { targetId, flatten: true });
   await browser.send('Page.enable', {}, sessionId);
   await browser.send('Network.enable', {}, sessionId);
-  await browser.send(
-    'Emulation.setDeviceMetricsOverride',
-    { width: 1500, height: 1000, deviceScaleFactor: 1, mobile: false },
-    sessionId,
-  );
+  const viewport = (width, height) =>
+    browser.send(
+      'Emulation.setDeviceMetricsOverride',
+      { width, height, deviceScaleFactor: 1, mobile: false },
+      sessionId,
+    );
+  await viewport(1500, 1000);
   const evaluate = async (expression, session = sessionId) => {
     const result = await browser.send(
       'Runtime.evaluate',
@@ -352,12 +354,27 @@ async function opened(t, shots) {
     inFrame,
     shot,
     drawn,
+    viewport,
   };
 }
 
 test('a visual renders in the sandboxed frame of a real browser', async (t) => {
-  const { app, url, worker, visual, elsewhere, reached, requests, refused, logs, evaluate, inFrame, shot, drawn } =
-    await opened(t, '');
+  const {
+    app,
+    url,
+    worker,
+    visual,
+    elsewhere,
+    reached,
+    requests,
+    refused,
+    logs,
+    evaluate,
+    inFrame,
+    shot,
+    drawn,
+    viewport,
+  } = await opened(t, '');
   const facts = await inFrame(`(async () => {
     const result = {
       origin: window.origin,
@@ -514,11 +531,7 @@ test('a visual renders in the sandboxed frame of a real browser', async (t) => {
 
   await evaluate(`document.querySelector('#reader-font-size-options [data-font-size="largest"]').click()`);
   await redrawn(largest);
-  await browser.send(
-    'Emulation.setDeviceMetricsOverride',
-    { width: 390, height: 844, deviceScaleFactor: 1, mobile: false },
-    sessionId,
-  );
+  await viewport(390, 844);
   const mobileViewer = await evaluate(`(() => {
     const pane = document.getElementById('visuals');
     const header = document.querySelector('.visual-header');
@@ -557,11 +570,7 @@ test('a visual renders in the sandboxed frame of a real browser', async (t) => {
   assert.ok(mobileIndex.indexScrollWidth <= mobileIndex.indexWidth + 1, JSON.stringify(mobileIndex));
   await evaluate(`location.hash = '#visuals/${visual.id}/v1'`);
   await until('the mobile visual viewer again', () => evaluate(`!document.getElementById('visual-viewer').hidden`));
-  await browser.send(
-    'Emulation.setDeviceMetricsOverride',
-    { width: 1500, height: 1000, deviceScaleFactor: 1, mobile: false },
-    sessionId,
-  );
+  await viewport(1500, 1000);
   await evaluate(`document.querySelector('#reader-font-size-options [data-font-size="${initial}"]').click()`);
   await redrawn(before.size);
 
