@@ -39,6 +39,17 @@ Comments stay with the version they were written on. A new version starts withou
 
 When the author changes a section in the same turn after you commented on it, the comment keeps the text it was written on and says that the section changed. A stopped author reads its comments when it is resumed.
 
+## Answer questions
+
+A visual can ask you questions: one of several options, several of them, a short text, a number, or yes or no. The controls are in the document, at the place where the question comes up, and your answers are listed on the right under **Your answers**.
+
+- Click or type your answer. It is stored at once and stays yours: the author does not see it until you send it. Each question shows where it stands: no answer, the author's suggestion, not sent, or sent.
+- The author can suggest an answer. A suggestion that you leave as it is counts as your answer when you send.
+- **Send answers** sends all answers of the visual in one message, together with your draft comments on that version, so the author gets one round of feedback in one turn. While answers wait, a line over the document says how many, and **Review and send** takes you to the list.
+- After sending you can change an answer and send again; the message then says which answers changed. **Clear** takes an answer back, and **Back to the suggestion** returns to what the author suggested.
+
+Questions are answered on the newest version. An earlier version shows its questions with your answers and takes no change. An answer stays with its question: when the author changes other parts of the visual, or moves the question, your answer is still there; when the author changes the question itself, it starts without an answer. The list of visuals shows for each visual how many questions wait for you.
+
 ## Links and images
 
 A visual cannot load anything from the network. An image is shown only when the document carries it; a remote image is replaced by a note. A click on a link, in the text or in a diagram, does not navigate: the dashboard shows the address above the document and opens it in a new tab when you click **Open**.
@@ -47,7 +58,7 @@ A diagram or another block that cannot be drawn is replaced by the error and its
 
 ## How agents write visuals
 
-An agent writes one Markdown file and sends it with the CLI. The first line `# Title` names the visual, each `## Heading {#id}` starts a section, a fenced block with a language is highlighted code, and a `mermaid` block is a diagram:
+An agent writes one Markdown file and sends it with the CLI. The first line `# Title` names the visual, each `## Heading {#id}` starts a section, a fenced block with a language is highlighted code, a `mermaid` block is a diagram, and a `form` block asks questions:
 
 ````markdown
 # Move the session store to SQLite
@@ -60,6 +71,16 @@ What this is, and what you need from the reader.
 flowchart LR
   Agent -->|patch| Service --> Store[(SQLite)]
 ```
+
+## Decide {#decide}
+
+```form
+{ "fields": [
+  { "id": "store", "type": "choice", "label": "Which store?", "default": "sqlite",
+    "options": [ { "id": "sqlite", "label": "SQLite", "hint": "One file" }, { "id": "files", "label": "Keep the files" } ] },
+  { "id": "dry-run", "type": "toggle", "label": "Start with a dry run?" }
+] }
+```
 ````
 
 ```bash
@@ -69,17 +90,18 @@ node src/cli.mjs visual patch --id vis-1a2b3c4d --remove old-idea
 node src/cli.mjs visual show --id vis-1a2b3c4d --section flow
 node src/cli.mjs visual comments --id vis-1a2b3c4d                   # your comments that wait for an answer
 node src/cli.mjs visual patch --id vis-1a2b3c4d --file changes.md --resolves vc-5e6f7a8b
+node src/cli.mjs visual answers --id vis-1a2b3c4d                    # the answers you sent, by question
 node src/cli.mjs visual guide                                         # the visuals skill
 ```
 
-Only the author changes a visual; you and the members of its conversation read it, and only you comment on it. A visual belongs to the conversation of the turn that created it and to that conversation's task. See the [CLI reference](cli.md#visuals) for every option, and `skills/visuals/SKILL.md` for the instructions the agents follow.
+Only the author changes a visual; you and the members of its conversation read it, and only you comment on it and answer its questions. A visual belongs to the conversation of the turn that created it and to that conversation's task. See the [CLI reference](cli.md#visuals) for every option, and `skills/visuals/SKILL.md` for the instructions the agents follow.
 
-Limits: 200 sections per visual, 128 KiB per section, and 1 MiB for all sections of one version together; 200 comments per version, each up to 4000 bytes, with a quote of up to 600 characters. Code is highlighted in Bash, C, C++, CSS, diff, Dockerfile, Go, INI and TOML, Java, JavaScript, JSON, Kotlin, Markdown, Python, Ruby, Rust, shell sessions, SQL, Swift, TypeScript, XML and HTML, and YAML; other languages are shown as plain code.
+Limits: 200 sections per visual, 128 KiB per section, and 1 MiB for all sections of one version together; 200 comments per version, each up to 4000 bytes, with a quote of up to 600 characters; 30 questions per form with up to 12 options each, 100 questions per version, and 2000 characters per text answer. Code is highlighted in Bash, C, C++, CSS, diff, Dockerfile, Go, INI and TOML, Java, JavaScript, JSON, Kotlin, Markdown, Python, Ruby, Rust, shell sessions, SQL, Swift, TypeScript, XML and HTML, and YAML; other languages are shown as plain code.
 
 ## Where visuals are stored
 
-In the database in the data directory (`~/.mu/data/mu.sqlite` by default), with every version and every comment. The service alone writes them.
+In the database in the data directory (`~/.mu/data/mu.sqlite` by default), with every version, every comment and every answer. The service alone writes them.
 
 ## Safety
 
-The content of a visual comes from an agent, which may have read untrusted text, so the dashboard treats it as hostile. It is drawn in a sandboxed frame that holds no credential and has no network access; the title, the author, the versions, the comments and the confirmation of a link are drawn by the dashboard itself, outside that frame. See [Security model](security.md#visuals) and [Architecture](architecture.md#visuals).
+The content of a visual comes from an agent, which may have read untrusted text, so the dashboard treats it as hostile. It is drawn in a sandboxed frame that holds no credential and has no network access; the title, the author, the versions, the comments, the list of your answers and the confirmation of a link are drawn by the dashboard itself, outside that frame. The controls of a question are inside the frame, so nothing is sent from there: you send from the list, which shows what the service stored. See [Security model](security.md#visuals) and [Architecture](architecture.md#visuals).

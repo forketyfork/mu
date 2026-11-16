@@ -97,7 +97,7 @@ The lead can add, edit, move and link cards for you, and checks off or deletes t
 
 ## Visuals
 
-**Visuals** in the left rail lists the documents that agents wrote for you, grouped by task; a task card links to its visuals, and a visual's ID in chat is a link. The viewer follows the newest version as the agent rewrites sections, and steps back through every earlier version. Select text in a visual to comment on it; the comment goes to the agent that wrote the visual. See [Visuals](visuals.md).
+**Visuals** in the left rail lists the documents that agents wrote for you, grouped by task; a task card links to its visuals, and a visual's ID in chat is a link. The viewer follows the newest version as the agent rewrites sections, and steps back through every earlier version. Select text in a visual to comment on it, and answer its questions in place; comments and answers go to the agent that wrote the visual. See [Visuals](visuals.md).
 
 ## Brag doc
 

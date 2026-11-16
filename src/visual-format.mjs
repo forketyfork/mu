@@ -29,11 +29,192 @@ export const LEAD_SECTION = 'intro';
  * @typedef {{ type: string, text: string, info: string }} Block
  */
 
+// A form asks the user questions; the answers go back to the author.
+export const FORM_LIMITS = Object.freeze({
+  fields: 30,
+  options: 12,
+  labelChars: 300,
+  helpChars: 600,
+  unitChars: 20,
+  answerChars: 2000,
+  // All forms of one version together.
+  visualFields: 100,
+});
+export const FIELD_TYPES = Object.freeze(['choice', 'multi', 'text', 'number', 'toggle']);
+
+/**
+ * @typedef {{ id: string, label: string, hint?: string }} FormOption
+ * @typedef {{
+ *   id: string, type: string, label: string, help?: string, options?: FormOption[],
+ *   default?: string | string[] | number | boolean, min?: number, max?: number, step?: number, unit?: string,
+ *   multiline?: boolean, placeholder?: string, maxLength?: number,
+ * }} FormField
+ */
+
+const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
+// Control characters draw nothing and can hide text; a line break is allowed only where a text spans lines.
+// eslint-disable-next-line no-control-regex -- the patterns are about control characters
+const hasControl = (text, lines) => (lines ? /[\0-\x08\x0b-\x1f\x7f]/ : /[\0-\x1f\x7f]/).test(text);
+const FIELD_KEYS = {
+  choice: ['options', 'default'],
+  multi: ['options', 'default'],
+  text: ['default', 'multiline', 'placeholder', 'maxLength'],
+  number: ['default', 'min', 'max', 'step', 'unit'],
+  toggle: ['default'],
+};
+
+/**
+ * The fields of a form block, checked and in one fixed shape, so that the same question always has the same text.
+ * The block is JSON: `{"fields": [{"id": "db", "type": "choice", "label": "Which database?", "options": [...]}]}`.
+ * @param {string} text
+ * @returns {{ fields: FormField[] }}
+ */
+export function parseForm(text) {
+  let spec;
+  try {
+    spec = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`A form block is JSON, and this one does not parse: ${error.message}`, { cause: error });
+  }
+  if (!isObject(spec) || !Array.isArray(spec.fields))
+    throw new Error('A form block is a JSON object with a list "fields"');
+  const only = (object, allowed, what) => {
+    const unknown = Object.keys(object).find((key) => !allowed.includes(key));
+    if (unknown !== undefined) throw new Error(`${what} has no property "${unknown}"; it takes ${allowed.join(', ')}`);
+  };
+  only(spec, ['fields'], 'A form');
+  if (!spec.fields.length || spec.fields.length > FORM_LIMITS.fields)
+    throw new Error(`A form has 1–${FORM_LIMITS.fields} fields`);
+  const used = new Set();
+  const fields = spec.fields.map((raw, index) => {
+    const named = isObject(raw) && typeof raw.id === 'string' ? ` (${raw.id.slice(0, 48)})` : '';
+    const where = `Form field ${index + 1}${named}`;
+    const fail = (message) => {
+      throw new Error(`${where}: ${message}`);
+    };
+    if (!isObject(raw)) fail('a field is an object');
+    if (typeof raw.id !== 'string' || !SECTION_ID.test(raw.id))
+      fail('"id" must start with a lowercase letter and use at most 48 lowercase letters, digits or hyphens');
+    if (used.has(raw.id)) fail('this ID is used twice in the form');
+    used.add(raw.id);
+    if (!FIELD_TYPES.includes(raw.type)) fail(`"type" is one of ${FIELD_TYPES.join(', ')}`);
+    only(raw, ['id', 'type', 'label', 'help', ...FIELD_KEYS[raw.type]], `${where}: a ${raw.type} field`);
+    const textOf = (value, name, max, { lines = false, needed = false } = {}) => {
+      if (value === undefined && !needed) return undefined;
+      const trimmed = typeof value === 'string' ? value.trim() : null;
+      if (trimmed === null || (needed && !trimmed) || [...trimmed].length > max || hasControl(trimmed, lines))
+        fail(`"${name}" must be text of ${needed ? '1–' : 'at most '}${max} characters`);
+      return trimmed;
+    };
+    const numberOf = (value, name) => {
+      if (value === undefined) return undefined;
+      if (typeof value !== 'number' || !Number.isFinite(value)) fail(`"${name}" must be a number`);
+      return value;
+    };
+    /** @type {FormField} */
+    const field = {
+      id: raw.id,
+      type: raw.type,
+      label: textOf(raw.label, 'label', FORM_LIMITS.labelChars, { needed: true }),
+    };
+    const help = textOf(raw.help, 'help', FORM_LIMITS.helpChars);
+    if (help) field.help = help;
+    if (raw.type === 'choice' || raw.type === 'multi') {
+      const least = raw.type === 'choice' ? 2 : 1;
+      if (!Array.isArray(raw.options) || raw.options.length < least || raw.options.length > FORM_LIMITS.options)
+        fail(`"options" must be a list of ${least}–${FORM_LIMITS.options} options`);
+      const optionIds = new Set();
+      field.options = raw.options.map((option, at) => {
+        if (!isObject(option) || typeof option.id !== 'string' || !SECTION_ID.test(option.id))
+          fail(`option ${at + 1} needs an "id" like a field's and a "label"`);
+        only(option, ['id', 'label', 'hint'], `${where}: option ${at + 1}`);
+        if (optionIds.has(option.id)) fail(`option ID ${option.id} is used twice`);
+        optionIds.add(option.id);
+        const hint = textOf(option.hint, `options[${at}].hint`, FORM_LIMITS.helpChars);
+        return {
+          id: option.id,
+          label: textOf(option.label, `options[${at}].label`, FORM_LIMITS.labelChars, { needed: true }),
+          ...(hint ? { hint } : {}),
+        };
+      });
+    } else if (raw.type === 'text') {
+      if (raw.multiline !== undefined && typeof raw.multiline !== 'boolean') fail('"multiline" must be true or false');
+      if (raw.multiline) field.multiline = true;
+      const placeholder = textOf(raw.placeholder, 'placeholder', FORM_LIMITS.labelChars);
+      if (placeholder) field.placeholder = placeholder;
+      if (raw.maxLength !== undefined) {
+        if (!Number.isInteger(raw.maxLength) || raw.maxLength < 1 || raw.maxLength > FORM_LIMITS.answerChars)
+          fail(`"maxLength" must be a whole number from 1 to ${FORM_LIMITS.answerChars}`);
+        field.maxLength = raw.maxLength;
+      }
+    } else if (raw.type === 'number') {
+      for (const name of ['min', 'max', 'step']) {
+        const value = numberOf(raw[name], name);
+        if (value !== undefined) field[name] = value;
+      }
+      if (field.min !== undefined && field.max !== undefined && field.min > field.max)
+        fail('"min" must not be larger than "max"');
+      if (field.step !== undefined && field.step <= 0) fail('"step" must be larger than 0');
+      const unit = textOf(raw.unit, 'unit', FORM_LIMITS.unitChars);
+      if (unit) field.unit = unit;
+    }
+    if (raw.default !== undefined) {
+      try {
+        field.default = answerOf(field, raw.default);
+      } catch (error) {
+        fail(`"default" is not an answer to this field: ${error.message}`);
+      }
+    }
+    return field;
+  });
+  return { fields };
+}
+
+/**
+ * An answer to a field, checked and in one fixed shape: an option ID for a choice, a list of option IDs in the order
+ * of the options for a multi, text, a number, or true or false.
+ * @param {FormField} field
+ * @param {unknown} value
+ */
+export function answerOf(field, value) {
+  if (field.type === 'choice') {
+    if (typeof value !== 'string' || !field.options.some((option) => option.id === value))
+      throw new Error(`the answer is one of ${field.options.map((option) => option.id).join(', ')}`);
+    return value;
+  }
+  if (field.type === 'multi') {
+    const ids = field.options.map((option) => option.id);
+    if (!Array.isArray(value) || !value.every((id) => typeof id === 'string' && ids.includes(id)))
+      throw new Error(`the answer is a list of ${ids.join(', ')}`);
+    return ids.filter((id) => value.includes(id));
+  }
+  if (field.type === 'text') {
+    const max = field.maxLength ?? FORM_LIMITS.answerChars;
+    const text = typeof value === 'string' ? value.replace(/\r\n?/g, '\n').trim() : null;
+    if (text === null || !text || [...text].length > max || hasControl(text, field.multiline === true))
+      throw new Error(`the answer is text of 1–${max} characters${field.multiline ? '' : ' on one line'}`);
+    return text;
+  }
+  if (field.type === 'number') {
+    if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error('the answer is a number');
+    if ((field.min !== undefined && value < field.min) || (field.max !== undefined && value > field.max))
+      throw new Error(`the answer is a number from ${field.min ?? '−∞'} to ${field.max ?? '∞'}`);
+    return value;
+  }
+  if (typeof value !== 'boolean') throw new Error('the answer is true or false');
+  return value;
+}
+
 /** @type {Record<string, { validate: (block: Block) => void }>} */
 export const RICH_BLOCKS = {
   mermaid: {
     validate(block) {
       if (!block.text.trim()) throw new Error('A mermaid block needs a diagram');
+    },
+  },
+  form: {
+    validate(block) {
+      parseForm(block.text);
     },
   },
 };

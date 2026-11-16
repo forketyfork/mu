@@ -52,6 +52,9 @@ Usage: node src/cli.mjs COMMAND [options]
   visual comments --id ID [--version N] [--all]
                   (the user's comments that wait for an answer, each with its section, block and quoted text;
                    --all: the answered ones too)
+  visual answers  --id ID [--version N]
+                  (the answers that the user sent to the questions of the visual's forms, by field ID, and the
+                   questions without an answer)
   visual list     [--task-id ID] [--conversation ID]
   visual guide    (prints the visuals skill: when to write a visual, its format and how to revise it)
   inbox           [--id ID] [--wait SECONDS]
@@ -133,6 +136,7 @@ const commandOptions = {
     'from',
   ],
   'visual:comments': ['id', 'version', 'all'],
+  'visual:answers': ['id', 'version'],
   'visual:show': ['id', 'section', 'source', 'version'],
   'visual:list': ['task-id', 'conversation', 'room'],
   'visual:guide': [],
@@ -675,6 +679,10 @@ export async function main(
           sentAt,
           answeredIn,
         }));
+    }
+    case 'visual:answers': {
+      const query = values.version === undefined ? '' : `?version=${integer(values.version, '--version', 1)}`;
+      return request(url, `/api/visuals/${encodeURIComponent(required(values.id, '--id'))}/answers${query}`);
     }
     case 'visual:list': {
       const query = new URLSearchParams();

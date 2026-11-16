@@ -366,11 +366,25 @@
                   <p class="visual-removed" id="visual-removed" hidden></p>
                 </aside>
                 <div class="visual-stage" id="visual-stage">
+                  <div class="visual-questions-bar" id="visual-questions-bar" role="status" hidden>
+                    <span id="visual-questions-bar-text"></span>
+                    <button class="button primary" id="visual-questions-review" type="button">Review and send</button>
+                  </div>
                   <button class="button primary visual-comment-bubble" id="visual-comment-bubble" type="button" hidden>
                     Comment
                   </button>
                 </div>
-                <aside class="visual-comments" id="visual-comments" aria-label="Comments">
+                <aside class="visual-comments" id="visual-comments" aria-label="Answers and comments">
+                  <section class="visual-questions" id="visual-questions" aria-label="Your answers" hidden>
+                    <div class="visual-comments-head">
+                      <h3>Your answers</h3>
+                      <span class="count-pill" id="visual-questions-count"></span>
+                    </div>
+                    <p class="visual-questions-note" id="visual-questions-note"></p>
+                    <div class="visual-questions-list" id="visual-questions-list"></div>
+                    <p class="visual-composer-error" id="visual-questions-error" role="alert" hidden></p>
+                    <button class="button primary" id="visual-questions-send" type="button" hidden>Send answers</button>
+                  </section>
                   <form class="visual-composer" id="visual-composer">
                     <div
                       class="visual-composer-scope"

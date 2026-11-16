@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { httpError as bad } from './http-error.mjs';
 import { mentions } from './store.mjs';
+import { MESSAGE_QUOTE_CHARS, feedbackText, locator, quoted } from './visual-feedback.mjs';
 import { COMMENT_LIMITS, SECTION_ID, parseBlocks } from './visual-format.mjs';
 
 // The user's comments on a visual. A comment belongs to one version and names the section, the block and the quoted
@@ -10,18 +11,7 @@ import { COMMENT_LIMITS, SECTION_ID, parseBlocks } from './visual-format.mjs';
 const COMMENT_ID = /^vc-[0-9a-f]{8}$/;
 // NUL and the CTCP marker cannot travel in the chat message that carries a comment.
 const control = (text) => text.includes('\0') || text.includes('\u0001');
-// A quote in the chat message is a locator; the comment itself keeps the whole quote.
-const MESSAGE_QUOTE_CHARS = 160;
-const MESSAGE_TITLE_CHARS = 80;
 const parseData = (row) => JSON.parse(/** @type {string} */ (row.data));
-
-// Text that the user did not write (a quote from the frame, a title from the agent), as one line of a chat message
-// that can neither end its code span nor mention anybody.
-const locator = (text, max) => {
-  const line = [...text.replace(/\s+/g, ' ').trim()];
-  const cut = line.length > max ? `${line.slice(0, max).join('')}…` : line.join('');
-  return `\`${cut.replaceAll('`', "'").replace(/@(?=[a-z])/gi, '@ ')}\``;
-};
 
 /**
  * @param {object} options
@@ -188,7 +178,8 @@ export function createVisualComments({ store, visuals, sendAsUser }) {
     return { removed: comment.id };
   }
 
-  function message(visual, version, comments) {
+  /** The comments in the order of the document, and the numbered item that states each in the chat message. */
+  function items(visual, version, comments) {
     const order = new Map(version.sections.map((section, index) => [section.id, index]));
     // The visual as a whole first, then in the order of the document; a section that the version lost comes last.
     const position = (comment) => [
@@ -215,62 +206,52 @@ export function createVisualComments({ store, visuals, sendAsUser }) {
       const { body } = visuals.readSection(visual.id, comment.sectionRev);
       return `${section}, block ${comment.block + 1} (${parseBlocks(body)[comment.block].type})`;
     };
-    const newest = visual.version === version.number ? '' : `, the newest is ${visual.version}`;
-    const text = [
-      `@${visual.agentId} ${sorted.length === 1 ? 'A comment' : `${sorted.length} comments`} on visual \`${visual.id}\` ${locator(visual.title, MESSAGE_TITLE_CHARS)}, version ${version.number}${newest}:`,
-      ...sorted.map(
-        (comment, index) =>
-          `${index + 1}. \`${comment.id}\` ${where(comment)}:\n${comment.text
-            .split('\n')
-            .map((line) => `> ${line}`)
-            .join('\n')}`,
+    return {
+      sorted,
+      lines: sorted.map(
+        (comment, index) => `${index + 1}. \`${comment.id}\` ${where(comment)}:\n${quoted(comment.text)}`,
       ),
-      `Change the sections these concern with \`visual patch --id ${visual.id}\`, and name the comments a change answers with \`--resolves\`. \`visual comments --id ${visual.id}\` shows each comment with its whole quote.`,
-    ].join('\n\n');
-    // The parts were made safe one by one; this holds for the message they make together.
-    const named = mentions(text).filter((name) => name !== visual.agentId);
-    if (named.length)
-      throw bad(
-        `Together these comments read as a mention of @${named[0]}. Send them one by one, or put the name in a code span.`,
-      );
-    return { text, sorted };
+    };
   }
 
-  /** Sends the drafts of one version, all of them or the named ones, as one chat message to the author. */
-  async function send(visualId, input) {
-    for (const key of Object.keys(input))
-      if (!['from', 'version', 'ids'].includes(key)) throw bad(`Unknown field ${key}`);
-    const visual = visuals.get(visualId);
-    if (!Number.isInteger(input.version) || input.version < 1) throw bad('version must be a positive integer');
-    if (input.ids !== undefined && (!Array.isArray(input.ids) || !input.ids.length))
-      throw bad('ids must be a list of comment IDs');
-    const ids = input.ids
-      ? [...new Set(input.ids.map(String))]
-      : all(visualId)
-          .filter((comment) => comment.version === input.version && comment.status === 'draft')
-          .map((comment) => comment.id);
-    const drafts = ids.map((id) => draft(visualId, id));
-    if (drafts.some((comment) => comment.version !== input.version))
-      throw bad(`Every comment of one message belongs to version ${input.version}`);
-    if (!drafts.length) throw bad(`Version ${input.version} has no draft to send`);
-    const { text, sorted } = message(visual, visuals.readVersion(visualId, input.version), drafts);
-    for (const comment of sorted) claimed.add(comment.id);
+  /** The drafts of a version that a message can take: none of them is on its way already. */
+  const drafts = (visualId, number) =>
+    all(visualId)
+      .filter((comment) => comment.version === number && comment.status === 'draft')
+      .map((comment) => draft(visualId, comment.id));
+
+  /**
+   * Posts one message of the user to the author, and records what it carried. The drafts, and whatever `claims`
+   * names besides them, are claimed until the chat has answered. `record` gets the visual's record, the message ID
+   * and the time inside the transaction that marks the drafts as sent, and returns the record to save.
+   * @param {object} options
+   * @param {any} options.visual
+   * @param {any[]} options.drafts
+   * @param {string} options.text
+   * @param {string[]} [options.claims]
+   * @param {(current: any, messageId: number, now: string) => any} [options.record]
+   */
+  async function deliver({ visual, drafts: sorted, text, claims = [], record = (current) => current }) {
+    const keys = [...sorted.map((comment) => comment.id), ...claims];
+    const taken = claims.find((key) => claimed.has(key));
+    if (taken) throw bad('This feedback is being sent. Wait for the result, then read the visual again.', 409);
+    for (const key of keys) claimed.add(key);
     let posted;
     let noticeFailure = null;
     try {
       posted = await sendAsUser(text, visual.conversationId);
     } catch (error) {
-      // The author has the comments when the message is in the chat, whatever happened to its delivery notice.
+      // The author has the message when it is in the chat, whatever happened to its delivery notice.
       if (!error.saved) throw error;
       posted = error.saved;
       noticeFailure = error;
     } finally {
-      for (const comment of sorted) claimed.delete(comment.id);
+      for (const key of keys) claimed.delete(key);
     }
     const now = new Date().toISOString();
     let sent;
     store.transaction(() => {
-      const current = visuals.get(visualId);
+      const current = visuals.get(visual.id);
       sent = sorted.map((comment) => ({
         ...comment,
         status: 'sent',
@@ -281,10 +262,33 @@ export function createVisualComments({ store, visuals, sendAsUser }) {
         sentRevision: current.revision,
       }));
       for (const comment of sent) write(comment);
-      visuals.save(counted(current));
+      visuals.save(record(sent.length ? counted(current) : current, posted.id, now));
     });
     if (noticeFailure) throw noticeFailure;
     return { messageId: posted.id, comments: sent };
+  }
+
+  /** Sends the drafts of one version, all of them or the named ones, as one chat message to the author. */
+  async function send(visualId, input) {
+    for (const key of Object.keys(input))
+      if (!['from', 'version', 'ids'].includes(key)) throw bad(`Unknown field ${key}`);
+    const visual = visuals.get(visualId);
+    if (!Number.isInteger(input.version) || input.version < 1) throw bad('version must be a positive integer');
+    if (input.ids !== undefined && (!Array.isArray(input.ids) || !input.ids.length))
+      throw bad('ids must be a list of comment IDs');
+    const chosen = input.ids
+      ? [...new Set(input.ids.map(String))].map((id) => draft(visualId, id))
+      : drafts(visualId, input.version);
+    if (chosen.some((comment) => comment.version !== input.version))
+      throw bad(`Every comment of one message belongs to version ${input.version}`);
+    if (!chosen.length) throw bad(`Version ${input.version} has no draft to send`);
+    const version = visuals.readVersion(visualId, input.version);
+    const { lines, sorted } = items(visual, version, chosen);
+    return deliver({
+      visual,
+      drafts: sorted,
+      text: feedbackText({ visual, version, answers: null, comments: lines }),
+    });
   }
 
   /**
@@ -321,6 +325,9 @@ export function createVisualComments({ store, visuals, sendAsUser }) {
     update,
     remove,
     send,
+    drafts,
+    items,
+    deliver,
     answerable,
     markAnswered,
     counted,

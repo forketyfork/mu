@@ -77,11 +77,12 @@ node src/cli.mjs visual show --id vis-1a2b3c4d --source       # the whole Markdo
 node src/cli.mjs visual comments --id vis-1a2b3c4d            # the user's comments that wait for an answer
 node src/cli.mjs visual comments --id vis-1a2b3c4d --all [--version 2]
 node src/cli.mjs visual patch --id vis-1a2b3c4d --file changes.md --resolves vc-5e6f7a8b,vc-9c0d1e2f
+node src/cli.mjs visual answers --id vis-1a2b3c4d [--version 2] # the answers the user sent to the visual's questions
 node src/cli.mjs visual list [--task-id task-42] [--conversation issue-42]
 node src/cli.mjs visual guide                                 # the visuals skill; needs no running service
 ```
 
-`visual create` links the visual to the conversation of the agent's turn and to its task; `--conversation` and `--task-id` name others. `visual patch` is for the author only. In its file, a section whose ID exists replaces that section, and a new one is inserted after the section before it in the file, or where `--after`, `--before` or `--first` say. The changes of one managed turn make one version; a manual agent makes a version with each change, unless it passes `--amend` to change its newest version.
+`visual create` links the visual to the conversation of the agent's turn and to its task; `--conversation` and `--task-id` name others. `visual patch` is for the author only. In its file, a section whose ID exists replaces that section, and a new one is inserted after the section before it in the file, or where `--after`, `--before` or `--first` say. The changes of one managed turn make one version; a manual agent makes a version with each change, unless it passes `--amend` to change its newest version. `visual answers` prints `answers` (the sent answers by field ID: an option ID, a list of option IDs, text, a number, or true or false), `unanswered` (the field IDs without a sent answer) and `fields` (each question with its section, label and options); it never shows an answer that the user has not sent.
 
 ## Waiting list and focus list
 

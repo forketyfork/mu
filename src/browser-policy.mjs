@@ -22,6 +22,7 @@ const FRAME_ASSETS = Object.freeze({
   '/visual/render.js': { file: 'public/visual/render.js' },
   '/visual/anchor.js': { file: 'public/visual/anchor.js' },
   '/visual/marks.js': { file: 'public/visual/marks.js' },
+  '/visual/form.js': { file: 'public/visual/form.js' },
   '/visual/format.js': { file: 'src/visual-format.mjs' },
   '/vendor/marked.js': { file: 'node_modules/marked/lib/marked.esm.js' },
   '/vendor/purify.js': { file: 'node_modules/dompurify/dist/purify.es.mjs' },

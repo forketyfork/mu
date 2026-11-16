@@ -4,7 +4,8 @@
 // docs/architecture.md.
 import { marked } from '/vendor/marked.js';
 import DOMPurify from '/vendor/purify.js';
-import { COMMENT_LIMITS, codeLanguage, parseBlocks } from '/visual/format.js';
+import { COMMENT_LIMITS, FORM_LIMITS, codeLanguage, parseBlocks, parseForm } from '/visual/format.js';
+import { createForms } from '/visual/form.js';
 import { createMarks } from '/visual/marks.js';
 import { createRenderer, visualMarkdown } from '/visual/render.js';
 
@@ -70,12 +71,14 @@ async function mermaid(figure, block) {
   figure.innerHTML = svg;
 }
 
+const forms = createForms({ document, parseForm, answerChars: FORM_LIMITS.answerChars, tell });
+
 const renderer = createRenderer({
   document,
   parseBlocks,
   markdownHtml: (source) => visualMarkdown(source, { parse: marked.parse, sanitize: DOMPurify.sanitize }),
   highlight,
-  richBlocks: { mermaid },
+  richBlocks: { mermaid, form: forms.render },
   onProblems: (problems) => tell({ type: 'problems', problems }),
 });
 
@@ -140,6 +143,8 @@ window.addEventListener('message', (event) => {
     // A diagram is drawn in the colors of its time, so everything is drawn again.
     renderer.reset();
     if (shown) renderer.render(container, shown);
+  } else if (message?.type === 'answers') {
+    forms.set(container, message);
   } else if (message?.type === 'comments') {
     marks.set(message.comments, message.active ?? null);
   } else if (message?.type === 'reveal') {

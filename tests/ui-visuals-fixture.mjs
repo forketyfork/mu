@@ -15,6 +15,8 @@ export const record = (overrides = {}) => ({
   commentRevision: 0,
   draftComments: 0,
   openComments: 0,
+  answerRevision: 0,
+  openQuestions: 0,
   sectionCount: 2,
   createdAt,
   updatedAt: createdAt,
@@ -34,6 +36,7 @@ export const versionOf = (visual, number, sections, changes = {}) => ({
     removed: [],
     comments: [],
     answers: [],
+    forms: [],
     ...changes,
   },
   versions: Array.from({ length: visual.version }, (_, index) => ({
@@ -51,7 +54,7 @@ export async function viewer(t, { hash = '', visuals = [record()], versions }) {
   const ui = await fixture(t, { initial: withVisuals(...visuals) });
   // `comments` holds the comments as the service would; `failSend` makes the next send fail with that message,
   // and `failNotice` makes it fail after the comments were sent.
-  const served = { versions, comments: [], failSend: null, failNotice: null };
+  const served = { versions, comments: [], failSend: null, failNotice: null, failAnswer: null };
   const fetch = ui.window.fetch;
   const asked = [];
   // The requests that change comments, as `[method, path, body]`.
@@ -97,7 +100,35 @@ export async function viewer(t, { hash = '', visuals = [record()], versions }) {
     served.comments.splice(served.comments.indexOf(comment), 1);
     return answer(200, { removed: id });
   }
+  // The answers as the service keeps them: on the questions of the version that is served as the newest one.
+  function answerRequest(part, input) {
+    if (served.failAnswer) return answer(409, { error: served.failAnswer });
+    const fields = served.versions.latest.shown.forms.flatMap((form) => form.fields);
+    if (part === 'answers')
+      for (const { key, value } of input.answers) {
+        const field = fields.find((item) => item.key === key);
+        field.answer =
+          value !== null
+            ? { value, source: 'user' }
+            : field.default === undefined
+              ? null
+              : { value: field.default, source: 'default' };
+        field.unsent = true;
+      }
+    else {
+      for (const field of fields)
+        Object.assign(field, { sent: field.answer && { ...field.answer, at: now }, unsent: false });
+      for (const comment of served.comments) if (comment.status === 'draft') comment.status = 'sent';
+    }
+    return answer(200, {});
+  }
   ui.window.fetch = async (path, options = {}) => {
+    const answered = /^\/api\/visuals\/vis-[0-9a-f]{8}\/(answers|feedback)$/.exec(path);
+    if (answered) {
+      const input = JSON.parse(options.body);
+      calls.push([options.method, `/${answered[1]}`, input]);
+      return answerRequest(answered[1], input);
+    }
     const comment = /^\/api\/visuals\/vis-[0-9a-f]{8}\/comments(?:\/([^/]+))?$/.exec(path);
     if (comment) {
       const input = JSON.parse(options.body);
@@ -114,12 +145,14 @@ export async function viewer(t, { hash = '', visuals = [record()], versions }) {
     return answer(200, { ...body, shown: { ...body.shown, comments: [...body.shown.comments, ...made] } });
   };
   const frame = () => ui.window.document.querySelector('iframe.visual-frame');
-  // What the dashboard sends to the frame: the content and the like in `posted`, the marks of the comments apart.
+  // What the dashboard sends to the frame: the content and the like in `posted`; the marks of the comments and the
+  // state of the answers apart.
   const posted = [];
   const marks = [];
+  const answers = [];
   const attach = () => {
     frame().contentWindow.postMessage = (data, targetOrigin) =>
-      (data.type === 'comments' ? marks : posted).push({ ...data, targetOrigin });
+      (data.type === 'comments' ? marks : data.type === 'answers' ? answers : posted).push({ ...data, targetOrigin });
   };
   const fromFrame = (data, source = frame().contentWindow) =>
     ui.window.dispatchEvent(new ui.window.MessageEvent('message', { data, source }));
@@ -127,5 +160,5 @@ export async function viewer(t, { hash = '', visuals = [record()], versions }) {
     ui.window.location.hash = hash;
     await new Promise((resolve) => ui.window.addEventListener('hashchange', resolve, { once: true }));
   }
-  return { ...ui, served, asked, calls, frame, posted, marks, attach, fromFrame };
+  return { ...ui, served, asked, calls, frame, posted, marks, answers, attach, fromFrame };
 }

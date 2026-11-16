@@ -787,3 +787,147 @@ test('the user comments on selected text, a diagram and code, and the author ans
   await shot('6-version-1');
   assert.deepEqual(reached, []);
 });
+
+test('the user answers the questions of a visual, reviews the answers beside the frame and sends them', async (t) => {
+  const { app, user, worker, visual, elsewhere, reached, evaluate, inFrame, shot, viewport } = await opened(
+    t,
+    'forms-',
+  );
+  // The author asks in its next turn; the labels are its text, and try what a label can.
+  const form = {
+    fields: [
+      {
+        id: 'database',
+        type: 'choice',
+        label: `Which database? <img src=${elsewhere}/form.png onerror=window.pwned=3>`,
+        help: 'One store for all sessions.',
+        options: [
+          { id: 'sqlite', label: 'SQLite', hint: 'One file' },
+          { id: 'postgres', label: '<b onmouseover=window.pwned=4>PostgreSQL</b>' },
+        ],
+        default: 'sqlite',
+      },
+      { id: 'notes', type: 'text', label: 'Anything I should know?', multiline: true },
+      { id: 'dry-run', type: 'toggle', label: 'Start with a dry run?' },
+    ],
+  };
+  app.runner.active.set('worker', { conversationId: 'work' });
+  const asked = await worker('PATCH', `/api/visuals/${visual.id}`, {
+    source: `## Decide {#decide}\n\nThree questions before I start.\n\n\`\`\`form\n${JSON.stringify(form)}\n\`\`\`\n`,
+  });
+  assert.equal(asked.body.version, 2, JSON.stringify(asked.body));
+  app.runner.active.clear();
+
+  const rows = `[...document.querySelectorAll('#visual-questions-list .visual-question')].map((row) => [row.querySelector('.visual-question-label').textContent, row.querySelector('.visual-question-state').textContent, row.querySelector('.visual-question-value').textContent])`;
+  const states = `[...document.querySelectorAll('.form-field')].map((field) => [field.dataset.field, field.dataset.state])`;
+  const control = (field, selector) => `document.querySelector('.form-field[data-field="${field}"] ${selector}')`;
+  await until('the questions beside the frame', async () => (await evaluate(rows)).length === 3);
+  // The controls take no answer until the dashboard has said that this version can be answered.
+  await until('controls that can be used', () => inFrame(`${control('database', 'input')}?.disabled === false`));
+  await shot('1-asked');
+  assert.deepEqual(await evaluate(rows), [
+    [form.fields[0].label, 'Suggested', 'SQLite'],
+    ['Anything I should know?', 'No answer', '—'],
+    ['Start with a dry run?', 'No answer', '—'],
+  ]);
+  assert.equal(await evaluate(`document.getElementById('visual-questions-count').textContent`), '1 of 3');
+  assert.deepEqual(await inFrame(states), [
+    ['database', 'suggested'],
+    ['notes', 'open'],
+    ['dry-run', 'open'],
+  ]);
+  assert.equal(await inFrame(`${control('database', 'input[value="sqlite"]')}.checked`), true);
+  assert.equal(await inFrame(`document.querySelector('.visual-form img, .visual-form b')`), null);
+
+  // An answer in the frame is stored by the dashboard, which shows it for review outside the frame.
+  await inFrame(`${control('database', 'input[value="postgres"]')}.click()`);
+  await until('the choice in the review', async () => (await evaluate(rows))[0][1] === 'Not sent');
+  await inFrame(`(() => {
+    const notes = ${control('notes', 'textarea')};
+    notes.focus();
+    notes.value = 'Keep the old files.';
+    notes.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await until('the typed answer in the review', async () => (await evaluate(rows))[1][2] === 'Keep the old files.');
+  // The frame is not trusted: an answer that no control of the question can give is dropped, and no message of the
+  // frame sends anything.
+  await inFrame(`(() => {
+    for (const message of [
+      { type: 'answer', field: 'database', value: 'mysql' },
+      { type: 'answer', field: 'dry-run', value: 'yes' },
+      { type: 'answer', field: 'unknown', value: true },
+      { type: 'feedback', version: 2 },
+      { type: 'send' },
+    ])
+      window.parent.postMessage(message, '*');
+  })()`);
+  await inFrame(`${control('dry-run', 'input[value="no"]')}.click()`);
+  await until('the last answer in the review', async () => (await evaluate(rows))[2][1] === 'Not sent');
+  assert.deepEqual(await evaluate(rows), [
+    [form.fields[0].label, 'Not sent', '<b onmouseover=window.pwned=4>PostgreSQL</b>'],
+    ['Anything I should know?', 'Not sent', 'Keep the old files.'],
+    ['Start with a dry run?', 'Not sent', 'No'],
+  ]);
+  const chat = async () =>
+    (await user('GET', '/api/conversations/work/messages?limit=20')).body.messages.filter(
+      (message) => message.from === 'user',
+    );
+  assert.deepEqual(await chat(), []);
+  assert.deepEqual((await worker('GET', `/api/visuals/${visual.id}/answers`)).body.answers, {});
+  assert.equal(
+    await evaluate(`document.getElementById('visual-questions-bar-text').textContent`),
+    '3 answers not sent',
+  );
+  await shot('2-answered');
+
+  // On a narrow screen the questions and the bar stay inside the page.
+  await viewport(390, 844);
+  const narrow = await evaluate(`(() => {
+    const pane = document.getElementById('visuals');
+    const bar = document.getElementById('visual-questions-bar').getBoundingClientRect();
+    return { width: innerWidth, paneWidth: pane.clientWidth, paneScrollWidth: pane.scrollWidth, barLeft: bar.left, barRight: bar.right };
+  })()`);
+  assert.ok(narrow.paneScrollWidth <= narrow.paneWidth + 1, JSON.stringify(narrow));
+  assert.ok(narrow.barLeft >= 0 && narrow.barRight <= narrow.width + 1, JSON.stringify(narrow));
+  // A label without a space to break at, like the address in this one, wraps inside its question.
+  const question = await inFrame(`(() => {
+    const field = ${control('database', '.form-label')};
+    return { width: field.clientWidth, scrollWidth: field.scrollWidth, page: document.documentElement.scrollWidth, view: innerWidth };
+  })()`);
+  assert.ok(question.scrollWidth <= question.width + 1 && question.page <= question.view + 1, JSON.stringify(question));
+  await shot('3-narrow');
+  await viewport(1500, 1000);
+
+  // Only the user's click in the dashboard sends, and it sends what the review shows.
+  await evaluate(`document.getElementById('visual-questions-send').click()`);
+  await until('the sent answers', async () => (await evaluate(rows)).every(([, state]) => state === 'Sent'));
+  await until('the sent state in the frame', async () =>
+    (await inFrame(states)).every(([, state]) => state === 'sent'),
+  );
+  await shot('4-sent');
+  const [message, ...more] = await chat();
+  assert.deepEqual(more, []);
+  assert.equal(
+    message.text,
+    [
+      `@worker Answers on visual \`${visual.id}\` \`Storage migration plan\`, version 2:`,
+      [
+        'Answers:',
+        '- `database` `Which database? <img src=http://127.0.0.1:' +
+          `${new URL(elsewhere).port}/form.png onerror=window.pwned=3>\`: \`postgres\` \`<b onmouseover=window.pwned=4>PostgreSQL</b>\``,
+        '- `notes` `Anything I should know?`:\n> Keep the old files.',
+        '- `dry-run` `Start with a dry run?`: no',
+      ].join('\n'),
+      `Read the answers with \`visual answers --id ${visual.id}\`.`,
+    ].join('\n\n'),
+  );
+  assert.deepEqual((await worker('GET', `/api/visuals/${visual.id}/answers`)).body.answers, {
+    database: 'postgres',
+    notes: 'Keep the old files.',
+    'dry-run': false,
+  });
+  assert.equal(await evaluate(`document.getElementById('visual-questions-send').hidden`), true);
+  assert.equal(await inFrame(`window.pwned ?? null`), null);
+  assert.equal(await evaluate(`window.pwned ?? null`), null);
+  assert.deepEqual(reached, []);
+});

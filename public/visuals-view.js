@@ -3,6 +3,7 @@
 // a link is drawn by the dashboard, and a message from the frame is checked before it is used. See "Visuals" in
 // docs/architecture.md.
 
+import { createAnswersPanel } from './visual-answers.js';
 import { createCommentsPanel } from './visual-comments.js';
 
 export const FRAME_PAGE = '/visual/frame.html';
@@ -99,7 +100,13 @@ export function createVisualsView({
     if (!state) return;
     const visuals = [...(state.visuals ?? [])].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     const signature = JSON.stringify([
-      visuals.map((visual) => [visual.id, visual.revision, visual.commentRevision, visual.title]),
+      visuals.map((visual) => [
+        visual.id,
+        visual.revision,
+        visual.commentRevision,
+        visual.answerRevision,
+        visual.title,
+      ]),
       state.tasks.map((task) => [task.id, task.title]),
     ]);
     if (signature === indexSignature) return;
@@ -132,7 +139,15 @@ export function createVisualsView({
             `${visual.sectionCount} ${visual.sectionCount === 1 ? 'section' : 'sections'} · ${time(visual.updatedAt)}`,
           ),
         );
-        // What waits for somebody: drafts for the user to send, sent comments for the author to answer.
+        // What waits for somebody: questions and drafts for the user, sent comments for the author to answer.
+        if (visual.openQuestions)
+          meta.append(
+            node(
+              'span',
+              'visual-card-drafts',
+              `${visual.openQuestions} ${visual.openQuestions === 1 ? 'question' : 'questions'}`,
+            ),
+          );
         if (visual.draftComments)
           meta.append(
             node(
@@ -220,6 +235,15 @@ export function createVisualsView({
         count.title = `${commented} ${commented === 1 ? 'comment' : 'comments'}`;
         button.append(count);
       }
+      const asked = shown.forms
+        .filter((form) => form.sectionId === section.id)
+        .flatMap((form) => form.fields)
+        .filter((field) => !field.answer || field.unsent).length;
+      if (asked) {
+        const mark = node('span', 'visual-outline-questions', '?');
+        mark.title = `${asked} ${asked === 1 ? 'question waits' : 'questions wait'} for your answer`;
+        button.append(mark);
+      }
       const change = shown.added.includes(section.id) ? 'new' : shown.changed.includes(section.id) ? 'changed' : null;
       if (change && shown.number > 1) {
         const mark = node('span', `visual-outline-mark ${change}`, change);
@@ -270,6 +294,7 @@ export function createVisualsView({
         live ? changedSections(previous.shown.sections, data.shown.sections) : [],
         !live && previous?.shown.number !== data.shown.number,
       );
+      answers.show(data);
     } catch (error) {
       if (open !== target || target.loads !== load) return;
       showError(error.message);
@@ -279,6 +304,7 @@ export function createVisualsView({
   function close() {
     open = null;
     comments.close();
+    answers.close();
     frame?.remove();
     frame = null;
     hideLink();
@@ -326,6 +352,7 @@ export function createVisualsView({
       open.ready = true;
       sendContent([], true);
       comments.marks();
+      answers.frame();
     } else if (message.type === 'active') {
       if (typeof message.sectionId !== 'string') return;
       open.active = message.sectionId;
@@ -342,6 +369,7 @@ export function createVisualsView({
       $('visual-link').hidden = false;
     } else if (message.type === 'selection') comments.selection(message);
     else if (message.type === 'comment') comments.focus(message.id);
+    else if (message.type === 'answer') answers.answer(message);
     else if (message.type === 'problems') {
       if (!Array.isArray(message.problems)) return;
       const problems = message.problems
@@ -368,6 +396,8 @@ export function createVisualsView({
     reload: () => load(),
     time,
   });
+
+  const answers = createAnswersPanel({ document, request, post, reload: () => load() });
 
   const step = (delta) => {
     const latest = record(open.id)?.version ?? open.data?.version ?? 1;
@@ -398,7 +428,12 @@ export function createVisualsView({
       if (visual.revision !== open.data.revision && (open.pinned === null || open.pinned >= open.data.version))
         void load({ flash: true });
       // A comment changes on the version it belongs to, which may be an earlier one that the user looks at.
-      else if (visual.commentRevision !== open.data.commentRevision) void load();
+      // An answer changes on the newest version, and shows on every version that asks the same question.
+      else if (
+        visual.commentRevision !== open.data.commentRevision ||
+        visual.answerRevision !== open.data.answerRevision
+      )
+        void load();
     },
     /** The visuals of a task, as links for its card; null when it has none. */
     taskVisuals(taskId) {

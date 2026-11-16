@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { httpError as bad } from './http-error.mjs';
+import { checkForms, createVisualAnswers } from './visual-answers.mjs';
 import { createVisualComments } from './visual-comments.mjs';
+import { feedbackText } from './visual-feedback.mjs';
 import { LIMITS, SECTION_ID, parseDocument, validateSection } from './visual-format.mjs';
 
 // Visuals: documents that agents write for the user, stored as versions of section revisions.
@@ -21,7 +23,7 @@ export const sectionRev = (section) =>
  * @param {{active: Map<string, object>}} options.runner
  * @param {{find: (id: string) => any, list: () => any[]}} options.tasks
  * @param {(text: string, conversationId: string) => Promise<{ id: number }>} options.sendAsUser
- *   Posts a chat message as the user; the user's comments reach the author of a visual through it.
+ *   Posts a chat message as the user; the user's comments and answers reach the author of a visual through it.
  */
 export function createVisuals({ store, runner, tasks, sendAsUser }) {
   store.db.exec(`
@@ -61,11 +63,17 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
     if (!canRead(visual, caller)) throw bad(`@${caller} is not a member of this visual's conversation`, 403);
     return visual;
   };
-  // The record as a caller may read it. The number of drafts, and the counter that moves when a draft changes, tell
-  // what the user writes before it is sent, so only the user reads them.
+  // The record as a caller may read it. The counts of drafts and of open questions, and the counters that move
+  // when a draft or an answer changes, tell what the user writes before it is sent, so only the user reads them.
   const recordFor = (visual, caller) => {
     if (caller === 'user') return visual;
-    const { draftComments: _drafts, commentRevision: _revision, ...shared } = visual;
+    const {
+      draftComments: _drafts,
+      commentRevision: _comments,
+      openQuestions: _questions,
+      answerRevision: _answers,
+      ...shared
+    } = visual;
     return shared;
   };
 
@@ -109,6 +117,7 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
     return row ? parseData(row) : null;
   };
   const comments = createVisualComments({ store, visuals: { get, save, readVersion, readSection }, sendAsUser });
+  const answers = createVisualAnswers({ store, visuals: { get, save, readVersion } });
   // The sections of `version` that differ from the version before it, by ID.
   const difference = (id, version) => {
     if (version.number === 1) return { changed: [], added: [], removed: [] };
@@ -152,6 +161,7 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
       throw bad(
         `A visual holds at most ${LIMITS.documentBytes / 1024} KiB of text in all its sections; this one would hold ${Math.ceil(size / 1024)} KiB`,
       );
+    checkForms(sections);
   };
   // The task a visual is listed under: the one given, else the author's assigned task when it belongs to the
   // conversation, else the only unverified task of that conversation.
@@ -190,23 +200,26 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
     const title = titleOf(input.title ?? document.title);
     const id = `vis-${randomUUID().slice(0, 8)}`;
     const now = new Date().toISOString();
-    const visual = {
-      id,
-      title,
-      agentId: from,
-      conversationId,
-      // The author's native session for that conversation, when its CLI has reported one.
-      sessionId: agent.sessionIds?.[conversationId] ?? null,
-      taskId: taskFor(input, agent, conversationId, from),
-      version: 1,
-      revision: 1,
-      commentRevision: 0,
-      draftComments: 0,
-      openComments: 0,
-      sectionCount: document.sections.length,
-      createdAt: now,
-      updatedAt: now,
-    };
+    const visual = answers.counted(
+      {
+        id,
+        title,
+        agentId: from,
+        conversationId,
+        // The author's native session for that conversation, when its CLI has reported one.
+        sessionId: agent.sessionIds?.[conversationId] ?? null,
+        taskId: taskFor(input, agent, conversationId, from),
+        version: 1,
+        revision: 1,
+        commentRevision: 0,
+        draftComments: 0,
+        openComments: 0,
+        sectionCount: document.sections.length,
+        createdAt: now,
+        updatedAt: now,
+      },
+      document.sections,
+    );
     store.transaction(() => {
       insert(visual);
       writeVersion(id, { number: 1, title, createdAt: now, updatedAt: now }, document.sections);
@@ -351,7 +364,8 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
         sectionCount: sections.length,
         updatedAt: now,
       };
-      save(answered.length ? comments.counted(next) : next);
+      // The questions of the version may have changed with its sections.
+      save(answers.counted(answered.length ? comments.counted(next) : next, sections));
     });
     if (turn) turnVersions.set(turn, new Map([...(turnVersions.get(turn) ?? []), [id, number]]));
     return response({ newVersion: !amend });
@@ -369,32 +383,81 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
         comments: comments.ofVersion(id, version.number, caller),
         // The comments on earlier versions that this version answers.
         answers: comments.answeredIn(id, version.number),
+        forms: answers.view(id, version, caller),
       },
       versions: versions(id).map((item) => ({ ...item, comments: counts.get(item.number) ?? 0 })),
     };
   };
 
+  /**
+   * Sends everything of one version that the author has not got, in one chat message: the draft comments, and the
+   * answers that the user reviewed. One round of feedback is one turn of the author.
+   */
+  const feedback = async (id, input) => {
+    for (const key of Object.keys(input))
+      if (!['from', 'version', 'answers'].includes(key)) throw bad(`Unknown field ${key}`);
+    const visual = get(id);
+    if (!Number.isInteger(input.version) || input.version < 1) throw bad('version must be a positive integer');
+    const version = readVersion(id, input.version);
+    const reviewed = input.answers === undefined ? null : answers.compose(visual, version, input.answers);
+    const drafts = comments.drafts(id, input.version);
+    if (!reviewed && !drafts.length) throw bad(`Version ${input.version} has nothing to send`);
+    const { lines, sorted } = comments.items(visual, version, drafts);
+    const sent = await comments.deliver({
+      visual,
+      drafts: sorted,
+      text: feedbackText({ visual, version, answers: reviewed?.lines ?? null, comments: lines }),
+      // Two requests that reviewed the same answers would both find them unsent.
+      claims: reviewed ? [`answers of ${id}`] : [],
+      record: (current, messageId, now) => {
+        reviewed?.mark(messageId, now);
+        return answers.counted(current);
+      },
+    });
+    return { ...sent, answers: Boolean(reviewed) };
+  };
+
+  const versionOf = (query) => {
+    const raw = query.get('version');
+    if (raw !== null && !/^[1-9]\d{0,8}$/.test(raw)) throw bad('version must be a positive integer');
+    return raw === null ? undefined : Number(raw);
+  };
+
   const handle = async ({ request, response, pathname, body, send, actor }) => {
-    const match = pathname.match(/^\/api\/visuals(?:\/([^/]+)(\/comments(?:\/([^/]+))?)?)?$/);
+    const match = pathname.match(/^\/api\/visuals(?:\/([^/]+)(?:\/(comments|answers|feedback)(?:\/([^/]+))?)?)?$/);
     if (!match) return false;
-    const [, id, commentsPath, commentId] = match;
+    const [, id, part, commentId] = match;
     if (id !== undefined && !VISUAL_ID.test(id)) throw bad(`Unknown visual ${id}`, 404);
     const query = new URL(request.url, 'http://mu').searchParams;
-    if (commentsPath) {
-      if (request.method === 'GET' && !commentId) {
+    if (part) {
+      if (part !== 'comments' && commentId) throw bad('Unsupported visual operation', 405);
+      if (request.method === 'GET' && part === 'comments' && !commentId) {
         readable(id, request.caller);
         send(response, 200, comments.list(id, request.caller));
         return true;
       }
-      // A comment is the user's word to an agent, so only the user writes and sends one.
+      if (request.method === 'GET' && part === 'answers') {
+        const visual = readable(id, request.caller);
+        send(response, 200, answers.report(id, readVersion(id, versionOf(query) ?? visual.version)));
+        return true;
+      }
+      // A comment or an answer is the user's word to an agent, so only the user writes and sends one.
       const input = await body(request);
       if (request.caller !== 'user' || actor(request, input) !== 'user')
         throw bad(
-          'Only the user comments on a visual; an agent reads the comments and answers them with a change',
+          part === 'comments'
+            ? 'Only the user comments on a visual; an agent reads the comments and answers them with a change'
+            : 'Only the user answers the questions of a visual; an agent reads the answers that the user sent',
           403,
         );
       get(id);
-      if (request.method === 'POST' && !commentId) {
+      if (part === 'answers') {
+        if (request.method !== 'PATCH') throw bad('Unsupported answer operation', 405);
+        send(response, 200, answers.set(id, input));
+      } else if (part === 'feedback') {
+        if (request.method !== 'POST') throw bad('Unsupported feedback operation', 405);
+        send(response, 200, await feedback(id, input));
+      } else if (request.method === 'POST' && !commentId) {
         send(response, 201, comments.create(id, input));
       } else if (request.method === 'POST' && commentId === 'send') send(response, 200, await comments.send(id, input));
       else if (request.method === 'PATCH' && commentId) send(response, 200, comments.update(id, commentId, input));
@@ -421,9 +484,7 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
       return true;
     }
     if (request.method === 'GET') {
-      const raw = query.get('version');
-      if (raw !== null && !/^[1-9]\d{0,8}$/.test(raw)) throw bad('version must be a positive integer');
-      send(response, 200, read(id, request.caller, raw === null ? undefined : Number(raw)));
+      send(response, 200, read(id, request.caller, versionOf(query)));
       return true;
     }
     if (request.method === 'POST' && !id) {
@@ -439,5 +500,5 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
     throw bad('Unsupported visual operation', 405);
   };
 
-  return { find, get, list, create, patch, read, handle, comments };
+  return { find, get, list, create, patch, read, handle, comments, answers };
 }

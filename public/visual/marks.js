@@ -124,8 +124,10 @@ export function createMarks({ document, window, container, limits, tell }) {
       }
     const figure = /** @type {HTMLElement | null} */ (/** @type {Element} */ (event.target).closest('.visual-rich'));
     const section = /** @type {HTMLElement | null} */ (figure?.closest('.visual-section'));
-    // A click on a link, also on the link of a diagram, is about the link.
-    if (!figure || !section || /** @type {Element} */ (event.target).closest('a')) return;
+    // A click on a link, also on the link of a diagram, is about the link, and one on a control of a form answers
+    // a question.
+    if (!figure || !section || /** @type {Element} */ (event.target).closest('a, label, input, textarea, button'))
+      return;
     const { left, top, right } = figure.getBoundingClientRect();
     tell({
       type: 'selection',

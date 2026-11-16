@@ -391,6 +391,164 @@ body {
   white-space: pre-wrap;
 }
 
+/* The questions of a form. The answers are the dashboard's: it stores them and says what each control shows. */
+.visual-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-20px);
+  cursor: default;
+  text-align: left;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8px);
+  min-width: 0;
+  padding-left: var(--space-12px);
+  border-left: 3px solid var(--line);
+  overflow-wrap: anywhere;
+}
+
+.form-field[data-state='suggested'],
+.form-field[data-state='unsent'] {
+  border-left-color: var(--amber);
+}
+
+.form-field[data-state='sent'] {
+  border-left-color: var(--green);
+}
+
+.form-label {
+  font-weight: var(--font-weight-650);
+}
+
+.form-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-size-15px);
+}
+
+.form-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6px);
+}
+
+.form-option {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-10px);
+  padding: var(--space-8px) var(--space-12px);
+  border: 1px solid var(--line);
+  border-radius: var(--border-radius-7px);
+  cursor: pointer;
+}
+
+.form-option:hover,
+.form-option.chosen {
+  border-color: var(--accent);
+}
+
+.form-option.chosen {
+  background: var(--accent-soft);
+}
+
+.form-option input {
+  flex: none;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.form-option-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.form-option-hint {
+  color: var(--muted);
+  font-size: var(--font-size-15px);
+}
+
+.form-suggested {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--font-size-13px);
+}
+
+.form-typed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-10px);
+}
+
+.form-input {
+  flex: 1;
+  min-width: 8em;
+  padding: var(--space-8px) var(--space-12px);
+  border: 1px solid var(--line);
+  border-radius: var(--border-radius-7px);
+  background: var(--main-pane-surface-4);
+  color: inherit;
+  font: inherit;
+}
+
+.form-field[data-kind='number'] .form-input {
+  flex: none;
+  width: 9em;
+}
+
+textarea.form-input {
+  flex-basis: 100%;
+  min-height: 5em;
+  resize: vertical;
+}
+
+.form-input:focus-visible,
+.form-option:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.form-input:disabled,
+.form-option:has(input:disabled) {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.form-error {
+  margin: 0;
+  color: var(--error-notice-ink);
+  font-size: var(--font-size-15px);
+}
+
+.form-error[hidden],
+.form-reset[hidden] {
+  display: none;
+}
+
+.form-foot {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-12px);
+  min-height: 1.4em;
+  color: var(--muted);
+  font-size: var(--font-size-13px);
+}
+
+.form-reset {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
 /* What the user's comments are about. The dashboard names the ranges; the frame paints them. */
 ::highlight(comment-answered) {
   text-decoration: underline dotted var(--green);

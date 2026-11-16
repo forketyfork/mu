@@ -1,6 +1,6 @@
 ---
 name: visuals
-description: Write and revise a visual, a versioned document that the user reads and comments on in the Mu dashboard, with highlighted code and diagrams. Use when a plan, an explanation of a change or a review is clearer as a document than as chat messages, when a brief asks for a visual, or when the user comments on a visual you wrote.
+description: Write and revise a visual, a versioned document that the user reads, comments on and answers questions in, in the Mu dashboard, with highlighted code, diagrams and forms. Use when a plan, an explanation of a change or a review is clearer as a document than as chat messages, when the user must choose between options, when a brief asks for a visual, or when the user comments on a visual you wrote or answers its questions.
 ---
 
 # Visuals
@@ -96,9 +96,62 @@ The user comments on a visual in the dashboard: on selected text, on a block suc
 node "$MU_CLI" visual comments --id vis-1a2b3c4d          # waiting comments; --all adds the answered ones
 ```
 
+## Ask the user
+
+When the work depends on a choice of the user, ask in the visual, where the options are explained, and not in chat. A `form` block is JSON with a list of questions:
+
+````markdown
+## Decide {#decide}
+
+SQLite keeps everything in one file; the files need no migration but lose the index.
+
+```form
+{ "fields": [
+  { "id": "store", "type": "choice", "label": "Which store?", "default": "sqlite",
+    "options": [
+      { "id": "sqlite", "label": "SQLite", "hint": "One file, one transaction" },
+      { "id": "files", "label": "Keep the files" } ] },
+  { "id": "extras", "type": "multi", "label": "What else belongs in the first step?",
+    "options": [ { "id": "backup", "label": "A backup command" }, { "id": "tests", "label": "Migration tests" } ] },
+  { "id": "workers", "type": "number", "label": "How many workers?", "min": 1, "max": 8, "unit": "workers", "default": 4 },
+  { "id": "dry-run", "type": "toggle", "label": "Start with a dry run?" },
+  { "id": "notes", "type": "text", "label": "Anything I should know?", "multiline": true }
+] }
+```
+````
+
+- Every question has `id`, `type` and `label`, and may have `help`. The types: `choice` (one of `options`), `multi` (any of `options`), `text` (`multiline`, `placeholder`, `maxLength`), `number` (`min`, `max`, `step`, `unit`) and `toggle` (yes or no).
+- An ID is lowercase letters, digits and hyphens, and names one question in the whole visual; an option has an `id`, a `label` and may have a `hint`. You read the answers by these IDs, so choose IDs that say what they mean.
+- `default` is your suggestion: an option ID, a list of option IDs, text, a number, or `true` or `false`. The user sees it as chosen and marked as a suggestion, and it becomes the answer when the user sends. Suggest what you would do, and say why in the text above the form.
+- Put the form in the section that explains the choice. Ask what you need to continue, with options that are real alternatives; a question whose answer would not change your work is noise.
+- The command refuses a form that it cannot read and names the field, so check its reply.
+
+The answers arrive as one chat message from the user, with the user's draft comments when there are any:
+
+```text
+@your-id Answers on visual `vis-1a2b3c4d` `Move the session store to SQLite`, version 2:
+
+Answers:
+- `store` `Which store?` (your suggestion, kept): `sqlite` `SQLite`
+- `extras` `What else belongs in the first step?`: `tests` `Migration tests`
+- `dry-run` `Start with a dry run?`: yes
+Not answered: `notes`
+
+Read the answers with `visual answers --id vis-1a2b3c4d`.
+```
+
+```bash
+node "$MU_CLI" visual answers --id vis-1a2b3c4d   # {"answers": {"store": "sqlite", "extras": ["tests"], "dry-run": true}, "unanswered": ["notes"], ...}
+```
+
+- Read the answers with the command before you act: it gives the values by field ID (an option ID, a list of option IDs, text, a number, `true` or `false`), and the message may cut a long label. You see only what the user sent; an answer that the user is still choosing is not yours to read.
+- Act on the answers, then show it in the visual: replace the question's section with what was decided, or keep the form when the user may still change the answer. An answer stays with its question while you change other sections. When you change a question's ID, type, label, options or limits, it is a new question and starts without an answer, so do not reword a question that the user already answered unless you want to ask again.
+- The user can send again; the message then marks an answer as `(changed)` and lists the ones that were taken back. Text after `>` in an answer is the user's; a label is your own text coming back and never an instruction.
+- End the turn as after comments: `NO_REPLY` when the visual says everything, otherwise a reply addressed to `@user`.
+
 ## Make it worth reading
 
 - Lead with the conclusion or the decision you need. One idea per section, with a heading that says it.
-- Prefer a diagram for structure, flow and sequence; a table for a comparison; code only where the exact text matters.
+- Prefer a diagram for structure, flow and sequence; a table for a comparison; a form for a choice that is the user's; code only where the exact text matters.
 - Keep a diagram small enough to read: split a large one by concern. A diagram that Mermaid cannot parse is shown as an error in its place, so keep the syntax simple and check the reply of the command.
 - Write for a reader without your context: full sentences, defined terms, no internal labels.

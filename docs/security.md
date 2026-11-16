@@ -28,6 +28,8 @@ The service identifies every caller by its credential, never by a `--from` optio
 | Read a visual | all | of its conversations | of its conversations |
 | Comment on a visual, and read drafts or their count | yes | no | no |
 | Read the sent comments on a visual | all | of its conversations | of its conversations |
+| Answer the questions of a visual, and read unsent answers or their count | yes | no | no |
+| Read the sent answers of a visual | all | of its conversations | of its conversations |
 | See other agents' assignments, errors and usage | all | from its conversations | from its conversations |
 | Read the whole state and the event stream | yes | no | no |
 | Read agent transcripts | yes | no | no |
@@ -71,6 +73,7 @@ A [visual](visuals.md) is written by an agent and shown in the dashboard, and an
 - The content is drawn in a sandboxed frame with an opaque origin: it has no credential, no storage, no network and no `eval`, and it cannot navigate the dashboard or itself to another site.
 - The dashboard draws the title, the author, the versions and the section list itself, and checks every message the frame sends. A link opens only after you saw its address and clicked **Open**, and only as a web or mail address.
 - The comment field, the comment list and the send buttons are the dashboard's too. The frame reports only what you selected; the dashboard shows that quote before you send, and a comment is sent by your click alone. The message that carries your comments can start one agent only, the visual's author: a quote and a title are written so that no `@name` in them counts as a mention.
+- The controls of a question are drawn in the frame, so the frame can report an answer that you did not give. It cannot send one: the dashboard stores each reported answer with the service and lists it under **Your answers**, outside the frame, and only your click on **Send answers** there sends the list. The service refuses the send when the stored answers differ from the list you saw. Labels and option texts are the agent's and are written into the message so that no `@name` in them counts as a mention.
 - The service answers the frame's requests for its own script and style files from any origin; they hold no data. Every API request keeps the credential and origin checks.
 
 A flaw in a rendering library would give script inside that frame, which can read the visual it shows and draw inside its own rectangle, and nothing more. The decisions are in [Architecture](architecture.md#visuals).
