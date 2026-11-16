@@ -9,7 +9,7 @@ import { LIMITS, SECTION_ID, parseDocument, validateSection } from './visual-for
 const VISUAL_ID = /^[a-z][a-z0-9-]{0,47}$/;
 const parseData = (row) => JSON.parse(/** @type {string} */ (row.data));
 const bytes = (text) => Buffer.byteLength(text);
-const rev = (section) =>
+export const sectionRev = (section) =>
   createHash('sha256')
     .update(JSON.stringify([section.id, section.title, section.body]))
     .digest('hex')
@@ -61,6 +61,13 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
     if (!canRead(visual, caller)) throw bad(`@${caller} is not a member of this visual's conversation`, 403);
     return visual;
   };
+  // The record as a caller may read it. The number of drafts, and the counter that moves when a draft changes, tell
+  // what the user writes before it is sent, so only the user reads them.
+  const recordFor = (visual, caller) => {
+    if (caller === 'user') return visual;
+    const { draftComments: _drafts, commentRevision: _revision, ...shared } = visual;
+    return shared;
+  };
 
   const storedVersion = (id, number) => {
     const row = store.db.prepare('SELECT data FROM visual_versions WHERE visual_id=? AND number=?').get(id, number);
@@ -80,7 +87,7 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
     const insertSection = store.db.prepare('INSERT OR IGNORE INTO visual_sections (visual_id,rev,data) VALUES (?,?,?)');
     const entries = sections.map((section) => {
       const { id: sectionId, title, body } = section;
-      const hash = rev(section);
+      const hash = sectionRev(section);
       insertSection.run(id, hash, JSON.stringify({ id: sectionId, title, body }));
       return { id: sectionId, rev: hash };
     });
@@ -108,8 +115,8 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
     return compare(storedVersion(id, version.number - 1).sections, version.sections);
   };
   const compare = (before, after) => {
-    const previous = new Map(before.map((section) => [section.id, section.rev ?? rev(section)]));
-    const next = new Map(after.map((section) => [section.id, section.rev ?? rev(section)]));
+    const previous = new Map(before.map((section) => [section.id, section.rev ?? sectionRev(section)]));
+    const next = new Map(after.map((section) => [section.id, section.rev ?? sectionRev(section)]));
     return {
       changed: [...next].filter(([key, hash]) => previous.has(key) && previous.get(key) !== hash).map(([key]) => key),
       added: [...next.keys()].filter((key) => !previous.has(key)),
@@ -205,7 +212,10 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
       writeVersion(id, { number: 1, title, createdAt: now, updatedAt: now }, document.sections);
     });
     if (turn) turnVersions.set(turn, new Map([...(turnVersions.get(turn) ?? []), [id, 1]]));
-    return { ...visual, sections: document.sections.map((section) => ({ id: section.id, title: section.title })) };
+    return {
+      ...recordFor(visual, from),
+      sections: document.sections.map((section) => ({ id: section.id, title: section.title })),
+    };
   };
 
   // The sections after a change: removals first, then the sent sections, each replacing the section with its ID or
@@ -306,9 +316,12 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
       !changes.removed.length;
     const amend = turn ? turnVersions.get(turn)?.get(id) === visual.version : input.amend === true;
     const number = unchanged || amend ? visual.version : visual.version + 1;
-    // The comments this change answers. Named without a change, they are answered by the newest version, which an
-    // earlier call made.
-    const answered = input.resolves === undefined ? [] : comments.answerable(id, input.resolves, number);
+    // The comments this change answers. Named without a change, they are answered by the newest version, when an
+    // earlier call wrote it after the author got them.
+    const answered =
+      input.resolves === undefined
+        ? []
+        : comments.answerable(id, input.resolves, number, unchanged ? visual.revision : visual.revision + 1);
     const response = (extra) => ({
       id,
       title,
@@ -349,7 +362,7 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
     const version = readVersion(id, number ?? visual.version);
     const counts = comments.perVersion(id, caller);
     return {
-      ...visual,
+      ...recordFor(visual, caller),
       shown: {
         ...version,
         ...difference(id, version),
@@ -398,10 +411,12 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
       send(
         response,
         200,
-        list().filter(
-          (visual) =>
-            canRead(visual, request.caller) && filters.every(([name, field]) => visual[field] === query.get(name)),
-        ),
+        list()
+          .filter(
+            (visual) =>
+              canRead(visual, request.caller) && filters.every(([name, field]) => visual[field] === query.get(name)),
+          )
+          .map((visual) => recordFor(visual, request.caller)),
       );
       return true;
     }

@@ -539,9 +539,10 @@ export async function createApp({
       try {
         await chat.send('system', notice, conversation.id);
       } catch (error) {
-        throw bad(
-          `Message #${message.id} was saved, but its delivery notice could not be posted: ${error.message}`,
-          503,
+        // A caller that keeps its own record of what it sent needs the message that is in the chat.
+        throw Object.assign(
+          bad(`Message #${message.id} was saved, but its delivery notice could not be posted: ${error.message}`, 503),
+          { saved: message },
         );
       }
     }

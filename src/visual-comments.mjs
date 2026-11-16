@@ -28,7 +28,8 @@ const locator = (text, max) => {
  * @param {import('./store.mjs').Store} options.store
  * @param {{ get: (id: string) => any, save: (visual: any) => any, readVersion: (id: string, number: number) => any, readSection: (id: string, rev: string) => any }} options.visuals
  * @param {(text: string, conversationId: string) => Promise<{ id: number }>} options.sendAsUser
- *   Posts a chat message as the user, with the checks and the delivery notice of a message typed in the chat.
+ *   Posts a chat message as the user, with the checks and the delivery notice of a message typed in the chat. An
+ *   error that carries `saved` is about the notice only: that message is in the chat.
  */
 export function createVisualComments({ store, visuals, sendAsUser }) {
   store.db.exec(`
@@ -64,9 +65,15 @@ export function createVisualComments({ store, visuals, sendAsUser }) {
     if (!row) throw bad(`Visual ${visualId} has no comment ${id}`, 404);
     return parseData(row);
   };
+  // The drafts whose message is on its way to the chat. They are neither sent again nor changed until the chat has
+  // answered, or the author would get a comment twice, or in other words than the list shows. One service owns a
+  // data directory, so the claim lives in the process, and a crash leaves no comment that is neither draft nor sent.
+  const claimed = new Set();
   const draft = (visualId, id) => {
     const comment = find(visualId, id);
     if (comment.status !== 'draft') throw bad(`Comment ${id} was sent; only a draft changes`, 409);
+    if (claimed.has(comment.id))
+      throw bad(`Comment ${id} is being sent. Wait for the result, then read the comments again.`, 409);
     return comment;
   };
 
@@ -111,7 +118,9 @@ export function createVisualComments({ store, visuals, sendAsUser }) {
     if (!section) throw bad(`Version ${version.number} has no section ${input.sectionId}`);
     // The newest version changes while its turn runs. A comment is about the content its writer saw, so a section
     // that changed since then needs a new look, not a comment that points into other text.
-    if (input.sectionRev !== undefined && input.sectionRev !== section.rev)
+    if (typeof input.sectionRev !== 'string')
+      throw bad('sectionRev is needed with sectionId: the revision of the section as its reader saw it');
+    if (input.sectionRev !== section.rev)
       throw bad(
         `Section ${section.id} of version ${version.number} changed while you wrote. Read it again, then select what the comment is about.`,
         409,
@@ -148,6 +157,7 @@ export function createVisualComments({ store, visuals, sendAsUser }) {
       createdAt: now,
       updatedAt: now,
       sentAt: null,
+      sentRevision: null,
       messageId: null,
       answeredIn: null,
     };
@@ -234,31 +244,54 @@ export function createVisualComments({ store, visuals, sendAsUser }) {
     if (!Number.isInteger(input.version) || input.version < 1) throw bad('version must be a positive integer');
     if (input.ids !== undefined && (!Array.isArray(input.ids) || !input.ids.length))
       throw bad('ids must be a list of comment IDs');
-    const drafts = input.ids
-      ? [...new Set(input.ids)].map((id) => draft(visualId, String(id)))
-      : all(visualId).filter((comment) => comment.version === input.version && comment.status === 'draft');
+    const ids = input.ids
+      ? [...new Set(input.ids.map(String))]
+      : all(visualId)
+          .filter((comment) => comment.version === input.version && comment.status === 'draft')
+          .map((comment) => comment.id);
+    const drafts = ids.map((id) => draft(visualId, id));
     if (drafts.some((comment) => comment.version !== input.version))
       throw bad(`Every comment of one message belongs to version ${input.version}`);
     if (!drafts.length) throw bad(`Version ${input.version} has no draft to send`);
     const { text, sorted } = message(visual, visuals.readVersion(visualId, input.version), drafts);
-    const posted = await sendAsUser(text, visual.conversationId);
+    for (const comment of sorted) claimed.add(comment.id);
+    let posted;
+    let noticeFailure = null;
+    try {
+      posted = await sendAsUser(text, visual.conversationId);
+    } catch (error) {
+      // The author has the comments when the message is in the chat, whatever happened to its delivery notice.
+      if (!error.saved) throw error;
+      posted = error.saved;
+      noticeFailure = error;
+    } finally {
+      for (const comment of sorted) claimed.delete(comment.id);
+    }
     const now = new Date().toISOString();
-    const sent = sorted.map((comment) => ({
-      ...comment,
-      status: 'sent',
-      sentAt: now,
-      updatedAt: now,
-      messageId: posted.id,
-    }));
+    let sent;
     store.transaction(() => {
+      const current = visuals.get(visualId);
+      sent = sorted.map((comment) => ({
+        ...comment,
+        status: 'sent',
+        sentAt: now,
+        updatedAt: now,
+        messageId: posted.id,
+        // What the visual held when the author got the comment: only a later write answers it.
+        sentRevision: current.revision,
+      }));
       for (const comment of sent) write(comment);
-      visuals.save(counted(visuals.get(visualId)));
+      visuals.save(counted(current));
     });
+    if (noticeFailure) throw noticeFailure;
     return { messageId: posted.id, comments: sent };
   }
 
-  /** The sent comments that a change of the visual may answer; a comment is answered in a later version than its own. */
-  function answerable(visualId, ids, number) {
+  /**
+   * The sent comments that a change of the visual may answer. A comment is answered in a later version than its
+   * own, by content that was written after the author got it: `revision` is the one of the write that answers.
+   */
+  function answerable(visualId, ids, number, revision) {
     if (!Array.isArray(ids) || !ids.length || !ids.every((id) => typeof id === 'string'))
       throw bad('resolves must be a list of comment IDs');
     return [...new Set(ids)].map((id) => {
@@ -268,6 +301,10 @@ export function createVisualComments({ store, visuals, sendAsUser }) {
       if (comment.version >= number)
         throw bad(
           `Comment ${id} is on version ${comment.version}, which is the newest: change the visual, then name the comments the change answers`,
+        );
+      if (comment.sentRevision >= revision)
+        throw bad(
+          `Comment ${id} was sent after version ${number} was written, so that version does not answer it: change the visual, then name the comments the change answers`,
         );
       return comment;
     });

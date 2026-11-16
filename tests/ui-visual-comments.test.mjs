@@ -249,6 +249,16 @@ test('a draft is saved, changed, deleted and sent later; Send all sends the draf
   );
   assert.equal($('#visual-comments-send-all').hidden, true);
   assert.equal($('#visual-composer-error').hidden, true);
+
+  // A send that fails after its message reached the chat leaves no draft, and the panel does not claim one.
+  ui.served.failNotice = 'Message #7 was saved, but its delivery notice could not be posted: IRC is not connected';
+  ui.write('A last one');
+  await ui.submit();
+  assert.equal($('#visual-composer-error').textContent, ui.served.failNotice);
+  assert.deepEqual(
+    ui.cards().map(([, state]) => state),
+    ['Sent', 'Sent', 'Sent'],
+  );
 });
 
 test('a click on marked text shows its comment, and a click on a comment shows its text in the visual', async (t) => {

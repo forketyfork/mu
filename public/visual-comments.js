@@ -326,15 +326,17 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
     busy = true;
     renderComposer();
     renderList();
-    let failure = '';
+    let failure = null;
     try {
       await work();
     } catch (error) {
-      failure = error.message;
+      failure = error;
     }
     busy = false;
     await reload();
-    showError(failure);
+    // A send can fail after the message reached the chat, so the list that was just loaded says what the comment is.
+    const kept = failure?.unsent && data?.shown.comments.some((c) => c.id === failure.unsent && c.status === 'draft');
+    showError(failure ? `${kept ? 'The comment is saved as a draft. ' : ''}${failure.message}` : '');
     renderComposer();
   }
 
@@ -364,7 +366,7 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
       try {
         await send([saved.id]);
       } catch (error) {
-        throw new Error(`The comment is saved as a draft. ${error.message}`, { cause: error });
+        throw Object.assign(error, { unsent: saved.id });
       }
     });
   }

@@ -49,8 +49,9 @@ export const withVisuals = (...visuals) => ({ ...initialState(), visuals });
 // and writes: JSDOM does not load the frame's page.
 export async function viewer(t, { hash = '', visuals = [record()], versions }) {
   const ui = await fixture(t, { initial: withVisuals(...visuals) });
-  // `comments` holds the comments as the service would; `failSend` makes the next send fail with that message.
-  const served = { versions, comments: [], failSend: null };
+  // `comments` holds the comments as the service would; `failSend` makes the next send fail with that message,
+  // and `failNotice` makes it fail after the comments were sent.
+  const served = { versions, comments: [], failSend: null, failNotice: null };
   const fetch = ui.window.fetch;
   const asked = [];
   // The requests that change comments, as `[method, path, body]`.
@@ -85,6 +86,7 @@ export async function viewer(t, { hash = '', visuals = [record()], versions }) {
           comment.status === 'draft' && comment.version === input.version && (input.ids?.includes(comment.id) ?? true),
       );
       for (const comment of sent) Object.assign(comment, { status: 'sent', sentAt: now, messageId: 7 });
+      if (served.failNotice) return answer(503, { error: served.failNotice });
       return answer(200, { messageId: 7, comments: sent });
     }
     const comment = served.comments.find((item) => item.id === id);

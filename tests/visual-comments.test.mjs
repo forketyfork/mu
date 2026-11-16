@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import { ROOT } from '../src/server.mjs';
 import { main } from '../src/cli.mjs';
 import { mentions } from '../src/store.mjs';
+import { parseDocument } from '../src/visual-format.mjs';
+import { sectionRev } from '../src/visuals.mjs';
 import { team } from './visuals-fixture.mjs';
 
 const PLAN = `# Storage plan
@@ -47,9 +49,12 @@ async function written(t) {
   return { ...context, visual, comments, messages, record, sendNow };
 }
 
+// A comment names the revision of the section that its writer saw.
+const REV = Object.fromEntries(parseDocument(PLAN).sections.map((section) => [section.id, sectionRev(section)]));
 const ON_CODE = {
   version: 1,
   sectionId: 'overview',
+  sectionRev: REV.overview,
   block: 0,
   quote: { text: 'code', prefix: 'Text with ', suffix: '.' },
   text: 'Explain this in simple words',
@@ -76,6 +81,12 @@ test('a comment is a draft of the user until it is sent, and only the user write
   assert.deepEqual((await worker('GET', comments)).body, []);
   const forWorker = (await worker('GET', `/api/visuals/${visual.id}`)).body;
   assert.deepEqual([forWorker.shown.comments, forWorker.versions[0].comments], [[], 0]);
+  // Nor that there is a draft: the counters of drafts are not in the record that an agent reads.
+  const [listed] = (await worker('GET', `/api/visuals?agent=worker`)).body;
+  for (const read of [forWorker, listed]) {
+    assert.equal(read.id, visual.id);
+    assert.deepEqual([read.draftComments, read.commentRevision, read.openComments], [undefined, undefined, 0]);
+  }
   const forUser = (await user('GET', `/api/visuals/${visual.id}`)).body;
   assert.deepEqual([forUser.shown.comments.map((item) => item.id), forUser.versions[0].comments], [[comment.id], 1]);
 
@@ -94,6 +105,9 @@ test('a comment is a draft of the user until it is sent, and only the user write
   await refused({ block: 1 }, /Section overview has 1 block/);
   await refused({ block: null }, /A quote needs the block/);
   await refused({ sectionId: null }, /needs the section/);
+  // A comment on a section names the revision that its writer saw, so that it never lands on other text unseen.
+  await refused({ sectionRev: undefined }, /sectionRev is needed with sectionId/);
+  await refused({ sectionRev: 7 }, /sectionRev is needed with sectionId/);
   await refused(
     { quote: { text: 'x'.repeat(601), prefix: '', suffix: '' } },
     /quote\.text must be text of at most 600/,
@@ -116,8 +130,8 @@ test('a comment is a draft of the user until it is sent, and only the user write
 test('the drafts of a version reach the author as one chat message from the user', async (t) => {
   const { app, user, worker, visual, comments, messages, record, sendNow } = await written(t);
   const draft = async (input) => (await user('POST', comments, { version: 1, ...input })).body;
-  const onSteps = await draft({ sectionId: 'steps', text: 'Add the rollback step' });
-  const onDiagram = await draft({ sectionId: 'flow', block: 0, text: 'Show the cache' });
+  const onSteps = await draft({ sectionId: 'steps', sectionRev: REV.steps, text: 'Add the rollback step' });
+  const onDiagram = await draft({ sectionId: 'flow', sectionRev: REV.flow, block: 0, text: 'Show the cache' });
   const onCode = await draft({
     ...ON_CODE,
     // What the frame sends as a quote is text of the agent: it must not address anybody or end its code span.
@@ -160,7 +174,7 @@ test('the drafts of a version reach the author as one chat message from the user
   assert.match((await user('POST', `${comments}/send`, { version: 1 })).body.error, /Version 1 has no draft to send/);
 
   // One named draft goes alone; the other drafts stay drafts.
-  const kept = await draft({ sectionId: 'steps', text: 'Later' });
+  const kept = await draft({ sectionId: 'steps', sectionRev: REV.steps, text: 'Later' });
   const now = await sendNow(ON_CODE);
   assert.equal(now.status, 'sent');
   const last = (await messages()).findLast((item) => item.from === 'user');
@@ -266,10 +280,132 @@ test('a comment whose message cannot be delivered stays a draft', async (t) => {
   assert.deepEqual([draft.status, draft.text, draft.messageId], ['draft', ON_CODE.text, null]);
 });
 
+test('a message that is in the chat has sent its comments, whatever happened to the delivery notice', async (t) => {
+  const { chat, user, comments, messages } = await written(t);
+  const { id } = (await user('POST', comments, ON_CODE)).body;
+  // The author is stopped, so the message gets a notice for the user; the broker fails on that notice.
+  const send = chat.send.bind(chat);
+  chat.send = async (from, ...rest) => {
+    if (from === 'system') throw new Error('IRC confirmation failed');
+    return send(from, ...rest);
+  };
+  const failed = await user('POST', `${comments}/send`, { version: 1, ids: [id] });
+  const fromUser = (await messages()).filter((message) => message.from === 'user');
+  assert.equal(fromUser.length, 1);
+  assert.deepEqual(
+    [failed.status, failed.body.error],
+    [503, `Message #${fromUser[0].id} was saved, but its delivery notice could not be posted: IRC confirmation failed`],
+  );
+  // The author has the comment, so it is not a draft that could be sent a second time.
+  const [comment] = (await user('GET', comments)).body;
+  assert.deepEqual([comment.status, comment.messageId], ['sent', fromUser[0].id]);
+  assert.match((await user('POST', `${comments}/send`, { version: 1 })).body.error, /Version 1 has no draft to send/);
+  assert.equal((await user('POST', `${comments}/send`, { version: 1, ids: [id] })).status, 409);
+  assert.equal((await messages()).filter((message) => message.from === 'user').length, 1);
+});
+
+test('drafts whose message is on its way are not sent again or changed', async (t) => {
+  const { chat, user, comments, messages } = await written(t);
+  const { id } = (await user('POST', comments, ON_CODE)).body;
+  // The chat holds the first message until the test lets it go, and says when it has it.
+  const send = chat.send.bind(chat);
+  const held = Promise.withResolvers();
+  const reached = Promise.withResolvers();
+  let calls = 0;
+  chat.send = async (...args) => {
+    if (calls++ === 0) {
+      reached.resolve();
+      await held.promise;
+    }
+    return send(...args);
+  };
+  const first = user('POST', `${comments}/send`, { version: 1 });
+  await reached.promise;
+  try {
+    // Another browser sends the same drafts, and changes one, before the chat has answered.
+    for (const [method, path, body] of [
+      ['POST', `${comments}/send`, { version: 1 }],
+      ['POST', `${comments}/send`, { version: 1, ids: [id] }],
+      ['PATCH', `${comments}/${id}`, { text: 'Other words' }],
+      ['DELETE', `${comments}/${id}`, {}],
+    ]) {
+      const refused = await user(method, path, body);
+      assert.deepEqual(
+        [refused.status, refused.body.error],
+        [409, `Comment ${id} is being sent. Wait for the result, then read the comments again.`],
+        `${method} ${path}`,
+      );
+    }
+  } finally {
+    // Whatever the test found, the held request ends, so that the service can close.
+    held.resolve();
+  }
+  assert.equal((await first).status, 200);
+  const fromUser = (await messages()).filter((message) => message.from === 'user');
+  assert.equal(fromUser.length, 1);
+  const [comment] = (await user('GET', comments)).body;
+  assert.deepEqual([comment.status, comment.text, comment.messageId], ['sent', ON_CODE.text, fromUser[0].id]);
+});
+
+test('comments that are safe one by one are refused when their message would mention another agent', async (t) => {
+  const { user, comments, messages } = await written(t);
+  const before = (await messages()).length;
+  // Each text passes alone: an open backtick, and a name in a code span. In one message the backticks pair
+  // across the two comments, and the name is left outside every code span.
+  for (const text of ['a `b', '`@lead`']) {
+    const draft = await user('POST', comments, { version: 1, text });
+    assert.equal(draft.status, 201, JSON.stringify(draft.body));
+  }
+  const refused = await user('POST', `${comments}/send`, { version: 1 });
+  assert.deepEqual(
+    [refused.status, refused.body.error],
+    [400, 'Together these comments read as a mention of @lead. Send them one by one, or put the name in a code span.'],
+  );
+  assert.equal((await messages()).length, before);
+  assert.deepEqual(
+    (await user('GET', comments)).body.map((comment) => [comment.text, comment.status, comment.messageId]),
+    [
+      ['a `b', 'draft', null],
+      ['`@lead`', 'draft', null],
+    ],
+  );
+});
+
+test('a version that was written before the author got a comment does not answer it', async (t) => {
+  const { app, user, worker, visual, comments, startTurn, sendNow } = await written(t);
+  const path = `/api/visuals/${visual.id}`;
+  startTurn('worker');
+  assert.equal((await worker('PATCH', path, { source: '## Overview {#overview}\n\nFiles are slow.' })).body.version, 2);
+  app.runner.active.clear();
+  // The user still reads version 1 and comments on it; version 2 is there already.
+  const late = await sendNow(ON_CODE);
+  startTurn('worker');
+  const refused = await worker('PATCH', path, { resolves: [late.id] });
+  assert.deepEqual(
+    [refused.status, refused.body.error],
+    [
+      400,
+      `Comment ${late.id} was sent after version 2 was written, so that version does not answer it: change the visual, then name the comments the change answers`,
+    ],
+  );
+  assert.equal((await user('GET', comments)).body[0].answeredIn, null);
+  assert.deepEqual((await user('GET', path)).body.shown.answers, []);
+
+  // A change after the comment answers it, in the version that the change makes.
+  const patched = await worker('PATCH', path, { source: '## Steps {#steps}\n\n1. One\n2. Two', resolves: [late.id] });
+  assert.deepEqual([patched.status, patched.body.version, patched.body.resolved], [200, 3, [late.id]]);
+
+  // A comment that arrives while a turn writes a version is answered by what the turn writes after it.
+  const during = await sendNow({ version: 1, text: 'Shorter' });
+  assert.equal((await worker('PATCH', path, { resolves: [during.id] })).status, 400);
+  const amended = await worker('PATCH', path, { source: '## Steps {#steps}\n\n1. One', resolves: [during.id] });
+  assert.deepEqual([amended.body.version, amended.body.newVersion, amended.body.resolved], [3, false, [during.id]]);
+});
+
 test('a change names the comments it answers, and the next version shows them', async (t) => {
   const { app, user, worker, outsider, visual, comments, record, startTurn, sendNow } = await written(t);
   const first = await sendNow(ON_CODE);
-  const second = await sendNow({ version: 1, sectionId: 'steps', text: 'Add a step' });
+  const second = await sendNow({ version: 1, sectionId: 'steps', sectionRev: REV.steps, text: 'Add a step' });
   const unsent = (await user('POST', comments, { version: 1, text: 'Not yet' })).body;
   const path = `/api/visuals/${visual.id}`;
   const overview = '## Overview {#overview}\n\nFiles are slow.';

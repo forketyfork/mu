@@ -26,7 +26,7 @@ The service identifies every caller by its credential, never by a `--from` optio
 | Read conversations, rooms and tasks | all | its conversations | its conversations |
 | Write a visual, and change one it wrote | as a manual agent | yes | yes |
 | Read a visual | all | of its conversations | of its conversations |
-| Comment on a visual, and read drafts | yes | no | no |
+| Comment on a visual, and read drafts or their count | yes | no | no |
 | Read the sent comments on a visual | all | of its conversations | of its conversations |
 | See other agents' assignments, errors and usage | all | from its conversations | from its conversations |
 | Read the whole state and the event stream | yes | no | no |
