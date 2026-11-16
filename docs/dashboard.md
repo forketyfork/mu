@@ -107,14 +107,16 @@ The pages are Markdown files in `brag/` in the data directory (`~/.mu/data/brag/
 
 A week or month page appears with the first dream after the period ends. The view ignores a file with another name, an impossible date, a size above 64 KiB, or a symbolic link, and lists it at the top. The view reads the files each time you open it.
 
-## Themes
+## Reading settings
 
 ![The four dashboard themes: Mu original, Tidal Ledger, Citron Observatory and Ember Terminal](images/themes.webp)
 
-**Theme** at the bottom of the left rail switches between **Mu original**, **Tidal Ledger**, **Citron Observatory** and **Ember Terminal**. The choice applies at once and is remembered in this browser. All themes respect the system's reduced-motion setting, which turns off the dashboard's animations.
+**Reading settings** at the bottom of the left rail opens a small panel for text size and theme. Five text sizes run from smaller to larger, with a slightly smaller size selected by default. The size applies across the dashboard and is remembered in this browser.
+
+Themes appear as split-color swatches with **Aa** set in each theme's typeface. Hover over a swatch or use its accessible label to read the theme name. The theme applies at once and is remembered in this browser. All themes respect the system's reduced-motion setting, which turns off the dashboard's animations.
 
 To add a theme, see [Development](development.md#add-a-dashboard-theme).
 
 ## Keyboard
 
-Every choice list (the conversation list, the fields of the new-agent form) opens with a click, Enter or Space; the arrow keys, Home, End or typing move the selection, Enter chooses, and Escape closes. Escape also closes an opened task card.
+Every choice list (the conversation list and the fields of the new-agent form) opens with a click, Enter or Space; the arrow keys, Home, End or typing move the selection, Enter chooses, and Escape closes. In Reading settings, Tab moves through the size buttons and theme choices, the arrow keys move among themes, and Escape closes the panel. Escape also closes an opened task card.

@@ -32,9 +32,9 @@ The `demo` adapter exercises routing and process handling without a model; see [
 Themes live in the `themes` registry in `public/themes.js`. Each theme has a stable `id`, a display `name`, and a complete `tokens` object: the colors, type, radii, shadows, spacing and motion that the dashboard's CSS uses.
 
 1. Copy the `original` theme and change the tokens that express your design. Keep all color values in this file: the component CSS reads only tokens, SVG icons take the text color, and animations read the same motion tokens as the CSS.
-2. The theme picker lists every registry entry by itself; no HTML, CSS, server setting or build step is needed.
-3. Run `npm run check` and `npm test`. The theme tests check that the token set is complete, that references resolve, that the picker remembers the choice and works with the keyboard, and that text, controls, status badges and transcript output have enough contrast.
-4. Look at the workspace, the chat, the dialogs and the picker in a narrow and a wide window. Tests cannot judge the design. Keep labels and icons next to status colors, so that status does not depend on color alone.
+2. The reading-settings panel lists every registry entry in a native radio group. It builds each swatch and accessible name from the theme, so adding one needs no HTML, server setting or build step.
+3. Run `npm run check` and `npm test`. The theme tests check that the token set is complete, that references resolve, that the settings persist and work with the keyboard, and that text, controls, status badges and transcript output have enough contrast.
+4. Look at the workspace, the chat, the dialogs and reading settings in a narrow and a wide window. Tests cannot judge the design. Keep labels and icons next to status colors, so that status does not depend on color alone.
 
 **Mu original** keeps the original appearance, including message numbers at a contrast of 3.75:1. That is a known exception: the other themes meet WCAG AA.
 

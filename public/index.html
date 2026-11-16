@@ -42,10 +42,52 @@
             <path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7" />
           </svg>
         </a>
-        <label class="theme-control" title="Theme"
-          ><span class="theme-caption" aria-hidden="true">Theme</span
-          ><select id="theme-picker" aria-label="Theme"></select
-        ></label>
+        <div class="reader-settings-control">
+          <button
+            class="reader-settings-trigger"
+            id="reader-settings-trigger"
+            type="button"
+            popovertarget="reader-settings"
+            aria-haspopup="dialog"
+            aria-controls="reader-settings"
+            aria-expanded="false"
+            aria-label="Reading settings"
+            title="Reading settings"
+          >
+            <span aria-hidden="true">Aa</span>
+          </button>
+          <div
+            class="reader-settings-popover"
+            id="reader-settings"
+            popover="auto"
+            role="dialog"
+            aria-labelledby="reader-settings-title"
+          >
+            <header class="reader-settings-header">
+              <div>
+                <p class="reader-settings-eyebrow">Make it yours</p>
+                <h2 id="reader-settings-title">Reading settings</h2>
+              </div>
+              <span class="reader-settings-lettering" aria-hidden="true">Aa</span>
+            </header>
+            <section class="reader-setting-group" aria-labelledby="reader-font-size-title">
+              <div class="reader-setting-copy">
+                <h3 id="reader-font-size-title">Text size</h3>
+                <p>Choose a comfortable size</p>
+              </div>
+              <div
+                class="reader-size-options"
+                id="reader-font-size-options"
+                role="group"
+                aria-labelledby="reader-font-size-title"
+              ></div>
+            </section>
+            <fieldset class="reader-setting-group reader-theme-group">
+              <legend>Theme</legend>
+              <div class="reader-theme-options" id="reader-theme-options" role="radiogroup" aria-label="Theme"></div>
+            </fieldset>
+          </div>
+        </div>
       </aside>
 
       <div class="workspace-shell">

@@ -473,6 +473,7 @@
     'border-radius-24px': '24px',
     'border-radius-15px': '15px',
     'agent-dialog-box-shadow': '0 20px 120px var(--agent-dialog-glow),\n    0 0 50px var(--agent-dialog-glow-2)',
+    'reader-settings-box-shadow': '0 10px 32px var(--theme-shadow)',
     'agent-dialog-backdrop-backdrop-filter': 'blur(7px)',
     'letter-spacing-negative-0-8px': '-0.8px',
     'font-size-30px': '30px',
@@ -667,45 +668,133 @@
     fromSeed('7024703569'),
   ];
   const storageKey = 'mu-theme';
+  const fontSizeStorageKey = 'mu-font-size';
+  const fontSizes = [
+    { id: 'smallest', label: 'Smallest', scale: 0.85 },
+    { id: 'smaller', label: 'Smaller', scale: 0.9 },
+    { id: 'standard', label: 'Standard', scale: 1 },
+    { id: 'larger', label: 'Larger', scale: 1.1 },
+    { id: 'largest', label: 'Largest', scale: 1.2 },
+  ];
+  const defaultFontSize = fontSizes[1];
   const root = document.documentElement;
   const resolve = (id) => themes.find((theme) => theme.id === id) ?? themes[0];
+  const resolveFontSize = (id) => fontSizes.find((size) => size.id === id) ?? defaultFontSize;
 
-  function apply(id) {
+  function syncControls(themeId, fontSizeId) {
+    for (const button of /** @type {NodeListOf<HTMLButtonElement>} */ (
+      document.querySelectorAll('#reader-font-size-options button')
+    ))
+      button.setAttribute('aria-pressed', String(button.dataset.fontSize === fontSizeId));
+    for (const radio of /** @type {NodeListOf<HTMLInputElement>} */ (
+      document.querySelectorAll('#reader-theme-options input[type="radio"]')
+    ))
+      radio.checked = radio.value === themeId;
+  }
+
+  function apply(id, fontSizeId = localStorage.getItem(fontSizeStorageKey)) {
     const theme = resolve(id);
+    const fontSize = resolveFontSize(fontSizeId);
     root.classList.add('theme-applying');
-    for (const [name, value] of Object.entries(theme.tokens)) root.style.setProperty(`--${name}`, value);
+    for (const [name, value] of Object.entries(theme.tokens)) {
+      const scaled = name.startsWith('font-size-')
+        ? value.replace(
+            /^(\d+(?:\.\d+)?)(px|em)$/,
+            (_, amount, unit) => `${Number((Number(amount) * fontSize.scale).toFixed(3))}${unit}`,
+          )
+        : value;
+      root.style.setProperty(`--${name}`, scaled);
+    }
     root.dataset.theme = theme.id;
+    root.dataset.fontSize = fontSize.id;
     document.querySelector('meta[name="theme-color"]').setAttribute('content', theme.tokens['browser-surface']);
     const icon = document.querySelector('link[rel="icon"]');
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="${theme.tokens['favicon-radius']}" fill="${theme.tokens['favicon-surface']}"/><text x="32" y="44" font-size="${theme.tokens['favicon-font-size']}" text-anchor="middle" fill="${theme.tokens['favicon-ink']}" font-family="${theme.tokens['font-brand']}">μ</text></svg>`;
     icon.setAttribute('href', `data:image/svg+xml,${encodeURIComponent(svg)}`);
-    document.querySelector('.theme-control')?.setAttribute('title', theme.name);
     // Commit both foregrounds and backgrounds together; interpolating only one can make text unreadable.
     root.getBoundingClientRect();
     root.classList.remove('theme-applying');
+    syncControls(theme.id, fontSize.id);
     document.dispatchEvent(new CustomEvent('mu-theme-change', { detail: theme.id }));
     return theme;
   }
 
-  apply(localStorage.getItem(storageKey));
+  apply(localStorage.getItem(storageKey), localStorage.getItem(fontSizeStorageKey));
   document.addEventListener(
     'DOMContentLoaded',
     () => {
-      const select = /** @type {HTMLSelectElement} */ (document.getElementById('theme-picker'));
-      for (const theme of themes) select.add(new Option(theme.name, theme.id));
-      select.value = root.dataset.theme;
-      select.closest('label')?.setAttribute('title', resolve(select.value).name);
-      select.addEventListener('change', () => {
-        const theme = apply(select.value);
-        localStorage.setItem(storageKey, theme.id);
-      });
+      const sizeOptions = document.getElementById('reader-font-size-options');
+      const themeOptions = document.getElementById('reader-theme-options');
+      const trigger = document.getElementById('reader-settings-trigger');
+      const popover = document.getElementById('reader-settings');
+
+      for (const size of fontSizes) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = 'A';
+        button.dataset.fontSize = size.id;
+        button.setAttribute('aria-label', `${size.label} text size`);
+        button.setAttribute('aria-pressed', String(size.id === root.dataset.fontSize));
+        button.title = `${size.label} text size`;
+        button.addEventListener('click', () => {
+          const selected = resolveFontSize(button.dataset.fontSize);
+          apply(root.dataset.theme, selected.id);
+          localStorage.setItem(fontSizeStorageKey, selected.id);
+        });
+        sizeOptions.append(button);
+      }
+
+      for (const theme of themes) {
+        const label = document.createElement('label');
+        const radio = document.createElement('input');
+        const swatch = document.createElement('span');
+        const lettering = document.createElement('span');
+        label.className = 'reader-theme-option';
+        label.title = theme.name;
+        radio.type = 'radio';
+        radio.name = 'mu-theme';
+        radio.value = theme.id;
+        radio.setAttribute('aria-label', theme.name);
+        radio.title = theme.name;
+        swatch.className = 'reader-theme-swatch';
+        swatch.setAttribute('aria-hidden', 'true');
+        swatch.style.setProperty('--theme-swatch-canvas', theme.tokens.canvas);
+        swatch.style.setProperty('--theme-swatch-surface', theme.tokens.surface);
+        swatch.style.setProperty('--theme-swatch-accent', theme.tokens.accent);
+        swatch.style.setProperty('--theme-swatch-muted', theme.tokens.muted);
+        swatch.style.setProperty('--theme-swatch-ink', theme.tokens.ink);
+        swatch.style.setProperty('--theme-swatch-font', theme.tokens['font-body']);
+        lettering.textContent = 'Aa';
+        swatch.append(lettering);
+        label.append(radio, swatch);
+        themeOptions.append(label);
+        radio.addEventListener('change', () => {
+          if (!radio.checked) return;
+          const selected = apply(radio.value);
+          localStorage.setItem(storageKey, selected.id);
+        });
+      }
+
+      popover.addEventListener('toggle', () =>
+        trigger.setAttribute('aria-expanded', String(popover.matches(':popover-open'))),
+      );
       window.addEventListener('storage', (event) => {
-        if ((event.key !== storageKey && event.key !== null) || event.storageArea !== localStorage) return;
-        select.value = apply(event.newValue).id;
+        if (
+          (event.key !== storageKey && event.key !== fontSizeStorageKey && event.key !== null) ||
+          event.storageArea !== localStorage
+        )
+          return;
+        const themeId =
+          event.key === storageKey || event.key === null ? event.newValue : localStorage.getItem(storageKey);
+        const fontSizeId =
+          event.key === fontSizeStorageKey || event.key === null
+            ? event.newValue
+            : localStorage.getItem(fontSizeStorageKey);
+        apply(themeId, fontSizeId);
       });
     },
     { once: true },
   );
 
-  return { themes, apply, storageKey };
+  return { themes, apply, storageKey, fontSizes, fontSizeStorageKey };
 })();

@@ -24,6 +24,7 @@ test('every registered theme defines the whole token contract, without unresolve
   assert.equal(new Set(themes.map((theme) => theme.name)).size, themes.length);
   const required = new Set([...styles.matchAll(/var\(--([a-z0-9-]+)\)/g)].map((match) => match[1]));
   required.delete('glyph'); // Each harness icon supplies its own mask URL; it inherits the theme's color.
+  for (const name of ['canvas', 'surface', 'accent', 'muted', 'ink', 'font']) required.delete(`theme-swatch-${name}`);
   for (const kind of ['panel', 'conversation', 'message', 'status', 'expand', 'agent'])
     required.add(`motion-${kind}-duration`);
   for (const name of [
@@ -62,98 +63,175 @@ test('component styles get colors, typography, corners, shadows and spacing acce
   assert.doesNotMatch(html, /#[\da-f]{6}\b/i);
 });
 
-test('the saved theme applies in the head before styles, the picker, or application startup', (t) => {
-  const { window, themes } = themeFixture('seed-2533678612');
+test('the saved theme and text size apply in the head before styles or application startup', (t) => {
+  const { window, themes } = themeFixture('seed-2533678612', 'largest');
   t.after(() => window.close());
   const root = window.document.documentElement;
   assert.equal(root.dataset.theme, 'seed-2533678612');
+  assert.equal(root.dataset.fontSize, 'largest');
   assert.equal(root.style.getPropertyValue('--accent'), themes[1].tokens.accent);
-  assert.equal(window.document.getElementById('theme-picker').options.length, 0, 'body initialization has not run');
+  assert.equal(
+    root.style.getPropertyValue('--font-size-16px'),
+    `${Number((Number.parseFloat(themes[1].tokens['font-size-16px']) * 1.2).toFixed(3))}px`,
+  );
+  assert.equal(
+    window.document.getElementById('reader-font-size-options').children.length,
+    0,
+    'body initialization has not run',
+  );
   const script = /<script src="\/themes.js"><\/script>/.exec(html);
   assert.ok(script, 'a synchronous external script works under the service CSP');
   assert.ok(script.index < html.indexOf('rel="stylesheet"'));
   assert.ok(script.index < html.indexOf('<body>'));
 });
 
-test('a missing or obsolete saved ID selects the original theme', (t) => {
-  for (const saved of [undefined, 'removed-theme', 'constructor', '__proto__']) {
-    const { window } = themeFixture(saved);
+test('missing or obsolete saved preferences use the original theme and smaller text', (t) => {
+  for (const [savedTheme, savedFontSize] of [
+    [undefined, undefined],
+    ['removed-theme', 'not-a-size'],
+    ['constructor', '__proto__'],
+  ]) {
+    const { window } = themeFixture(savedTheme, savedFontSize);
     t.after(() => window.close());
     assert.equal(window.document.documentElement.dataset.theme, 'original');
+    assert.equal(window.document.documentElement.dataset.fontSize, 'smaller');
     assert.equal(window.document.documentElement.style.getPropertyValue('--accent'), '#75f6db');
+    assert.equal(window.document.documentElement.style.getPropertyValue('--font-size-16px'), '14.4px');
   }
 });
 
-test('the picker applies all themes immediately, persists the choice, and restores it in a new page', async (t) => {
-  const { window, themes, storageKey } = themeFixture();
+test('theme swatches apply and persist every theme while retaining its saved text size', async (t) => {
+  const { window, themes, storageKey, fontSizeStorageKey } = themeFixture(undefined, 'largest');
   t.after(() => window.close());
   await settle();
-  const select = window.document.getElementById('theme-picker');
+  const radios = Array.from(window.document.querySelectorAll('#reader-theme-options input[type="radio"]'));
   assert.deepEqual(
-    Array.from(select.options, (option) => option.text),
+    radios.map((radio) => radio.value),
+    Array.from(themes, (theme) => theme.id),
+  );
+  assert.deepEqual(
+    radios.map((radio) => radio.getAttribute('aria-label')),
+    Array.from(themes, (theme) => theme.name),
+  );
+  assert.deepEqual(
+    radios.map((radio) => radio.title),
     Array.from(themes, (theme) => theme.name),
   );
   const document = window.document;
   const location = window.location.href;
   for (const theme of themes) {
-    select.value = theme.id;
-    select.dispatchEvent(new window.Event('change'));
+    const radio = radios.find((choice) => choice.value === theme.id);
+    radio.checked = true;
+    radio.dispatchEvent(new window.Event('change'));
     assert.equal(window.document, document);
     assert.equal(window.location.href, location);
     assert.equal(document.documentElement.dataset.theme, theme.id);
+    assert.equal(document.documentElement.dataset.fontSize, 'largest');
     assert.equal(window.localStorage.getItem(storageKey), theme.id);
     assert.equal(document.querySelector('meta[name="theme-color"]').content, theme.tokens['browser-surface']);
     assert.ok(
       decodeURIComponent(document.querySelector('link[rel="icon"]').href).includes(theme.tokens['favicon-surface']),
     );
-    for (const [name, value] of Object.entries(theme.tokens))
-      assert.equal(document.documentElement.style.getPropertyValue(`--${name}`), value);
-    const restored = themeFixture(window.localStorage.getItem(storageKey));
+    for (const [name, value] of Object.entries(theme.tokens)) {
+      const expected = name.startsWith('font-size-')
+        ? value.replace(
+            /^(\d+(?:\.\d+)?)(px|em)$/,
+            (_, amount, unit) => `${Number((Number(amount) * 1.2).toFixed(3))}${unit}`,
+          )
+        : value;
+      assert.equal(document.documentElement.style.getPropertyValue(`--${name}`), expected);
+    }
+    const restored = themeFixture(
+      window.localStorage.getItem(storageKey),
+      window.localStorage.getItem(fontSizeStorageKey),
+    );
     assert.equal(restored.window.document.documentElement.dataset.theme, theme.id);
+    assert.equal(restored.window.document.documentElement.dataset.fontSize, 'largest');
     restored.window.close();
   }
 });
 
-test('theme changes in another tab, removals and storage clear keep the picker and page in sync', async (t) => {
-  const { window, storageKey } = themeFixture();
+test('text size buttons apply, persist and restore a readable dashboard scale', async (t) => {
+  const { window, fontSizes, fontSizeStorageKey } = themeFixture();
   t.after(() => window.close());
   await settle();
-  const select = window.document.getElementById('theme-picker');
-  for (const [key, newValue, expected] of [
-    [storageKey, 'seed-7024703569', 'seed-7024703569'],
-    ['unrelated', 'seed-2533678612', 'seed-7024703569'],
-    [storageKey, null, 'original'],
-    [storageKey, 'seed-3205321552', 'seed-3205321552'],
-    [null, null, 'original'],
-  ]) {
-    window.dispatchEvent(new window.StorageEvent('storage', { key, newValue, storageArea: window.localStorage }));
-    assert.equal(select.value, expected);
-    assert.equal(window.document.documentElement.dataset.theme, expected);
+  const buttons = Array.from(window.document.querySelectorAll('#reader-font-size-options button'));
+  assert.deepEqual(
+    buttons.map((button) => button.textContent),
+    Array.from(fontSizes, () => 'A'),
+  );
+  assert.deepEqual(
+    buttons.map((button) => button.dataset.fontSize),
+    Array.from(fontSizes, (size) => size.id),
+  );
+  assert.deepEqual(
+    buttons.map((button) => button.getAttribute('aria-label')),
+    Array.from(fontSizes, (size) => `${size.label} text size`),
+  );
+  for (const size of fontSizes) {
+    const button = buttons.find((choice) => choice.dataset.fontSize === size.id);
+    button.click();
+    assert.equal(window.document.documentElement.dataset.fontSize, size.id);
+    assert.equal(window.localStorage.getItem(fontSizeStorageKey), size.id);
+    assert.equal(
+      window.document.documentElement.style.getPropertyValue('--font-size-16px'),
+      `${Number((16 * size.scale).toFixed(3))}px`,
+    );
+    assert.equal(button.getAttribute('aria-pressed'), 'true');
+    assert.equal(buttons.filter((choice) => choice.getAttribute('aria-pressed') === 'true').length, 1);
+    const restored = themeFixture(
+      window.localStorage.getItem('mu-theme'),
+      window.localStorage.getItem(fontSizeStorageKey),
+    );
+    assert.equal(restored.window.document.documentElement.dataset.fontSize, size.id);
+    restored.window.close();
   }
 });
 
-test('the theme picker uses the shared accessible keyboard control and cancels in-flight motion', async (t) => {
+test('the native settings popup exposes keyboard controls and cancels motion on theme changes', async (t) => {
   const { window, $, click, animations } = await fixture(t);
-  const trigger = $('.theme-control .picker-trigger');
-  assert.equal(trigger.getAttribute('aria-label'), 'Theme');
-  assert.equal(trigger.getAttribute('role'), 'combobox');
-  assert.equal(trigger.textContent, 'Mu original');
-  const key = (name) => trigger.dispatchEvent(new window.KeyboardEvent('keydown', { key: name, bubbles: true }));
+  const trigger = $('#reader-settings-trigger');
+  assert.equal(trigger.getAttribute('aria-label'), 'Reading settings');
+  assert.equal(trigger.getAttribute('aria-haspopup'), 'dialog');
+  assert.equal($('#reader-settings').getAttribute('popover'), 'auto');
+  const radios = Array.from(window.document.querySelectorAll('#reader-theme-options input[type="radio"]'));
+  assert.equal(radios.length, 4);
+  assert.ok(radios.every((radio) => radio.tabIndex >= 0));
   click('[data-view="chat"]');
   assert.equal(animations.length, 1);
-  key('ArrowDown');
+  radios[1].checked = true;
+  radios[1].dispatchEvent(new window.Event('change'));
   assert.equal(window.document.documentElement.dataset.theme, 'seed-2533678612');
-  assert.equal(trigger.textContent, 'Tidal Ledger');
   assert.equal(animations[0].cancelled, true);
-  key('Enter');
-  key('End');
-  assert.equal(window.document.documentElement.dataset.theme, 'seed-2533678612', 'highlighting does not apply');
-  key('Escape');
-  assert.equal(trigger.getAttribute('aria-expanded'), 'false');
-  key('e');
+  radios[3].checked = true;
+  radios[3].dispatchEvent(new window.Event('change'));
   assert.equal(window.document.documentElement.dataset.theme, 'seed-7024703569');
   assert.equal(window.localStorage.getItem('mu-theme'), 'seed-7024703569');
-  assert.equal($('.theme-control .picker-option.selected').textContent, 'Ember Terminal');
+  assert.equal(radios[3].checked, true);
+});
+
+test('theme and font size changes in another tab and storage clears update the dashboard', async (t) => {
+  const { window, storageKey, fontSizeStorageKey } = themeFixture();
+  t.after(() => window.close());
+  await settle();
+  const setStored = (key, newValue) => {
+    if (newValue === null) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, newValue);
+    window.dispatchEvent(new window.StorageEvent('storage', { key, newValue, storageArea: window.localStorage }));
+  };
+  setStored(storageKey, 'seed-7024703569');
+  assert.equal(window.document.documentElement.dataset.theme, 'seed-7024703569');
+  setStored(fontSizeStorageKey, 'largest');
+  assert.equal(window.document.documentElement.dataset.fontSize, 'largest');
+  setStored(storageKey, null);
+  assert.equal(window.document.documentElement.dataset.theme, 'original');
+  assert.equal(window.document.documentElement.dataset.fontSize, 'largest');
+  window.localStorage.clear();
+  window.dispatchEvent(
+    new window.StorageEvent('storage', { key: null, newValue: null, storageArea: window.localStorage }),
+  );
+  assert.equal(window.document.documentElement.dataset.theme, 'original');
+  assert.equal(window.document.documentElement.dataset.fontSize, 'smaller');
 });
 
 function luminance(hex) {

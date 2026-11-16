@@ -15,50 +15,246 @@
   transition: none !important;
 }
 
-.theme-control {
+.reader-settings-control {
   display: grid;
   justify-items: center;
-  gap: var(--space-4px);
   margin-top: auto;
   margin-bottom: var(--space-20px);
   min-width: 0;
 }
 
-.theme-control .picker-trigger {
+.reader-settings-trigger {
   display: grid;
-  place-content: center;
-  width: 44px;
-  height: 44px;
+  place-items: center;
+  width: 48px;
+  height: 48px;
   padding: 0;
-  min-width: 0;
+  border: 1px solid var(--rail-link-selected-edge);
+  border-radius: var(--border-radius-12px);
+  background: var(--rail-link-hover-surface);
+  color: var(--accent);
+  font-family: var(--font-brand);
+  font-size: var(--font-size-23px);
+  font-weight: var(--font-weight-600);
+  line-height: var(--line-height-1);
 }
 
-.theme-control .picker-trigger::before {
-  content: '';
-  width: 20px;
-  height: 20px;
-  border: 1px solid var(--accent);
-  border-radius: 50%;
-  background: linear-gradient(90deg, var(--accent) 50%, var(--canvas) 50%);
+.reader-settings-trigger:hover,
+.reader-settings-trigger[aria-expanded='true'] {
+  border-color: var(--accent);
+  background: var(--rail-link-selected-surface);
+  box-shadow: var(--rail-link-selected-box-shadow);
 }
 
-.theme-control .picker-trigger::after {
-  display: none;
+.reader-settings-popover {
+  position: fixed;
+  inset: auto;
+  left: calc(var(--space-86px) + var(--space-8px));
+  bottom: var(--space-20px);
+  width: min(340px, calc(100vw - var(--space-86px) - var(--space-24px)));
+  max-height: calc(100dvh - var(--space-40px));
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-20px);
+  border: 1px solid var(--agent-dialog-edge);
+  border-radius: var(--border-radius-16px);
+  background: var(--agent-dialog-surface);
+  color: var(--ink);
+  box-shadow: var(--reader-settings-box-shadow);
 }
 
-.theme-caption {
+.reader-settings-popover:popover-open {
+  display: grid;
+  gap: var(--space-18px);
+}
+
+.reader-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-18px);
+  padding-bottom: var(--space-14px);
+  border-bottom: 1px solid var(--dialog-actions-edge);
+}
+
+.reader-settings-eyebrow {
+  margin-bottom: var(--space-4px);
+  color: var(--accent);
   font-size: var(--font-size-11px);
+  font-weight: var(--font-weight-600);
+  letter-spacing: var(--letter-spacing-1px);
+  text-transform: uppercase;
+}
+
+.reader-settings-header h2 {
+  color: var(--ink);
+  font-size: var(--font-size-19px);
+  font-weight: var(--font-weight-600);
+  letter-spacing: var(--letter-spacing-negative-0-5px);
+}
+
+.reader-settings-lettering {
+  color: var(--accent);
+  font-family: var(--font-brand);
+  font-size: var(--font-size-32px);
+  line-height: var(--line-height-1);
+  text-shadow: var(--brand-text-shadow);
+}
+
+.reader-setting-group {
+  display: grid;
+  gap: var(--space-12px);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.reader-setting-copy h3,
+.reader-theme-group legend {
+  color: var(--agent-dialog-label-ink);
+  font-size: var(--font-size-14px);
+  font-weight: var(--font-weight-600);
+}
+
+.reader-setting-copy p {
+  margin-top: var(--space-3px);
+  color: var(--muted);
+  font-size: var(--font-size-12px);
+}
+
+.reader-size-options {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-5px);
+}
+
+.reader-size-options button {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 42px;
+  padding: var(--space-4px);
+  border: 1px solid var(--agent-dialog-input-edge);
+  border-radius: var(--border-radius-8px);
+  background: var(--agent-dialog-input-surface);
   color: var(--muted);
 }
 
-.theme-control .picker-list {
-  min-width: min(260px, calc(100vw - 16px));
+.reader-size-options button:nth-child(1) {
+  font-size: var(--font-size-14px);
+}
+
+.reader-size-options button:nth-child(2) {
+  font-size: var(--font-size-17px);
+}
+
+.reader-size-options button:nth-child(3) {
+  font-size: var(--font-size-20px);
+}
+
+.reader-size-options button:nth-child(4) {
+  font-size: var(--font-size-23px);
+}
+
+.reader-size-options button:nth-child(5) {
+  font-size: var(--font-size-26px);
+}
+
+.reader-size-options button[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.reader-theme-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-10px);
+}
+
+.reader-theme-option {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 50px;
+  height: 50px;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.reader-theme-option input {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+
+.reader-theme-option:focus-within {
+  outline: 3px solid var(--button-focus-visible-edge);
+  outline-offset: 3px;
+}
+
+.reader-theme-option:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.reader-theme-swatch {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  aspect-ratio: 1;
+  border: 1px solid var(--agent-dialog-input-edge);
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--theme-swatch-accent) 0deg 90deg,
+    var(--theme-swatch-surface) 90deg 180deg,
+    var(--theme-swatch-muted) 180deg 270deg,
+    var(--theme-swatch-ink) 270deg 360deg
+  );
+}
+
+.reader-theme-swatch::before {
+  position: absolute;
+  inset: var(--space-5px);
+  border-radius: inherit;
+  background: var(--theme-swatch-canvas);
+  content: '';
+}
+
+.reader-theme-swatch span {
+  position: relative;
+  color: var(--theme-swatch-ink);
+  font-family: var(--theme-swatch-font);
+  font-size: var(--font-size-11px);
+  letter-spacing: var(--letter-spacing-negative-0-5px);
+  line-height: var(--line-height-1);
+}
+
+@media (width <= 1060px) {
+  .reader-settings-popover {
+    left: calc(var(--space-72px) + var(--space-8px));
+    width: min(340px, calc(100vw - var(--space-72px) - var(--space-24px)));
+  }
+}
+
+@media (width <= 880px) {
+  .reader-settings-popover {
+    left: calc(var(--space-64px) + var(--space-8px));
+    width: min(340px, calc(100vw - var(--space-64px) - var(--space-24px)));
+  }
 }
 
 body {
   margin: 0;
   color: var(--ink);
   background: var(--canvas);
+  font-size: var(--font-size-16px);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -128,8 +324,7 @@ p {
   display: none !important;
 }
 
-.sr-only,
-.theme-control .picker-value {
+.sr-only {
   position: absolute;
   width: 1px;
   height: 1px;
