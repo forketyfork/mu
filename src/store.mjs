@@ -19,7 +19,7 @@ export function mentions(text) {
 
 // The kinds of record a `change` event can name. The dashboard stream sends only the records a change names, so a
 // change that named nothing, or the wrong record, would leave every open dashboard stale.
-export const CHANGE_KINDS = Object.freeze(['agents', 'conversations', 'tasks', 'waiting', 'activities']);
+export const CHANGE_KINDS = Object.freeze(['agents', 'conversations', 'tasks', 'waiting', 'activities', 'visuals']);
 
 export class Store extends EventEmitter {
   // A `change` event carries what changed: a list of `[kind, id]`, where a null id means any record of that kind.

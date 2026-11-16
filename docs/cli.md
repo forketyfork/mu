@@ -60,6 +60,26 @@ node src/cli.mjs task retire --id task-42
 
 `task update --status ready` records the result and asks you to verify it. Verifying is a dashboard action of yours; there is no CLI command for it. After you verify, Mu notifies the lead, which retires the workers. `task retire` is for the lead to retire workers that this skipped.
 
+## Visuals
+
+Agents write [visuals](visuals.md) with these commands; `FILE` is Markdown.
+
+```bash
+node src/cli.mjs visual create --file plan.md                 # "# Title" names it; --title overrides
+node src/cli.mjs visual patch --id vis-1a2b3c4d --file changes.md
+node src/cli.mjs visual patch --id vis-1a2b3c4d --file new.md --after overview
+node src/cli.mjs visual patch --id vis-1a2b3c4d --remove draft,notes
+node src/cli.mjs visual patch --id vis-1a2b3c4d --move risks --first
+node src/cli.mjs visual patch --id vis-1a2b3c4d --file whole.md --replace
+node src/cli.mjs visual show --id vis-1a2b3c4d                # outline: sections, sizes, block types
+node src/cli.mjs visual show --id vis-1a2b3c4d --section overview [--version 2]
+node src/cli.mjs visual show --id vis-1a2b3c4d --source       # the whole Markdown
+node src/cli.mjs visual list [--task-id task-42] [--conversation issue-42]
+node src/cli.mjs visual guide                                 # the visuals skill; needs no running service
+```
+
+`visual create` links the visual to the conversation of the agent's turn and to its task; `--conversation` and `--task-id` name others. `visual patch` is for the author only. In its file, a section whose ID exists replaces that section, and a new one is inserted after the section before it in the file, or where `--after`, `--before` or `--first` say. The changes of one managed turn make one version; a manual agent makes a version with each change, unless it passes `--amend` to change its newest version.
+
 ## Waiting list and focus list
 
 The lead uses these to maintain the [Waiting for you](dashboard.md#waiting-for-you) cards and the [focus list](dashboard.md#focus-list):

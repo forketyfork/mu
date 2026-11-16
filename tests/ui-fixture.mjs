@@ -8,6 +8,7 @@ import { decorateMarkdown, sanitizeMarkdown } from '../public/markdown-core.js';
 import { createMotion, stateChanges, themeValue } from '../public/motion.js';
 import * as tools from '../public/tools.js';
 import * as picker from '../public/picker.js';
+import { createVisualsView } from '../public/visuals-view.js';
 
 const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
 const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -181,6 +182,7 @@ export async function fixture(t, { reduced = false, hash = '', initial = initial
     stateChanges,
     themeValue,
     createMotion: () => createMotion(preference),
+    createVisualsView,
     markdownElement(className, source, options) {
       const element = window.document.createElement('div');
       element.className = `markdown-body ${className}`;

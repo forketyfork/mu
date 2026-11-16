@@ -1,0 +1,141 @@
+// The page inside the dashboard's sandboxed frame. It has an opaque origin: no credential, no storage, no network
+// beyond its own files. It receives the sections of a visual from the dashboard and tells it what the reader does;
+// every control that acts for the user is drawn by the dashboard, outside this page. See "Visuals" in
+// docs/architecture.md.
+import { marked } from '/vendor/marked.js';
+import DOMPurify from '/vendor/purify.js';
+import { codeLanguage, parseBlocks } from '/visual/format.js';
+import { createRenderer, visualMarkdown } from '/visual/render.js';
+
+const root = document.documentElement;
+const container = document.getElementById('document');
+// The frame's own origin is opaque, so the dashboard's origin is the one this page was loaded from.
+const dashboardOrigin = new URL(location.href).origin;
+const tell = (message) => window.parent.postMessage(message, dashboardOrigin);
+
+const token = (name) => getComputedStyle(root).getPropertyValue(`--${name}`).trim();
+
+let highlighter = null;
+const languages = new Map();
+async function highlight(code, name) {
+  const language = codeLanguage(name);
+  if (!language) return;
+  highlighter ??= import('/vendor/highlight/core.js').then((module) => module.default);
+  const hljs = await highlighter;
+  if (!languages.has(language))
+    languages.set(
+      language,
+      import(`/vendor/highlight/${language}.js`).then((module) => hljs.registerLanguage(language, module.default)),
+    );
+  await languages.get(language);
+  // highlight.js escapes the code and adds only its own spans.
+  code.innerHTML = hljs.highlight(code.textContent, { language, ignoreIllegals: true }).value;
+  code.classList.add('hljs');
+}
+
+let mermaidLibrary = null;
+let diagrams = 0;
+function mermaidConfig() {
+  return {
+    startOnLoad: false,
+    securityLevel: 'strict',
+    theme: 'base',
+    fontFamily: token('font-body'),
+    themeVariables: {
+      darkMode: token('color-scheme') === 'dark',
+      background: token('surface'),
+      primaryColor: token('accent-soft'),
+      primaryTextColor: token('ink'),
+      primaryBorderColor: token('accent'),
+      secondaryColor: token('markdown-body-th-surface'),
+      tertiaryColor: token('canvas'),
+      lineColor: token('muted'),
+      edgeLabelBackground: token('surface'),
+      textColor: token('ink'),
+      mainBkg: token('accent-soft'),
+      noteBkgColor: token('markdown-body-pre-surface'),
+      noteTextColor: token('ink'),
+      noteBorderColor: token('line'),
+      fontFamily: token('font-body'),
+    },
+  };
+}
+async function mermaid(figure, block) {
+  mermaidLibrary ??= import('/vendor/mermaid/mermaid.esm.min.mjs').then((module) => module.default);
+  const library = await mermaidLibrary;
+  library.initialize(mermaidConfig());
+  diagrams += 1;
+  const { svg } = await library.render(`diagram-${diagrams}`, block.text);
+  figure.innerHTML = svg;
+}
+
+const renderer = createRenderer({
+  document,
+  parseBlocks,
+  markdownHtml: (source) => visualMarkdown(source, { parse: marked.parse, sanitize: DOMPurify.sanitize }),
+  highlight,
+  richBlocks: { mermaid },
+  onProblems: (problems) => tell({ type: 'problems', problems }),
+});
+
+function applyTokens(tokens) {
+  for (const [name, value] of Object.entries(tokens))
+    if (/^[a-z0-9-]+$/.test(name) && typeof value === 'string') root.style.setProperty(`--${name}`, value);
+}
+
+let shown = null;
+function activeSection() {
+  let active = null;
+  for (const section of container.children) {
+    if (section.getBoundingClientRect().top > window.innerHeight * 0.35) break;
+    active = section;
+  }
+  return /** @type {HTMLElement | null} */ (active ?? container.firstElementChild)?.dataset.section ?? null;
+}
+let lastActive = null;
+let scheduled = false;
+function reportActive() {
+  if (scheduled) return;
+  scheduled = true;
+  requestAnimationFrame(() => {
+    scheduled = false;
+    const active = activeSection();
+    if (active === lastActive) return;
+    lastActive = active;
+    tell({ type: 'active', sectionId: active });
+  });
+}
+window.addEventListener('scroll', reportActive, { passive: true });
+window.addEventListener('resize', reportActive);
+// A diagram that finishes drawing, or a new text size, moves the sections without a scroll.
+new ResizeObserver(reportActive).observe(container);
+
+container.addEventListener('click', (event) => {
+  const link = /** @type {Element} */ (event.target).closest?.('a[href]');
+  if (!link) return;
+  event.preventDefault();
+  const href = link.getAttribute('href');
+  if (href.startsWith('#')) document.getElementById(`section-${href.slice(1)}`)?.scrollIntoView({ behavior: 'smooth' });
+  else tell({ type: 'link', href });
+});
+
+window.addEventListener('message', (event) => {
+  if (event.source !== window.parent || event.origin !== dashboardOrigin) return;
+  const message = event.data;
+  if (message?.type === 'render') {
+    if (message.tokens) applyTokens(message.tokens);
+    shown = { sections: message.sections };
+    renderer.render(container, { sections: message.sections, flash: message.flash ?? [] });
+    if (message.top) window.scrollTo(0, 0);
+    reportActive();
+  } else if (message?.type === 'theme') {
+    applyTokens(message.tokens);
+    // A diagram is drawn in the colors of its time, so everything is drawn again.
+    renderer.reset();
+    if (shown) renderer.render(container, shown);
+  } else if (message?.type === 'scrollTo') {
+    document.getElementById(`section-${message.sectionId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+});
+
+tell({ type: 'ready' });

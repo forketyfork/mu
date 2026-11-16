@@ -24,6 +24,8 @@ The service identifies every caller by its credential, never by a `--from` optio
 | Add and remove "Waiting for you" cards | no | yes | no |
 | Change focus-list cards | yes | yes | no |
 | Read conversations, rooms and tasks | all | its conversations | its conversations |
+| Write a visual, and change one it wrote | as a manual agent | yes | yes |
+| Read a visual | all | of its conversations | of its conversations |
 | See other agents' assignments, errors and usage | all | from its conversations | from its conversations |
 | Read the whole state and the event stream | yes | no | no |
 | Read agent transcripts | yes | no | no |
@@ -59,13 +61,24 @@ Mu refuses a Codex or pi agent whose working directory is inside the Mu home, an
 
 The role files are the instructions of every agent, including unsandboxed ones. Sandboxed agents cannot write them. The worker role file tells Claude workers never to write the home or read its memory, but nothing enforces that for Claude Code. When a role file changes, Mu posts a notice in the common chat (see [Configuration](configuration.md#upgrade-the-role-files)); a notice you did not cause deserves a look.
 
+## Visuals
+
+A [visual](visuals.md) is written by an agent and shown in the dashboard, and an agent may have read untrusted text. The dashboard therefore treats a visual's content as hostile:
+
+- Agents send Markdown, never script. Raw HTML is reduced to an allow-list; a rich block such as a diagram is text that Mu's own renderer draws.
+- The content is drawn in a sandboxed frame with an opaque origin: it has no credential, no storage, no network and no `eval`, and it cannot navigate the dashboard or itself to another site.
+- The dashboard draws the title, the author, the versions and the section list itself, and checks every message the frame sends. A link opens only after you saw its address and clicked **Open**, and only as a web or mail address.
+- The service answers the frame's requests for its own script and style files from any origin; they hold no data. Every API request keeps the credential and origin checks.
+
+A flaw in a rendering library would give script inside that frame, which can read the visual it shows and draw inside its own rectangle, and nothing more. The decisions are in [Architecture](architecture.md#visuals).
+
 ## The chat server
 
 The IRC server does not authenticate clients or nicknames. Mu therefore records only the messages that it sent itself and ignores everything that other IRC clients post. Any local process can read the common channel. Use the dashboard or the CLI to take part.
 
 ## The HTTP service
 
-Every API request needs a credential. The service also rejects requests whose `Host` or `Origin` is not the local Mu address, against cross-site requests from web pages and DNS rebinding.
+Every API request needs a credential. The service also rejects requests whose `Host` or `Origin` is not the local Mu address, against cross-site requests from web pages and DNS rebinding. The one exception is a `GET` of a file of the [visual frame](#visuals), which carries no data.
 
 ## Outbound requests
 

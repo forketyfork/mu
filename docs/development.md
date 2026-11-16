@@ -23,6 +23,16 @@ The tests can run inside a Codex agent's sandbox. There, the tests that start a 
 
 The `demo` adapter exercises routing and process handling without a model; see [The demo adapter](harnesses.md#the-demo-adapter). Runs with real models also depend on each CLI's account, configuration, permissions and version.
 
+### The visual frame in a real browser
+
+JSDOM cannot show what protects the dashboard from a [visual](visuals.md): the frame's sandbox, the content security policies and module loading from an opaque origin. After a change to the frame, its files or the service's static file handling, run the browser check. It starts a throwaway Mu app with a fake chat, drives headless Google Chrome, and asserts that the frame draws diagrams and code, has no credential, storage or network, and cannot navigate away:
+
+```bash
+node --test --test-force-exit --test-timeout=120000 tests/manual/visual-frame.browser.mjs
+```
+
+`CHROME` names another browser binary. With `SHOTS` set to a directory, the check saves screenshots of each step there. It is not part of `npm test`, which must not need a browser.
+
 ## Git hooks
 
 `npm ci` (or `npm install`) sets `core.hooksPath` to the tracked `.githooks` directory. The `pre-commit` hook runs `npm run check` and then `npm test`, which takes about fifteen seconds and needs a running Docker daemon. The setting is in the repository's shared configuration, so it applies to every worktree. `npm ci` writes it only when it is not already `.githooks`, so it also works where Git configuration is read-only, as in a Codex agent's turn.

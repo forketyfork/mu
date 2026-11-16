@@ -42,6 +42,12 @@
             <path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7" />
           </svg>
         </a>
+        <a class="rail-link" href="#visuals" data-view="visuals" title="Visuals" aria-label="Visuals">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+            <path d="M6 3.5h8.5L19 8v12.5H6V3.5Z" />
+            <path d="M14 3.5V8.5h5M9 13l2 2 4-4.5M9 18h6" />
+          </svg>
+        </a>
         <div class="reader-settings-control">
           <button
             class="reader-settings-trigger"
@@ -301,6 +307,66 @@
             <div class="notice error-notice" id="brag-error" role="alert" hidden></div>
             <p class="brag-skipped" id="brag-skipped" role="status" hidden></p>
             <div class="brag-periods" id="brag-periods"></div>
+          </section>
+
+          <section class="visuals-pane" id="visuals" aria-labelledby="visuals-title" hidden>
+            <div class="visuals-index" id="visuals-index">
+              <div class="section-heading">
+                <div class="section-title">
+                  <h2 id="visuals-title">Visuals</h2>
+                  <span class="count-pill" id="visuals-count">0</span>
+                </div>
+              </div>
+              <div class="visuals-list" id="visuals-list"></div>
+            </div>
+            <div class="visual-viewer" id="visual-viewer" hidden>
+              <header class="visual-header">
+                <button class="text-button" id="visual-back" type="button">← All visuals</button>
+                <div class="visual-heading">
+                  <h2 id="visual-title"></h2>
+                  <p class="visual-meta" id="visual-meta"></p>
+                </div>
+                <div class="visual-versions" role="group" aria-label="Version">
+                  <span
+                    class="live-label"
+                    id="visual-following"
+                    title="The newest version is shown as the agent writes it"
+                    ><span></span>Following</span
+                  ><button class="filter has-news" id="visual-version-latest" type="button" hidden>Follow newest</button
+                  ><button
+                    class="filter"
+                    id="visual-version-previous"
+                    type="button"
+                    title="Previous version"
+                    aria-label="Previous version"
+                  >
+                    ‹</button
+                  ><span class="visual-version-label" id="visual-version-label" aria-live="polite"></span
+                  ><button
+                    class="filter"
+                    id="visual-version-next"
+                    type="button"
+                    title="Next version"
+                    aria-label="Next version"
+                  >
+                    ›
+                  </button>
+                </div>
+              </header>
+              <div class="notice error-notice" id="visual-error" role="alert" hidden></div>
+              <div class="notice error-notice" id="visual-problems" role="status" hidden></div>
+              <div class="notice visual-link" id="visual-link" role="status" hidden>
+                <span>This visual links to</span><code id="visual-link-url"></code
+                ><a class="button primary" id="visual-link-open" target="_blank" rel="noopener noreferrer">Open</a
+                ><button class="text-button" id="visual-link-dismiss" type="button">Dismiss</button>
+              </div>
+              <div class="visual-body" id="visual-body">
+                <aside class="visual-sidebar">
+                  <nav class="visual-outline" id="visual-outline" aria-label="Sections"></nav>
+                  <p class="visual-removed" id="visual-removed" hidden></p>
+                </aside>
+              </div>
+            </div>
           </section>
 
           <section class="chat-pane" id="team-chat" aria-labelledby="chat-title" hidden>

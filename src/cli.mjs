@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { createInterface } from 'node:readline';
 import { initializeHome, resolveDataDir, resolveHome } from './home.mjs';
+import { documentSource, parseBlocks, sectionSource } from './visual-format.mjs';
 
 const help = `Mu — local agent team
 
@@ -38,6 +39,17 @@ Usage: node src/cli.mjs COMMAND [options]
   activity history --id ID
   activity link   --id ID --task-id TASK_ID  (lead; a task belongs to one activity, so this moves it)
   activity unlink --id ID --task-id TASK_ID  (lead)
+  visual create   --file FILE [--title TITLE] [--task-id ID] [--conversation ID]
+                  (FILE: Markdown; "# Title" names the visual, each "## Heading {#id}" starts a section, and a
+                   fenced block such as mermaid is a rich block. "visual guide" explains the format)
+  visual patch    --id ID [--file FILE [--replace]] [--remove SECTIONS] [--move SECTION]
+                  [--after SECTION | --before SECTION | --first] [--title TITLE] [--amend]
+                  (author only. FILE holds the changed or new sections; --replace: FILE is the whole document.
+                   The changes of one turn make one new version; --amend is for manual agents)
+  visual show     --id ID [--section SECTION | --source] [--version N]
+                  (the outline, or the Markdown of one section or of the whole visual)
+  visual list     [--task-id ID] [--conversation ID]
+  visual guide    (prints the visuals skill: when to write a visual, its format and how to revise it)
   inbox           [--id ID] [--wait SECONDS]
   ack             [--id ID] --message MESSAGE_ID
   status          [--id ID] --status STATUS [--task TEXT]
@@ -101,6 +113,11 @@ const commandOptions = {
   'activity:history': ['id'],
   'activity:link': ['id', 'task-id', 'from'],
   'activity:unlink': ['id', 'task-id', 'from'],
+  'visual:create': ['file', 'title', 'task-id', 'conversation', 'room', 'from'],
+  'visual:patch': ['id', 'file', 'replace', 'remove', 'move', 'after', 'before', 'first', 'title', 'amend', 'from'],
+  'visual:show': ['id', 'section', 'source', 'version'],
+  'visual:list': ['task-id', 'conversation', 'room'],
+  'visual:guide': [],
   inbox: ['id', 'wait'],
   ack: ['id', 'message'],
   status: ['id', 'status', 'task'],
@@ -322,7 +339,7 @@ export async function main(
   if (!command || command === '--help' || command === '-h' || command === 'help') {
     return help;
   }
-  if (command === 'room' || command === 'task' || command === 'waiting' || command === 'activity') {
+  if (['room', 'task', 'waiting', 'activity', 'visual'].includes(command)) {
     const [action, ...rest] = args;
     if (!action || action === '--help' || action === '-h') return help;
     command = `${command}:${action}`;
@@ -332,7 +349,17 @@ export async function main(
   if (!allowed) throw new Error(`Unknown command: ${command}. See --help.`);
   const options = Object.fromEntries([...allowed, 'url'].map((name) => [name, { type: 'string' }]));
   options.help = { type: 'boolean', short: 'h' };
-  for (const flag of ['include-verified', 'include-checked', 'new-session', 'dry-run', 'adopt'])
+  for (const flag of [
+    'include-verified',
+    'include-checked',
+    'new-session',
+    'dry-run',
+    'adopt',
+    'replace',
+    'first',
+    'amend',
+    'source',
+  ])
     if (options[flag]) options[flag] = { type: 'boolean' };
   // The options are chosen per command, so parseArgs cannot type the values; every option is a string except the boolean flags.
   /** @type {{values: Record<string, any>, positionals: string[]}} */
@@ -363,6 +390,9 @@ export async function main(
       adopt: Boolean(values.adopt),
     });
   }
+  // The guide describes the commands of this checkout, so it is read from it and needs no running service.
+  if (command === 'visual:guide')
+    return (await readFile(join(ROOT, 'skills/visuals/SKILL.md'), 'utf8')).replace(/^---\n[\s\S]*?\n---\n+/, '');
   if (command === 'dashboard') {
     if (env.MU_TOKEN || env.MU_TOKEN_FILE)
       throw new Error(
@@ -549,6 +579,72 @@ export async function main(
         method: 'POST',
         body: { from: values.from ?? env.MU_AGENT_ID ?? 'user' },
       });
+    case 'visual:create':
+      return request(url, '/api/visuals', {
+        method: 'POST',
+        body: {
+          from: values.from ?? env.MU_AGENT_ID ?? 'user',
+          source: await readFile(required(values.file, '--file'), 'utf8'),
+          ...(values.title === undefined ? {} : { title: values.title }),
+          ...(values['task-id'] === undefined ? {} : { taskId: values['task-id'] }),
+          ...((selectedConversation ?? env.MU_CONVERSATION_ID) === undefined
+            ? {}
+            : { conversationId: selectedConversation ?? env.MU_CONVERSATION_ID }),
+        },
+      });
+    case 'visual:patch': {
+      if (values.replace && !values.file) throw new Error('--replace needs --file with the whole document.');
+      const body = {
+        from: values.from ?? env.MU_AGENT_ID ?? 'user',
+        ...(values.file === undefined ? {} : { source: await readFile(values.file, 'utf8') }),
+        ...(values.remove === undefined ? {} : { remove: members(values.remove) }),
+        ...Object.fromEntries(
+          ['move', 'after', 'before', 'title', 'replace', 'first', 'amend']
+            .filter((key) => values[key] !== undefined)
+            .map((key) => [key, values[key]]),
+        ),
+      };
+      if (Object.keys(body).length === 1) throw new Error('Provide --file, --remove, --move or --title.');
+      return request(url, `/api/visuals/${encodeURIComponent(required(values.id, '--id'))}`, { method: 'PATCH', body });
+    }
+    case 'visual:show': {
+      if (values.section && values.source) throw new Error('Use either --section or --source.');
+      const query = values.version === undefined ? '' : `?version=${integer(values.version, '--version', 1)}`;
+      const visual = await request(url, `/api/visuals/${encodeURIComponent(required(values.id, '--id'))}${query}`);
+      const { shown, ...record } = visual;
+      if (values.source) return documentSource(shown.title, shown.sections);
+      if (values.section) {
+        const section = shown.sections.find((item) => item.id === values.section);
+        if (!section)
+          throw new Error(
+            `Version ${shown.number} of ${visual.id} has no section ${values.section}. Its sections: ${shown.sections.map((item) => item.id).join(', ')}.`,
+          );
+        return sectionSource(section);
+      }
+      // The outline, not the content: an agent reads one section when it needs it.
+      return {
+        ...record,
+        shown: {
+          number: shown.number,
+          title: shown.title,
+          changed: shown.changed,
+          added: shown.added,
+          removed: shown.removed,
+          sections: shown.sections.map((section) => ({
+            id: section.id,
+            title: section.title,
+            bytes: Buffer.byteLength(section.body),
+            blocks: parseBlocks(section.body).map((block) => block.type),
+          })),
+        },
+      };
+    }
+    case 'visual:list': {
+      const query = new URLSearchParams();
+      if (values['task-id']) query.set('task', values['task-id']);
+      if (selectedConversation) query.set('conversation', selectedConversation);
+      return request(url, `/api/visuals${query.size ? `?${query}` : ''}`);
+    }
     case 'inbox': {
       const wait = integer(values.wait ?? '0', '--wait', 0, 25);
       return request(url, `/api/agents/${id()}/inbox?wait=${wait}`);

@@ -92,6 +92,64 @@ The dashboard's **Brag doc** view shows what the team achieved, as a short writt
 - **Strict names, visible mistakes.** `GET /api/brag` (user only, like the workspace state) returns the files as read. A file that does not match a name above, is not a real calendar date, ISO week or month, is larger than 64 KiB, or is a directory or symbolic link is not read; the response lists it in `skipped` with the reason, and the view shows that list. Agents can write this directory, so a file is opened without following links and checked on the open handle, then read up to its limit; a symbolic link in place of the directory itself is an error; only the first 5000 names are considered, because the directory is read on each visit. A missing directory is an empty brag doc.
 - **Untrusted text stays inert.** Entries are agent-written, so they pass through the chat's markdown sanitizer with images forbidden, under the dashboard's content security policy, which also allows no remote image. References to tasks and agents need the workspace state, so the view is built only when both the files and the state have arrived, and again when the known tasks or agents change. The page list is `public/brag.js`, the sections are `public/brag-view.js`, and the file listing is `src/brag.mjs`.
 
+## Visuals
+
+A visual is a document that an agent writes for the user and then keeps changing: text with highlighted code and diagrams, in sections, with every version kept. The user reads it in the dashboard and watches the agent rewrite single sections. The guide is [Visuals](visuals.md); this section records the decisions. Comments, forms and animated explainers are the next phases; [Next phases](#next-phases) holds their design.
+
+### One Markdown document, split into sections
+
+- **The source is Markdown.** Every agent CLI writes Markdown well, and a JSON document with Markdown inside strings costs escaping and tokens. A visual is one Markdown text; a level-2 heading starts a section, and a fenced code block with a registered info string (`mermaid`) is a rich block. Any other fence is highlighted code. A new block type is a new info string with a validator in the service and a renderer in the frame, and nothing else changes: not the storage, the API or the CLI.
+- **Sections are the unit of change.** Each section has an ID that stays the same for the life of the visual: the `{#id}` at the end of its heading, or a slug of the heading. The agent sends the sections it changed (`visual patch --file`), each replaces the stored section with the same ID or is inserted, and others are removed or moved by ID. Sending the whole document again is allowed too, and gives the same result as sending only the changed sections, because Mu compares each section with what it holds.
+- **One parser for the service and the browser.** `src/visual-format.mjs` splits a document into sections and a section into blocks. The service uses it to validate what an agent sends, and serves the same file to the frame, so the two cannot disagree about where a section or a block ends.
+
+### Versions
+
+- **A version is a list of section revisions.** A section's content is stored once per distinct content, under a hash of it; a version names the hash of each of its sections in order. A new version therefore costs only the sections that changed, "what changed between two versions" is a comparison of two lists, and an old version stays readable forever.
+- **One version per agent turn.** The first change in a managed turn creates the next version; every further change in the same turn goes into that version, and the dashboard shows each of them as it arrives. The service knows the turn from the runner, so the agent states nothing. A manual agent has no turn that Mu can see, so each of its changes is a version unless it passes `--amend`. A change that alters no section creates no version.
+
+### Storage and ownership
+
+Visuals live in the shared database in the data directory: the visual record, its versions and its section revisions. The record names the authoring agent, the conversation of the turn that created it, that conversation's native session, and the task: the one given, else the agent's assigned task. Only the service writes them. Agents use the API, where only the author changes a visual, and the user and the members of its conversation read it.
+
+The dashboard stream carries one small record per visual (title, author, task, newest version, a change counter), never content. An open viewer loads the version it shows and loads it again when the counter moves. While the user follows the newest version, the viewer compares the section revisions it showed with the ones it loaded and tells the frame which sections to mark; the frame keeps the element of every section whose revision is the same, so a diagram is not drawn again and the reader keeps their place. A version the user stepped back to is pinned: a newer version is announced, not shown.
+
+Each visual and each version has an address (`#visuals/<id>` follows the newest version, `#visuals/<id>/v<n>` names one), so the browser's history steps through what the user opened, and a visual's ID in a code span links to it like a task ID.
+
+### Security
+
+Visuals are written by agents and shown in the dashboard, whose origin holds the user credential. That credential can create an unsandboxed agent, so script running in that origin has the user's whole machine. An agent that reads untrusted input (a pull request, an issue, a web page) can be made to write a hostile visual. The threat model is therefore: **the content of a visual is hostile data**, and the goals are that it never runs script in the dashboard origin, never makes the browser contact another host, and never acts in the user's name.
+
+- **Agents send data, never code.** No block type carries JavaScript, HTML or CSS. The service validates every rich block when it is written. Raw HTML in the Markdown is reduced to an allow-list of tags and attributes: no script, style, class, ID, form or frame; a link is a web address, a mail address or a section; an image is a raster `data:` URL.
+- **The renderer runs in a sandboxed frame.** Markdown, Mermaid and the highlighter are large libraries that turn text into markup, and Mermaid needs inline styles, which the dashboard's policy forbids. They run in `/visual/frame.html`, an `<iframe sandbox="allow-scripts">`: an opaque origin without the credential, storage, cookies, popups, form submission or top-level navigation. The response also carries `Content-Security-Policy: sandbox allow-scripts`, so the document is sandboxed even when it is opened directly. A flaw in any of these libraries gives script in an origin that holds nothing.
+- **The frame has no network.** Its policy is `default-src 'none'` with scripts, styles and fonts from Mu only, images from `data:` only, no `connect-src` and no `eval`. The dashboard's own policy limits what the frame can be navigated to (`frame-src 'self'`), so a compromised frame cannot send the visual's text to another host by navigating itself.
+- **The dashboard trusts nothing the frame says.** The two talk through `postMessage`. The dashboard accepts messages only from the frame's window, checks every field's type, and uses the values as text. Everything that tells the user what they are looking at, or acts for them, is drawn by the dashboard outside the frame: the title, the author, the task, the versions and the outline. A link inside a visual does not navigate: the frame reports it, and the dashboard shows the address and opens it in a new tab only on the user's click, and only as `http`, `https` or `mailto`.
+- **Frame assets are public files.** The frame's opaque origin makes its requests cross-site, so the service answers `GET` requests for the frame's files without the same-origin check and with `Access-Control-Allow-Origin: *`: a fixed list (the frame page, its scripts and styles, Marked, DOMPurify, the highlighter and its grammars) and the files of Mermaid's browser build, matched by one pattern, because Mermaid loads the code of a diagram type by a name it chooses. They hold no data. Every other path, and every `/api/` request, keeps the credential and origin checks.
+
+Residual risk: a renderer flaw gives script inside the frame, which can read the visual it shows and draw anything inside the frame's rectangle. It cannot reach the credential, the API, or the network through the channels a content security policy governs.
+
+### Libraries
+
+| Need | Chosen | Considered |
+| --- | --- | --- |
+| Markdown | Marked and DOMPurify, already used by the chat | |
+| Diagrams | Mermaid, in strict security mode, loaded only for a visual that has a diagram | D2 (WebAssembly build, slower start, fewer diagram types) |
+| Code highlighting | highlight.js: class-based output that needs no inline styles, with a fixed list of grammars, each loaded when a visual uses it | Shiki (better grammars, but inline styles and a WebAssembly or large JavaScript regex engine); Prism (maintenance stalled) |
+
+The libraries are pinned dependencies, served from `node_modules` as they are published, because Mu has no build step. highlight.js publishes its core as CommonJS only, so the service wraps that one file in a module. The frame's colors are the dashboard theme's tokens, which the dashboard sends with the content: the frame cannot read the dashboard's styles, and its diagrams and code follow a theme change.
+
+### The visuals skill
+
+`skills/visuals/SKILL.md` tells an agent when to write a visual and how. It is not a role file: the home holds only the two role files, which Mu delivers in every session and the user edits. The skill describes the commands and the format of one checkout, so the CLI of that checkout prints it (`visual guide`), every CLI can read it, and it cannot go stale against the commands. The role files only say when to reach for it.
+
+### Next phases
+
+The feature lands in phases, each reviewed before its merge. In place: the model, storage, API and CLI, Markdown with code and diagrams, versions and live updates. Designed, not built:
+
+- **Comments.** The user selects text in a visual and comments on it. A comment names the version, the section, and the quoted text with a few characters before and after it, and is a draft until it is sent. A new version starts without comments; the earlier ones keep theirs. A patch can name the comments it answers, which marks them in the old version and labels the changed section in the new one.
+- **Feedback goes to the author's session.** Comments and form answers reach the agent as one ordinary chat message from the user in the visual's conversation, addressed to the author. Mu already keeps one native session per agent and conversation, so the message resumes the session that wrote the visual, and needs no second delivery path. "Send now" sends one comment, "send all" sends every draft of the version in one message, so one round of feedback costs one agent turn. The comment field, the comment list and the send buttons are the dashboard's, outside the frame; a quote comes from the frame, so it is cut to a fixed length and sent as a quote, and the message is posted as the user only by the user's own click.
+- **Forms.** A `form` block is a list of fields (choices, text, numbers, toggles). The user's answers are stored per version and sent with the feedback after the dashboard showed them for review; the agent reads them back with the CLI.
+- **Explainers.** A `scene` block is a declarative animation: shapes, steps and captions that Mu's own renderer plays on anime.js timelines, which bring seeking, easing, SVG line drawing and motion paths. Considered: Motion (same role, fewer SVG helpers); GSAP (not an open-source license); Lottie (declarative, but its JSON is exported from design tools and not written by hand); Motion Canvas, Remotion and Manim (animations are programs, which the threat model excludes); SMIL (declarative, but no steps or captions).
+
 ## Waiting for you
 
 The dashboard lists, above everything else, the decisions that block a task, as plain-sentence cards. It is separate from the task list: a task awaiting verification already has its own card, and a blocker does not change a task's status. The lead alone adds and removes cards (`waiting add`, `waiting remove`); the user and workers can only read them. The lead removes a card itself once the decision is made, because Mu cannot tell when a decision was made. Cards live in the `waiting` table of the shared database, so they survive a restart and arrive in the dashboard state like tasks.

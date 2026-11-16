@@ -12,6 +12,8 @@ import { AgentSockets, Identity, bearer } from './identity.mjs';
 import { createTasks } from './tasks.mjs';
 import { createWaiting } from './waiting.mjs';
 import { createActivities } from './activities.mjs';
+import { createVisuals } from './visuals.mjs';
+import { CODE_LANGUAGES } from './visual-format.mjs';
 import { createDashboardStream } from './dashboard.mjs';
 import { PricingCatalog } from './pricing.mjs';
 import { readBrag } from './brag.mjs';
@@ -41,6 +43,42 @@ import {
 import { httpError as bad } from './http-error.mjs';
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+// See "Visuals" in docs/architecture.md. The dashboard may embed only Mu's own pages, and the frame-src rule also
+// governs where an embedded frame can navigate itself.
+const PAGE_POLICY =
+  "default-src 'self'; connect-src 'self'; style-src 'self'; img-src 'self' data:; script-src 'self'; frame-src 'self'; frame-ancestors 'none'";
+// The page that renders a visual's content, written by agents. The sandbox directive gives it an opaque origin even
+// when it is opened outside the dashboard's sandboxed frame, and nothing in the policy allows a connection.
+const FRAME_PAGE = '/visual/frame.html';
+const FRAME_POLICY =
+  "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox allow-scripts";
+// Every file the frame loads, by its URL path; the frame gets no other file. highlight.js publishes its core as
+// CommonJS only, so that file is served inside a module wrapper.
+const FRAME_ASSETS = Object.freeze({
+  [FRAME_PAGE]: { file: 'public/visual/frame.html' },
+  '/visual/frame.css': { file: 'public/visual/frame.css' },
+  '/visual/frame.js': { file: 'public/visual/frame.js' },
+  '/visual/render.js': { file: 'public/visual/render.js' },
+  '/visual/format.js': { file: 'src/visual-format.mjs' },
+  '/vendor/marked.js': { file: 'node_modules/marked/lib/marked.esm.js' },
+  '/vendor/purify.js': { file: 'node_modules/dompurify/dist/purify.es.mjs' },
+  '/vendor/highlight/core.js': { file: 'node_modules/highlight.js/lib/core.js', commonJs: true },
+  ...Object.fromEntries(
+    CODE_LANGUAGES.map((language) => [
+      `/vendor/highlight/${language}.js`,
+      { file: `node_modules/highlight.js/es/languages/${language}.js` },
+    ]),
+  ),
+});
+// Mermaid loads the code of a diagram type when a diagram first needs it, from files it names itself.
+const MERMAID_FILE = /^\/vendor\/mermaid\/(mermaid\.esm\.min\.mjs|chunks\/mermaid\.esm\.min\/[A-Za-z0-9_-]+\.mjs)$/;
+function frameAssetOf(pathname) {
+  if (Object.hasOwn(FRAME_ASSETS, pathname)) return FRAME_ASSETS[pathname];
+  const mermaid = MERMAID_FILE.exec(pathname);
+  return mermaid ? { file: `node_modules/mermaid/dist/${mermaid[1]}` } : null;
+}
+const commonJsModule = (source) =>
+  `const module = { exports: {} };\n(function (module, exports) {\n${source}\n})(module, module.exports);\nexport default module.exports;\n`;
 // NUL and the CTCP marker would corrupt the IRC line that carries a message.
 // eslint-disable-next-line no-control-regex -- the pattern is about control characters
 const IRC_CONTROL = /[\0\x01]/;
@@ -198,6 +236,7 @@ export async function createApp({
   const waiting = createWaiting({ store, tasks });
   leadPromptState.waiting = waiting;
   const activities = createActivities({ store, tasks });
+  const visuals = createVisuals({ store, runner, tasks });
   let stopEventLoopMonitor = null;
   const adapters = ['codex', 'claude', 'pi', 'manual', 'demo', ...Object.keys(custom)];
   const withPid = (agent) => {
@@ -524,6 +563,8 @@ export async function createApp({
         get: (id) => activities.list().find((activity) => activity.id === id) ?? null,
       },
       conversations: { list: () => store.conversations(), get: (id) => store.conversation(id) },
+      // A visual's record only; the viewer loads the content of the version it shows.
+      visuals: { list: () => visuals.list(), get: (id) => visuals.find(id) },
     },
     lastMessageIds: () => store.lastMessageIds(),
     transport: () => ({ ...chat.state }),
@@ -537,17 +578,22 @@ export async function createApp({
   chat.on('change', () => dashboard.transportChanged());
   const handle = async (request, response, binding = null) => {
     try {
+      const parsed = new URL(request.url, url);
+      const pathname = parsed.pathname;
+      // The visual frame is sandboxed into an opaque origin, so the browser marks its requests for its own files as
+      // cross-site, with the origin "null". Those files are public code and hold no data.
+      const frameAsset = request.method === 'GET' ? frameAssetOf(pathname) : null;
       if (binding) {
         if (request.headers.origin) throw bad('Browser requests are not accepted on an agent socket', 403);
       } else {
         const allowedHosts = [`127.0.0.1:${port}`, `localhost:${port}`];
         if (!allowedHosts.includes(request.headers.host)) throw bad('Host must be the local Mu address', 403);
-        if (request.headers.origin && !allowedHosts.map((host) => `http://${host}`).includes(request.headers.origin))
-          throw bad('Requests from other browser origins are not allowed', 403);
-        if (request.headers['sec-fetch-site'] === 'cross-site') throw bad('Cross-site requests are not allowed', 403);
+        if (!frameAsset) {
+          if (request.headers.origin && !allowedHosts.map((host) => `http://${host}`).includes(request.headers.origin))
+            throw bad('Requests from other browser origins are not allowed', 403);
+          if (request.headers['sec-fetch-site'] === 'cross-site') throw bad('Cross-site requests are not allowed', 403);
+        }
       }
-      const parsed = new URL(request.url, url);
-      const pathname = parsed.pathname;
       if (pathname.startsWith('/api/')) request.caller = authenticate(request, binding, parsed);
       else if (binding) throw bad('Not found', 404);
       if (request.method === 'GET' && (pathname === '/api/state' || pathname === '/api/events'))
@@ -924,6 +970,7 @@ export async function createApp({
       if (await tasks.handle({ request, response, pathname, body, send, actor })) return;
       if (await waiting.handle({ request, response, pathname, body, send, actor })) return;
       if (await activities.handle({ request, response, pathname, body, send, actor })) return;
+      if (await visuals.handle({ request, response, pathname, body, send, actor })) return;
       const match = pathname.match(/^\/api\/agents\/([a-z][a-z0-9-]{0,23})(?:\/(stop|inbox|ack))?$/);
       if (match) {
         const [, id, action] = match;
@@ -1070,26 +1117,27 @@ export async function createApp({
       if (request.method === 'GET' && !pathname.startsWith('/api/')) {
         const file = pathname === '/' ? 'index.html' : pathname.slice(1);
         if (file.includes('..') || !/^[a-zA-Z0-9_./-]+$/.test(file)) throw bad('Not found', 404);
-        const vendors = {
-          '/vendor/marked.js': join(root, 'node_modules/marked/lib/marked.esm.js'),
-          '/vendor/purify.js': join(root, 'node_modules/dompurify/dist/purify.es.mjs'),
-        };
-        const full = vendors[pathname] || join(root, 'public', file);
+        const full = frameAsset ? join(root, frameAsset.file) : join(root, 'public', file);
         let contents;
         try {
           contents = await readFile(full);
         } catch {
           throw bad('Not found', 404);
         }
+        if (frameAsset?.commonJs) contents = commonJsModule(contents.toString('utf8'));
         const mime =
-          { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml' }[
-            extname(file)
-          ] || 'application/octet-stream';
+          {
+            '.html': 'text/html',
+            '.css': 'text/css',
+            '.js': 'text/javascript',
+            '.mjs': 'text/javascript',
+            '.svg': 'image/svg+xml',
+          }[extname(file)] || 'application/octet-stream';
         response.writeHead(200, {
           'Content-Type': `${mime}; charset=utf-8`,
           'X-Content-Type-Options': 'nosniff',
-          'Content-Security-Policy':
-            "default-src 'self'; connect-src 'self'; style-src 'self'; img-src 'self' data:; script-src 'self'; frame-ancestors 'none'",
+          'Content-Security-Policy': pathname === FRAME_PAGE ? FRAME_POLICY : PAGE_POLICY,
+          ...(frameAsset ? { 'Access-Control-Allow-Origin': '*' } : {}),
         });
         response.end(contents);
         return;
@@ -1110,6 +1158,7 @@ export async function createApp({
     tasks,
     waiting,
     activities,
+    visuals,
     pricing,
     transcripts,
     state,

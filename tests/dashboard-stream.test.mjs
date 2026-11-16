@@ -629,7 +629,7 @@ function memoryStream(records) {
   });
   const dashboard = createDashboardStream({
     sources: Object.fromEntries(
-      ['agents', 'tasks', 'waiting', 'activities', 'conversations'].map((kind) => [kind, source(kind)]),
+      ['agents', 'tasks', 'waiting', 'activities', 'conversations', 'visuals'].map((kind) => [kind, source(kind)]),
     ),
     lastMessageIds: () => ({}),
     transport: () => ({ connected: true }),
@@ -668,7 +668,14 @@ function fold(events) {
 }
 
 test('a dashboard that connects between two changes of one record in one turn still ends with the current record', async () => {
-  const records = { agents: { a: { id: 'a', pending: 0 } }, tasks: {}, waiting: {}, activities: {}, conversations: {} };
+  const records = {
+    agents: { a: { id: 'a', pending: 0 } },
+    tasks: {},
+    waiting: {},
+    activities: {},
+    conversations: {},
+    visuals: {},
+  };
   const { dashboard, response } = memoryStream(records);
   const early = response();
   dashboard.connect(/** @type {any} */ (early), undefined);
@@ -693,7 +700,14 @@ test('a dashboard that connects between two changes of one record in one turn st
 });
 
 test('a change named after the stream closed reads no source', async () => {
-  const records = { agents: { a: { id: 'a' } }, tasks: {}, waiting: {}, activities: {}, conversations: {} };
+  const records = {
+    agents: { a: { id: 'a' } },
+    tasks: {},
+    waiting: {},
+    activities: {},
+    conversations: {},
+    visuals: {},
+  };
   const { dashboard, reads } = memoryStream(records);
   const before = reads();
   dashboard.close();
