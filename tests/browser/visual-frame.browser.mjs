@@ -271,6 +271,7 @@ test('a visual renders in the sandboxed frame of a real browser', async (t) => {
       requests.set(message.params.requestId, message.params.request.url);
     else if (message.method === 'Network.loadingFailed' && message.params.blockedReason)
       refused.set(message.params.requestId, message.params.blockedReason);
+    else if (message.method === 'Target.detachedFromTarget') sessions.delete(message.params.sessionId);
     else if (message.method === 'Target.attachedToTarget') {
       const { sessionId, targetInfo } = message.params;
       sessions.set(sessionId, targetInfo);
@@ -323,8 +324,12 @@ test('a visual renders in the sandboxed frame of a real browser', async (t) => {
   await until('the list of visuals', () => evaluate(`Boolean(document.querySelector('.visual-card'))`));
   await shot('1-index');
   await evaluate(`document.querySelector('.visual-card').click()`);
-  const frameId = await until('the sandboxed frame as a target of its own', frameSession);
-  const inFrame = (expression) => evaluate(expression, frameId);
+  await until('the sandboxed frame as a target of its own', frameSession);
+  const inFrame = (expression) => {
+    const current = frameSession();
+    if (!current) throw new Error('the sandboxed frame is not attached');
+    return evaluate(expression, current);
+  };
   const drawn = `document.querySelectorAll('.visual-section').length > 0 && !document.querySelector('.visual-rich.pending')`;
   await until('the diagrams and the code', () =>
     inFrame(`${drawn} && document.querySelectorAll('code.hljs').length === 2`),
@@ -480,6 +485,59 @@ test('a visual renders in the sandboxed frame of a real browser', async (t) => {
   await until(
     'the outline to follow the moved sections',
     async () => (await evaluate(marked)) === (await inFrame(atReadingLine)),
+  );
+  await evaluate(`document.querySelector('#reader-font-size-options [data-font-size="${initial}"]').click()`);
+  await redrawn(before.size);
+
+  await evaluate(`document.querySelector('#reader-font-size-options [data-font-size="largest"]').click()`);
+  await redrawn(largest);
+  await browser.send(
+    'Emulation.setDeviceMetricsOverride',
+    { width: 390, height: 844, deviceScaleFactor: 1, mobile: false },
+    sessionId,
+  );
+  const mobileViewer = await evaluate(`(() => {
+    const pane = document.getElementById('visuals');
+    const header = document.querySelector('.visual-header');
+    const versions = document.querySelector('.visual-versions');
+    const body = document.querySelector('.visual-body');
+    const frame = document.querySelector('.visual-frame');
+    return {
+      width: innerWidth,
+      paneWidth: pane.clientWidth,
+      paneScrollWidth: pane.scrollWidth,
+      headerWidth: header.clientWidth,
+      headerScrollWidth: header.scrollWidth,
+      versionsWidth: versions.clientWidth,
+      versionsScrollWidth: versions.scrollWidth,
+      bodyWidth: body.clientWidth,
+      bodyScrollWidth: body.scrollWidth,
+      frameWidth: frame.getBoundingClientRect().width,
+    };
+  })()`);
+  assert.equal(mobileViewer.width, 390, JSON.stringify(mobileViewer));
+  assert.ok(mobileViewer.paneScrollWidth <= mobileViewer.paneWidth + 1, JSON.stringify(mobileViewer));
+  assert.ok(mobileViewer.headerScrollWidth <= mobileViewer.headerWidth + 1, JSON.stringify(mobileViewer));
+  assert.ok(mobileViewer.versionsScrollWidth <= mobileViewer.versionsWidth + 1, JSON.stringify(mobileViewer));
+  assert.ok(mobileViewer.bodyScrollWidth <= mobileViewer.bodyWidth + 1, JSON.stringify(mobileViewer));
+  assert.ok(mobileViewer.frameWidth > 0, JSON.stringify(mobileViewer));
+  await evaluate(`document.getElementById('visual-back').click()`);
+  await until('the mobile visual index', () => evaluate(`!document.getElementById('visuals-index').hidden`));
+  const mobileIndex = await evaluate(`(() => {
+    const pane = document.getElementById('visuals');
+    const index = document.getElementById('visuals-index');
+    return { width: innerWidth, paneWidth: pane.clientWidth, paneScrollWidth: pane.scrollWidth,
+      indexWidth: index.clientWidth, indexScrollWidth: index.scrollWidth };
+  })()`);
+  assert.equal(mobileIndex.width, 390, JSON.stringify(mobileIndex));
+  assert.ok(mobileIndex.paneScrollWidth <= mobileIndex.paneWidth + 1, JSON.stringify(mobileIndex));
+  assert.ok(mobileIndex.indexScrollWidth <= mobileIndex.indexWidth + 1, JSON.stringify(mobileIndex));
+  await evaluate(`location.hash = '#visuals/${visual.id}/v1'`);
+  await until('the mobile visual viewer again', () => evaluate(`!document.getElementById('visual-viewer').hidden`));
+  await browser.send(
+    'Emulation.setDeviceMetricsOverride',
+    { width: 1500, height: 1000, deviceScaleFactor: 1, mobile: false },
+    sessionId,
   );
   await evaluate(`document.querySelector('#reader-font-size-options [data-font-size="${initial}"]').click()`);
   await redrawn(before.size);

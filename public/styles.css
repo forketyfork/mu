@@ -4682,3 +4682,33 @@ kbd {
     flex-wrap: wrap;
   }
 }
+
+@media (width <= 400px) {
+  .visual-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: var(--space-10px);
+    padding-right: var(--space-16px);
+    padding-left: var(--space-16px);
+  }
+
+  .visual-header .text-button {
+    align-self: flex-start;
+  }
+
+  .visual-heading {
+    width: 100%;
+  }
+
+  .visual-versions {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .visual-version-label {
+    min-width: 0;
+  }
+}
