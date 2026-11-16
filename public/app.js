@@ -13,6 +13,7 @@ import {
   filterAgents,
   formatBytes,
   initials,
+  agentLifecycleActions,
   isAgentBusy,
   baselineViewed,
   isNewMessage,
@@ -761,15 +762,20 @@ function createAgentCard(agent) {
   const actions = node('div', 'agent-actions');
   const mention = iconButton('chat', 'Private chat', `Message ${agent.id}`);
   mention.dataset.action = 'mention';
-  const stop = iconButton('stop', 'Stop', `Stop ${agent.id}`, 'stop');
-  stop.dataset.action = 'stop';
-  stop.disabled = agent.status === 'stopped';
+  const lifecycle = agentLifecycleActions(agent).map((action) => {
+    const button =
+      action === 'resume'
+        ? iconButton('play', 'Resume', `Resume ${agent.id}: set it idle so that it takes its queued messages`, 'resume')
+        : iconButton('stop', 'Stop', `Stop ${agent.id}`, 'stop');
+    button.dataset.action = action;
+    return button;
+  });
   if (transcriptConversations(agent).length) {
     const transcript = iconButton('transcript', 'Transcript', `Show the transcript of ${agent.id}`);
     transcript.dataset.action = 'transcript';
     actions.append(transcript);
   }
-  actions.append(mention, stop);
+  actions.append(mention, ...lifecycle);
   footer.append(...chips, actions);
   card.append(footer);
   return card;
@@ -2307,13 +2313,19 @@ elements.grid.addEventListener('click', async (event) => {
     openTranscript(id);
     return;
   }
+  const resume = button.dataset.action === 'resume';
   button.disabled = true;
   showError('page-error', '');
   try {
-    await request(`/api/agents/${encodeURIComponent(id)}/stop`, { method: 'POST', body: JSON.stringify({}) });
-    toast(`${id} stopped.`);
+    if (resume)
+      await request(`/api/agents/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'idle' }),
+      });
+    else await request(`/api/agents/${encodeURIComponent(id)}/stop`, { method: 'POST', body: JSON.stringify({}) });
+    toast(`${id} ${resume ? 'resumed' : 'stopped'}.`);
   } catch (error) {
-    showError('page-error', `Could not stop ${id}: ${error.message}`);
+    showError('page-error', `Could not ${resume ? 'resume' : 'stop'} ${id}: ${error.message}`);
     button.disabled = false;
   }
 });

@@ -76,6 +76,41 @@ test('the dashboard Stop button stops an errored agent with a pending message, a
   assert.equal(app.store.messages(10, 'dm-failed').length, 1);
 });
 
+test('the dashboard Resume button sets a failed agent idle and clears its error', async (t) => {
+  const port = await freePort();
+  const app = await createApp({
+    home: await temporaryMuHome(t),
+    port,
+    dataDir: await shortTempDir(t, 'ui-resume'),
+    chatFactory: (options) => new FakeChat(options),
+    pricing: offlinePricing(),
+  });
+  await app.start();
+  t.after(() => app.close());
+  const url = `http://127.0.0.1:${port}`;
+  app.store.createAgent({ id: 'lead', role: 'lead', adapter: 'manual', cwd: ROOT, task: '' });
+  app.store.createAgent({ id: 'failed', role: 'worker', adapter: 'manual', cwd: ROOT, task: '' });
+  app.store.updateAgent('failed', { status: 'error', lastError: 'Server restarted during a turn.' });
+  const state = await (
+    await fetch(`${url}/api/state`, { headers: { Authorization: `Bearer ${app.identity.token}` } })
+  ).json();
+  const dashboard = await fixture(t, { initial: state });
+  dashboard.window.fetch = (path, options = {}) =>
+    fetch(url + path, {
+      ...options,
+      headers: { ...options.headers, Authorization: `Bearer ${app.identity.token}`, Origin: url },
+    });
+
+  dashboard.click('[data-agent="failed"] [data-action="resume"]');
+  await until(
+    () => app.store.agent('failed').status === 'idle' || dashboard.$('#page-error').textContent,
+    () => app.store.agent('failed').status,
+  );
+  assert.equal(dashboard.$('#page-error').textContent, '');
+  assert.equal(app.store.agent('failed').status, 'idle');
+  assert.equal(app.store.agent('failed').lastError, null);
+});
+
 test('a failed Stop stays visible after the next state update', async (t) => {
   const initial = initialState();
   initial.agents.push({

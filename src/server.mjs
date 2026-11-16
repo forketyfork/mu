@@ -503,7 +503,7 @@ export async function createApp({
       .filter((agent) => agent && ['stopped', 'error'].includes(agent.status));
     if (!paused.length) return null;
     const names = paused.map((agent) => `${agent.id} (${agent.status})`).join(', ');
-    return `@user Message #${message.id} is queued, but nobody will process it now: ${names} ${paused.length === 1 ? 'does' : 'do'} not run turns until set idle. Ask the lead to take over the request, or run \`node src/cli.mjs status --id ${paused.length === 1 ? paused[0].id : 'AGENT'} --status idle\`.`;
+    return `@user Message #${message.id} is queued, but nobody will process it now: ${names} ${paused.length === 1 ? 'does' : 'do'} not run turns until resumed. Ask the lead to take over the request, or resume the agent from its card.`;
   };
   // Posts a chat message with the checks of a message typed in the chat; the user's comments on a visual take the
   // same way.

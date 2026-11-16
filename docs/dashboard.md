@@ -17,7 +17,7 @@ From top to bottom:
 - **[Focus list](#focus-list)**: your own list of what is in progress.
 - **Tasks** and **agents**, as cards.
 
-An **agent card** shows the agent's name and status, its CLI, model, reasoning effort (when Mu sets one), the size of its context and its spend. Its buttons open the agent's private chat and its [transcript](#transcripts), and stop the agent. The text of its assignment is folded under **Task**. An agent's name glows and shimmers wherever it appears while that agent runs a turn.
+An **agent card** shows the agent's name and status, its CLI, model, reasoning effort (when Mu sets one), the size of its context and its spend. Its buttons open the agent's private chat and its [transcript](#transcripts), and stop the agent. A stopped agent shows a resume button in place of the stop button, and a failed one shows both; resume sets the agent idle, so that it takes its queued messages. The text of its assignment is folded under **Task**. An agent's name glows and shimmers wherever it appears while that agent runs a turn.
 
 ### Spend
 
@@ -55,7 +55,7 @@ The icons in a task card's top right corner show its status (hover for the name)
 
 After you verify a task, Mu tells the lead, and the lead retires the task's workers. A worker that another unverified task still needs, or that is still processing messages, stays, and the card says why. Retired agents keep their history. If Mu could not notify the lead, the card shows the error and **Retry lead notification**.
 
-You can stop any agent from its card at any time. A stopped agent takes no turns until you set it idle again.
+You can stop any agent from its card at any time. A stopped agent, or one in `error`, takes no turns until you resume it from its card (the same as `node src/cli.mjs status --id ID --status idle`). Before you resume a failed agent, look at its work: its CLI process may have left changes behind.
 
 **Archived items.** By default the dashboard hides verified tasks, workers whose tasks are all verified, their private chats, and rooms whose tasks are all verified. Anything still tied to unverified work stays visible. The lead, its private chat and the common room are never hidden. Turn on **Show archived** in the top bar to see everything.
 

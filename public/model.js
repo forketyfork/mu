@@ -216,6 +216,14 @@ export function isAgentBusy(agent) {
   return agent.status === 'working' || Boolean(agent.activeMessageId);
 }
 
+// A stopped agent runs no turn until it is set idle, so its card offers Resume where Stop would do nothing. A failed
+// agent keeps Stop too: stopping it parks its queued messages for good instead of retrying them.
+export function agentLifecycleActions(agent) {
+  if (agent.status === 'stopped') return ['resume'];
+  if (agent.status === 'error') return ['resume', 'stop'];
+  return ['stop'];
+}
+
 export const activityVerbs = [
   'following the white rabbit', // The Matrix
   'bending the spoon. There is no spoon', // The Matrix

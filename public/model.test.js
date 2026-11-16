@@ -9,6 +9,7 @@ import {
   conversationMessages,
   defaultConversationId,
   filterAgents,
+  agentLifecycleActions,
   isAgentBusy,
   baselineViewed,
   applyChanges,
@@ -231,6 +232,13 @@ test('total unread sums agent messages after each conversation read marker', () 
     1,
   );
   assert.equal(totalUnread(messages, conversations, new Map()), 4);
+});
+
+test('a stopped agent is offered a resume in place of a stop; a failed one both', () => {
+  assert.deepEqual(agentLifecycleActions({ status: 'stopped' }), ['resume']);
+  assert.deepEqual(agentLifecycleActions({ status: 'error' }), ['resume', 'stop']);
+  for (const status of ['idle', 'working', 'blocked', 'done'])
+    assert.deepEqual(agentLifecycleActions({ status }), ['stop']);
 });
 
 test('an agent is busy while it reports working or a managed turn is still running', () => {

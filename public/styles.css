@@ -1224,6 +1224,10 @@ h1 {
   --glyph: url('icons/transcript.svg');
 }
 
+.glyph-play {
+  --glyph: url('icons/play.svg');
+}
+
 .glyph-stop {
   --glyph: url('icons/stop.svg');
 }
@@ -1261,6 +1265,11 @@ h1 {
 .icon-action.stop:hover:not(:disabled) {
   background: var(--agent-error-surface);
   color: var(--status-error-ink);
+}
+
+.icon-action.resume:hover:not(:disabled) {
+  background: var(--icon-action-hover-not-disabled-surface);
+  color: var(--status-idle-ink);
 }
 
 .icon-action:disabled {
