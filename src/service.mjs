@@ -1,9 +1,10 @@
 import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { copyFile, mkdtemp, readdir, readFile, realpath, rm, unlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { promisify } from 'node:util';
 
 // launchd restarts the job after an unsuccessful exit (KeepAlive.SuccessfulExit = false), so a restart is a clean
@@ -135,6 +136,21 @@ export async function freePort() {
   return port;
 }
 
+// Versioned package-manager directories can disappear on upgrade. Prefer the stable opt path when it resolves
+// to the same executable that runs the installer. A long-lived service must not hand its own versioned path to a
+// child it starts later: after an upgrade that path no longer exists.
+export function stableNodePath(execPath) {
+  const parts = execPath.split(sep);
+  const cellar = parts.lastIndexOf('Cellar');
+  if (cellar < 1 || parts.length !== cellar + 5 || parts[cellar + 3] !== 'bin') return execPath;
+  const stable = [...parts.slice(0, cellar), 'opt', parts[cellar + 1], 'bin', parts[cellar + 4]].join(sep);
+  try {
+    return realpathSync(stable) === realpathSync(execPath) ? stable : execPath;
+  } catch {
+    return execPath;
+  }
+}
+
 const tail = (text) => (text.length > OUTPUT_TAIL_CHARS ? `…${text.slice(-OUTPUT_TAIL_CHARS)}` : text);
 
 // Starts the checkout's code on its own port, with a snapshot of the database in a temporary data directory and an
@@ -147,6 +163,7 @@ export async function startCheck({
   dataDir,
   env = process.env,
   timeoutMs = START_CHECK_TIMEOUT_MS,
+  node = stableNodePath(process.execPath),
 }) {
   if (!home) throw new Error('The start check needs the initialized Mu home');
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'mu-check-')));
@@ -175,12 +192,21 @@ export async function startCheck({
       MU_IRC_HOST: '127.0.0.1',
       MU_IRC_PORT: String(ircPort),
     };
-    child = spawn(process.execPath, [join(root, 'src/server.mjs')], {
+    child = spawn(node, [join(root, 'src/server.mjs')], {
       cwd: root,
       env: childEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    const exited = new Promise((resolve) => child.once('exit', (code, signal) => resolve({ code, signal })));
+    // A process that cannot be spawned emits 'error' and never 'exit'; unhandled, the event would end the live service.
+    /** @type {Error | null} */
+    let spawnError = null;
+    const exited = new Promise((resolve) => {
+      child.once('exit', (code, signal) => resolve({ code, signal }));
+      child.once('error', (error) => {
+        spawnError = error;
+        resolve({ code: null, signal: null });
+      });
+    });
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     let announced;
@@ -198,6 +224,7 @@ export async function startCheck({
     const started = await Promise.race([ready.then(() => 'ready'), exited.then(() => 'exited'), deadline(remaining())]);
     if (started === 'exited') {
       const { code, signal } = await exited;
+      if (spawnError) throw fail(`starting: ${node} could not be spawned (${spawnError.message})`);
       throw fail(`starting: it exited ${code ?? signal} before it announced readiness`);
     }
     if (started === 'timeout')

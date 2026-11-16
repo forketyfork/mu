@@ -57,7 +57,7 @@ After you change `PATH`, the Node.js installation or a recorded variable, uninst
 
 Run `node src/cli.mjs restart`. The lead can run it too.
 
-1. Mu first starts the checkout's current code on a separate port, with a copy of the database. If that start fails, nothing is restarted and the command shows the output.
+1. Mu first starts the checkout's current code on a separate port, with a copy of the database. If that start fails, nothing is restarted and the command shows the output, including when the Node.js binary cannot be started. Mu starts it from the stable package-manager path, so a Node.js upgrade after the service started does not break the check.
 2. If the check passes, Mu waits until the lead's current turn has ended, shuts down cleanly, and launchd starts it again. If the lead's turn does not end within 15 minutes, the restart is cancelled.
 3. The new process posts a notice in the conversation where the restart was requested.
 

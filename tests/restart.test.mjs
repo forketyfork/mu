@@ -404,6 +404,20 @@ test('a requesting turn that outlives the wait limit cancels the restart and res
   assert.deepEqual(exits, []);
 });
 
+test('a start check that cannot spawn its process fails the check instead of ending the service', async (t) => {
+  const clean = cleanup(t);
+  const root = await clean.dir('checkout');
+  await mkdir(join(root, 'src'));
+  await writeFile(join(root, 'src/server.mjs'), '');
+  const dataDir = await clean.dir('live'),
+    store = new Store(join(dataDir, 'mu.sqlite'));
+  clean.close(() => store.close());
+  await assert.rejects(
+    startCheck({ root, home: await clean.dir('home'), store, dataDir, node: join(root, 'missing-node') }),
+    /failed while starting: .*missing-node could not be spawned \(.*ENOENT/,
+  );
+});
+
 test('the start check runs on its own port, data directory and broker-less IRC port, without job or turn variables', async (t) => {
   const clean = cleanup(t);
   // A stand-in for the checkout's server: it records its environment and passes the check.

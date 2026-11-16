@@ -1,16 +1,18 @@
 // Installs and removes Mu as a launchd user agent; see docs/launchd.md and "Running under launchd" in
 // docs/architecture.md.
 import { spawnSync } from 'node:child_process';
-import { accessSync, constants, realpathSync } from 'node:fs';
+import { accessSync, constants } from 'node:fs';
 import { chmod, mkdir, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { connect } from 'node:net';
 import { homedir, userInfo } from 'node:os';
-import { delimiter, isAbsolute, join, resolve, sep } from 'node:path';
+import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { leftoverError, resolveConfigFile, resolveDataDir, resolveHome } from './home.mjs';
 import { ROOT, loadConfig } from './server.mjs';
-import { LAUNCHD_VARIABLES, TURN_VARIABLES } from './service.mjs';
+import { LAUNCHD_VARIABLES, TURN_VARIABLES, stableNodePath } from './service.mjs';
+
+export { stableNodePath };
 
 export const DEFAULT_LABEL = 'local.mu';
 // Mu's own settings, then what the harnesses need to find their state: transcripts and Codex pricing read
@@ -217,20 +219,6 @@ async function logTail(log) {
     return (await readFile(log, 'utf8')).split('\n').slice(-40).join('\n');
   } catch (error) {
     return `(log unreadable: ${error.message})`;
-  }
-}
-
-// Versioned package-manager directories can disappear on upgrade. Prefer the stable opt path when it resolves
-// to the same executable that runs the installer.
-export function stableNodePath(execPath) {
-  const parts = execPath.split(sep);
-  const cellar = parts.lastIndexOf('Cellar');
-  if (cellar < 1 || parts.length !== cellar + 5 || parts[cellar + 3] !== 'bin') return execPath;
-  const stable = [...parts.slice(0, cellar), 'opt', parts[cellar + 1], 'bin', parts[cellar + 4]].join(sep);
-  try {
-    return realpathSync(stable) === realpathSync(execPath) ? stable : execPath;
-  } catch {
-    return execPath;
   }
 }
 
