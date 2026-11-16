@@ -26,6 +26,8 @@ The service identifies every caller by its credential, never by a `--from` optio
 | Read conversations, rooms and tasks | all | its conversations | its conversations |
 | Write a visual, and change one it wrote | as a manual agent | yes | yes |
 | Read a visual | all | of its conversations | of its conversations |
+| Comment on a visual, and read drafts | yes | no | no |
+| Read the sent comments on a visual | all | of its conversations | of its conversations |
 | See other agents' assignments, errors and usage | all | from its conversations | from its conversations |
 | Read the whole state and the event stream | yes | no | no |
 | Read agent transcripts | yes | no | no |
@@ -68,6 +70,7 @@ A [visual](visuals.md) is written by an agent and shown in the dashboard, and an
 - Agents send Markdown, never script. Raw HTML is reduced to an allow-list; a rich block such as a diagram is text that Mu's own renderer draws.
 - The content is drawn in a sandboxed frame with an opaque origin: it has no credential, no storage, no network and no `eval`, and it cannot navigate the dashboard or itself to another site.
 - The dashboard draws the title, the author, the versions and the section list itself, and checks every message the frame sends. A link opens only after you saw its address and clicked **Open**, and only as a web or mail address.
+- The comment field, the comment list and the send buttons are the dashboard's too. The frame reports only what you selected; the dashboard shows that quote before you send, and a comment is sent by your click alone. The message that carries your comments can start one agent only, the visual's author: a quote and a title are written so that no `@name` in them counts as a mention.
 - The service answers the frame's requests for its own script and style files from any origin; they hold no data. Every API request keeps the credential and origin checks.
 
 A flaw in a rendering library would give script inside that frame, which can read the visual it shows and draw inside its own rectangle, and nothing more. The decisions are in [Architecture](architecture.md#visuals).

@@ -18,7 +18,9 @@
       "/vendor/highlight/core.js": ["./node_modules/highlight.js/lib/core.d.ts"],
       "/vendor/mermaid/mermaid.esm.min.mjs": ["./node_modules/mermaid/dist/mermaid.d.ts"],
       "/visual/format.js": ["./src/visual-format.mjs"],
-      "/visual/render.js": ["./public/visual/render.js"]
+      "/visual/render.js": ["./public/visual/render.js"],
+      "/visual/anchor.js": ["./public/visual/anchor.js"],
+      "/visual/marks.js": ["./public/visual/marks.js"]
     }
   },
   "include": ["src", "scripts", "tests", "public", "*.mjs"]

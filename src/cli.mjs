@@ -43,11 +43,15 @@ Usage: node src/cli.mjs COMMAND [options]
                   (FILE: Markdown; "# Title" names the visual, each "## Heading {#id}" starts a section, and a
                    fenced block such as mermaid is a rich block. "visual guide" explains the format)
   visual patch    --id ID [--file FILE [--replace]] [--remove SECTIONS] [--move SECTION]
-                  [--after SECTION | --before SECTION | --first] [--title TITLE] [--amend]
+                  [--after SECTION | --before SECTION | --first] [--title TITLE] [--resolves COMMENTS] [--amend]
                   (author only. FILE holds the changed or new sections; --replace: FILE is the whole document.
-                   The changes of one turn make one new version; --amend is for manual agents)
+                   The changes of one turn make one new version; --amend is for manual agents.
+                   --resolves: the user's comments that this change, or an earlier one of the turn, answers)
   visual show     --id ID [--section SECTION | --source] [--version N]
                   (the outline, or the Markdown of one section or of the whole visual)
+  visual comments --id ID [--version N] [--all]
+                  (the user's comments that wait for an answer, each with its section, block and quoted text;
+                   --all: the answered ones too)
   visual list     [--task-id ID] [--conversation ID]
   visual guide    (prints the visuals skill: when to write a visual, its format and how to revise it)
   inbox           [--id ID] [--wait SECONDS]
@@ -114,7 +118,21 @@ const commandOptions = {
   'activity:link': ['id', 'task-id', 'from'],
   'activity:unlink': ['id', 'task-id', 'from'],
   'visual:create': ['file', 'title', 'task-id', 'conversation', 'room', 'from'],
-  'visual:patch': ['id', 'file', 'replace', 'remove', 'move', 'after', 'before', 'first', 'title', 'amend', 'from'],
+  'visual:patch': [
+    'id',
+    'file',
+    'replace',
+    'remove',
+    'move',
+    'after',
+    'before',
+    'first',
+    'title',
+    'resolves',
+    'amend',
+    'from',
+  ],
+  'visual:comments': ['id', 'version', 'all'],
   'visual:show': ['id', 'section', 'source', 'version'],
   'visual:list': ['task-id', 'conversation', 'room'],
   'visual:guide': [],
@@ -359,6 +377,7 @@ export async function main(
     'first',
     'amend',
     'source',
+    'all',
   ])
     if (options[flag]) options[flag] = { type: 'boolean' };
   // The options are chosen per command, so parseArgs cannot type the values; every option is a string except the boolean flags.
@@ -598,13 +617,14 @@ export async function main(
         from: values.from ?? env.MU_AGENT_ID ?? 'user',
         ...(values.file === undefined ? {} : { source: await readFile(values.file, 'utf8') }),
         ...(values.remove === undefined ? {} : { remove: members(values.remove) }),
+        ...(values.resolves === undefined ? {} : { resolves: members(values.resolves) }),
         ...Object.fromEntries(
           ['move', 'after', 'before', 'title', 'replace', 'first', 'amend']
             .filter((key) => values[key] !== undefined)
             .map((key) => [key, values[key]]),
         ),
       };
-      if (Object.keys(body).length === 1) throw new Error('Provide --file, --remove, --move or --title.');
+      if (Object.keys(body).length === 1) throw new Error('Provide --file, --remove, --move, --title or --resolves.');
       return request(url, `/api/visuals/${encodeURIComponent(required(values.id, '--id'))}`, { method: 'PATCH', body });
     }
     case 'visual:show': {
@@ -638,6 +658,23 @@ export async function main(
           })),
         },
       };
+    }
+    case 'visual:comments': {
+      const version = values.version === undefined ? null : integer(values.version, '--version', 1);
+      const comments = await request(url, `/api/visuals/${encodeURIComponent(required(values.id, '--id'))}/comments`);
+      return comments
+        .filter((comment) => comment.status === 'sent' && (values.all || comment.answeredIn === null))
+        .filter((comment) => version === null || comment.version === version)
+        .map(({ id: commentId, version: on, sectionId, block, quote, text, sentAt, answeredIn }) => ({
+          id: commentId,
+          version: on,
+          sectionId,
+          block,
+          quote,
+          text,
+          sentAt,
+          answeredIn,
+        }));
     }
     case 'visual:list': {
       const query = new URLSearchParams();

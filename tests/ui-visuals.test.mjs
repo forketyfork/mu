@@ -1,75 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createdAt, fixture, initialState, message, settle } from './ui-fixture.mjs';
+import { fixture, initialState, message, settle } from './ui-fixture.mjs';
+import { ID, record, section, versionOf, viewer, withVisuals } from './ui-visuals-fixture.mjs';
 import { codeReference, viewFromHash, visualFromHash, visualHash } from '../public/model.js';
 import { changedSections, safeLink } from '../public/visuals-view.js';
-
-const ID = 'vis-0a1b2c3d';
-const record = (overrides = {}) => ({
-  id: ID,
-  title: 'Storage plan',
-  agentId: 'lead',
-  conversationId: 'room-a',
-  sessionId: 'session-1',
-  taskId: 'task-a',
-  version: 2,
-  revision: 3,
-  sectionCount: 2,
-  createdAt,
-  updatedAt: createdAt,
-  ...overrides,
-});
-const section = (id, rev, title = id) => ({ id, title, rev, body: `Text of ${id}` });
-const versionOf = (visual, number, sections, changes = {}) => ({
-  ...visual,
-  shown: {
-    number,
-    title: visual.title,
-    createdAt,
-    updatedAt: createdAt,
-    sections,
-    changed: [],
-    added: [],
-    removed: [],
-    ...changes,
-  },
-  versions: Array.from({ length: visual.version }, (_, index) => ({
-    number: index + 1,
-    createdAt,
-    updatedAt: createdAt,
-  })),
-});
-const withVisuals = (...visuals) => ({ ...initialState(), visuals });
-
-// The dashboard with a service that answers the requests for a visual, and a frame whose messages the test reads
-// and writes: JSDOM does not load the frame's page.
-async function viewer(t, { hash = '', visuals = [record()], versions }) {
-  const ui = await fixture(t, { initial: withVisuals(...visuals) });
-  const served = { versions };
-  const fetch = ui.window.fetch;
-  const asked = [];
-  ui.window.fetch = async (path, options) => {
-    const match = /^\/api\/visuals\/(vis-[0-9a-f]{8})(?:\?version=(\d+))?$/.exec(path);
-    if (!match) return fetch(path, options);
-    asked.push(path);
-    const body = served.versions[match[2] ?? 'latest'];
-    return body
-      ? { ok: true, status: 200, json: async () => structuredClone(body) }
-      : { ok: false, status: 404, json: async () => ({ error: `${match[1]} has no version ${match[2]}` }) };
-  };
-  const frame = () => ui.window.document.querySelector('iframe.visual-frame');
-  const posted = [];
-  const attach = () => {
-    frame().contentWindow.postMessage = (data, targetOrigin) => posted.push({ ...data, targetOrigin });
-  };
-  const fromFrame = (data, source = frame().contentWindow) =>
-    ui.window.dispatchEvent(new ui.window.MessageEvent('message', { data, source }));
-  if (hash) {
-    ui.window.location.hash = hash;
-    await new Promise((resolve) => ui.window.addEventListener('hashchange', resolve, { once: true }));
-  }
-  return { ...ui, served, asked, frame, posted, attach, fromFrame };
-}
 
 test('a visual has an address, and its ID in text is a reference to it', () => {
   assert.equal(visualHash(ID), `#visuals/${ID}`);

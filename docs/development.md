@@ -25,13 +25,13 @@ The `demo` adapter exercises routing and process handling without a model; see [
 
 ### The visual frame in a real browser
 
-JSDOM cannot show what protects the dashboard from a [visual](visuals.md): the frame's sandbox, the content security policies and module loading from an opaque origin. The browser check does. It starts a throwaway Mu app with a fake chat and a second server that stands for another host, drives headless Google Chrome, and asserts that the frame draws diagrams and code, has no credential, storage or network, runs no handler from hostile content, sends no request to the other server, and cannot navigate away:
+JSDOM cannot show what protects the dashboard from a [visual](visuals.md): the frame's sandbox, the content security policies and module loading from an opaque origin. Nor can it select rendered text or paint a highlight, which comments depend on. The browser check does. It starts a throwaway Mu app with a fake chat and a second server that stands for another host, drives headless Google Chrome, and asserts that the frame draws diagrams and code, has no credential, storage or network, runs no handler from hostile content, sends no request to the other server, and cannot navigate away. A second test comments on selected text, on a diagram and on code, sends the comments, and lets the author answer them:
 
 ```bash
 npm run test:browser
 ```
 
-`CHROME` names another browser binary. With `SHOTS` set to a directory, the check saves screenshots of each step there. It is not part of `npm test`, which must not need a browser. The pre-commit hook runs it when a commit changes what it covers: `public/visual/`, `public/visuals-view.js`, `src/visual-format.mjs`, `src/browser-policy.mjs` (the policies and the list of files the frame may load), `tests/browser/` or `package-lock.json`. Such a commit therefore needs Google Chrome.
+`CHROME` names another browser binary. With `SHOTS` set to a directory, the check saves screenshots of each step there. It is not part of `npm test`, which must not need a browser. The pre-commit hook runs it when a commit changes what it covers: `public/visual/`, `public/visuals-view.js`, `public/visual-comments.js`, `src/visual-format.mjs`, `src/browser-policy.mjs` (the policies and the list of files the frame may load), `tests/browser/` or `package-lock.json`. Such a commit therefore needs Google Chrome.
 
 ## Git hooks
 

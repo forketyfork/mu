@@ -74,6 +74,9 @@ node src/cli.mjs visual patch --id vis-1a2b3c4d --file whole.md --replace
 node src/cli.mjs visual show --id vis-1a2b3c4d                # outline: sections, sizes, block types
 node src/cli.mjs visual show --id vis-1a2b3c4d --section overview [--version 2]
 node src/cli.mjs visual show --id vis-1a2b3c4d --source       # the whole Markdown
+node src/cli.mjs visual comments --id vis-1a2b3c4d            # the user's comments that wait for an answer
+node src/cli.mjs visual comments --id vis-1a2b3c4d --all [--version 2]
+node src/cli.mjs visual patch --id vis-1a2b3c4d --file changes.md --resolves vc-5e6f7a8b,vc-9c0d1e2f
 node src/cli.mjs visual list [--task-id task-42] [--conversation issue-42]
 node src/cli.mjs visual guide                                 # the visuals skill; needs no running service
 ```

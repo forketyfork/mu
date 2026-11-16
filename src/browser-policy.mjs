@@ -20,6 +20,8 @@ const FRAME_ASSETS = Object.freeze({
   '/visual/frame.css': { file: 'public/visual/frame.css' },
   '/visual/frame.js': { file: 'public/visual/frame.js' },
   '/visual/render.js': { file: 'public/visual/render.js' },
+  '/visual/anchor.js': { file: 'public/visual/anchor.js' },
+  '/visual/marks.js': { file: 'public/visual/marks.js' },
   '/visual/format.js': { file: 'src/visual-format.mjs' },
   '/vendor/marked.js': { file: 'node_modules/marked/lib/marked.esm.js' },
   '/vendor/purify.js': { file: 'node_modules/dompurify/dist/purify.es.mjs' },

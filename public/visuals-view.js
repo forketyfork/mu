@@ -3,6 +3,8 @@
 // a link is drawn by the dashboard, and a message from the frame is checked before it is used. See "Visuals" in
 // docs/architecture.md.
 
+import { createCommentsPanel } from './visual-comments.js';
+
 export const FRAME_PAGE = '/visual/frame.html';
 const LEAD_TITLE = 'Introduction';
 const MAX_LINK = 2000;
@@ -97,7 +99,7 @@ export function createVisualsView({
     if (!state) return;
     const visuals = [...(state.visuals ?? [])].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     const signature = JSON.stringify([
-      visuals.map((visual) => [visual.id, visual.revision, visual.title]),
+      visuals.map((visual) => [visual.id, visual.revision, visual.commentRevision, visual.title]),
       state.tasks.map((task) => [task.id, task.title]),
     ]);
     if (signature === indexSignature) return;
@@ -130,6 +132,23 @@ export function createVisualsView({
             `${visual.sectionCount} ${visual.sectionCount === 1 ? 'section' : 'sections'} · ${time(visual.updatedAt)}`,
           ),
         );
+        // What waits for somebody: drafts for the user to send, sent comments for the author to answer.
+        if (visual.draftComments)
+          meta.append(
+            node(
+              'span',
+              'visual-card-drafts',
+              `${visual.draftComments} ${visual.draftComments === 1 ? 'draft' : 'drafts'}`,
+            ),
+          );
+        if (visual.openComments)
+          meta.append(
+            node(
+              'span',
+              'visual-card-open',
+              `${visual.openComments} ${visual.openComments === 1 ? 'comment' : 'comments'} sent`,
+            ),
+          );
         card.append(node('strong', 'visual-card-title', visual.title), meta);
         list.append(card);
       }
@@ -195,6 +214,12 @@ export function createVisualsView({
       button.type = 'button';
       button.dataset.section = section.id;
       button.append(node('span', 'visual-outline-title', section.title || LEAD_TITLE));
+      const commented = shown.comments.filter((comment) => comment.sectionId === section.id).length;
+      if (commented) {
+        const count = node('span', 'visual-outline-comments', String(commented));
+        count.title = `${commented} ${commented === 1 ? 'comment' : 'comments'}`;
+        button.append(count);
+      }
       const change = shown.added.includes(section.id) ? 'new' : shown.changed.includes(section.id) ? 'changed' : null;
       if (change && shown.number > 1) {
         const mark = node('span', `visual-outline-mark ${change}`, change);
@@ -236,6 +261,8 @@ export function createVisualsView({
       showError('');
       renderHeader();
       renderOutline();
+      const author = getState().agents.find((agent) => agent.id === data.agentId);
+      comments.show(data, author ? { id: author.id, status: author.status } : null);
       // A change that arrives is marked in place: a new version for a user who follows the newest one, or new content
       // of the version on screen. A version the user switched to starts at its top.
       const live = flash && previous && (target.pinned === null || previous.shown.number === data.shown.number);
@@ -251,6 +278,7 @@ export function createVisualsView({
 
   function close() {
     open = null;
+    comments.close();
     frame?.remove();
     frame = null;
     hideLink();
@@ -286,7 +314,7 @@ export function createVisualsView({
     frame.title = 'Content of the visual';
     frame.setAttribute('sandbox', 'allow-scripts');
     frame.src = FRAME_PAGE;
-    $('visual-body').append(frame);
+    $('visual-stage').prepend(frame);
     void load();
   }
 
@@ -297,9 +325,11 @@ export function createVisualsView({
     if (message.type === 'ready') {
       open.ready = true;
       sendContent([], true);
+      comments.marks();
     } else if (message.type === 'active') {
       if (typeof message.sectionId !== 'string') return;
       open.active = message.sectionId;
+      comments.reading(message.sectionId);
       for (const item of $('visual-outline').children) {
         if (item.dataset.section === open.active) item.setAttribute('aria-current', 'true');
         else item.removeAttribute('aria-current');
@@ -310,7 +340,9 @@ export function createVisualsView({
       $('visual-link-url').textContent = href;
       $('visual-link-open').href = href;
       $('visual-link').hidden = false;
-    } else if (message.type === 'problems') {
+    } else if (message.type === 'selection') comments.selection(message);
+    else if (message.type === 'comment') comments.focus(message.id);
+    else if (message.type === 'problems') {
       if (!Array.isArray(message.problems)) return;
       const problems = message.problems
         .slice(0, MAX_PROBLEMS)
@@ -327,6 +359,15 @@ export function createVisualsView({
   document.addEventListener('mu-theme-change', () =>
     post({ type: 'theme', tokens: themeTokens(document.documentElement) }),
   );
+
+  const comments = createCommentsPanel({
+    document,
+    request,
+    post,
+    showVersion: (number) => navigate(open.id, number === (record(open.id)?.version ?? number) ? null : number),
+    reload: () => load(),
+    time,
+  });
 
   const step = (delta) => {
     const latest = record(open.id)?.version ?? open.data?.version ?? 1;
@@ -351,15 +392,13 @@ export function createVisualsView({
       }
       const visual = record(open.id);
       renderHeader();
+      if (!visual || !open.data) return;
       // The newest version changes for as long as the turn that made it runs, so a user who pinned it sees those
       // changes too. A version before it never changes.
-      if (
-        visual &&
-        open.data &&
-        visual.revision !== open.data.revision &&
-        (open.pinned === null || open.pinned >= open.data.version)
-      )
+      if (visual.revision !== open.data.revision && (open.pinned === null || open.pinned >= open.data.version))
         void load({ flash: true });
+      // A comment changes on the version it belongs to, which may be an earlier one that the user looks at.
+      else if (visual.commentRevision !== open.data.commentRevision) void load();
     },
     /** The visuals of a task, as links for its card; null when it has none. */
     taskVisuals(taskId) {

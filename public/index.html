@@ -365,6 +365,58 @@
                   <nav class="visual-outline" id="visual-outline" aria-label="Sections"></nav>
                   <p class="visual-removed" id="visual-removed" hidden></p>
                 </aside>
+                <div class="visual-stage" id="visual-stage">
+                  <button class="button primary visual-comment-bubble" id="visual-comment-bubble" type="button" hidden>
+                    Comment
+                  </button>
+                </div>
+                <aside class="visual-comments" id="visual-comments" aria-label="Comments">
+                  <form class="visual-composer" id="visual-composer">
+                    <div
+                      class="visual-composer-scope"
+                      id="visual-composer-scope"
+                      role="group"
+                      aria-label="What the comment is about"
+                    ></div>
+                    <blockquote class="visual-composer-quote" id="visual-composer-quote" hidden></blockquote>
+                    <textarea
+                      id="visual-composer-text"
+                      rows="3"
+                      placeholder="Select text in the visual and write a comment"
+                      aria-label="Comment"
+                    ></textarea>
+                    <div
+                      class="visual-composer-chips"
+                      id="visual-composer-chips"
+                      role="group"
+                      aria-label="Ready phrases"
+                    ></div>
+                    <p class="visual-composer-error" id="visual-composer-error" role="alert" hidden></p>
+                    <div class="visual-composer-actions">
+                      <button
+                        class="button primary"
+                        id="visual-composer-send"
+                        type="submit"
+                        title="Send this comment to the author now (Ctrl or ⌘ + Enter)"
+                      >
+                        Send now
+                      </button>
+                      <button class="button secondary" id="visual-composer-draft" type="button">Save draft</button>
+                      <button class="text-button" id="visual-composer-cancel" type="button" hidden>Cancel</button>
+                    </div>
+                  </form>
+                  <div class="visual-comments-head">
+                    <h3>Comments on this version</h3>
+                    <span class="count-pill" id="visual-comments-count">0</span>
+                    <button class="button primary" id="visual-comments-send-all" type="button" hidden>Send all</button>
+                  </div>
+                  <p class="visual-comments-note" id="visual-comments-note" hidden></p>
+                  <div class="visual-comments-list" id="visual-comments-list"></div>
+                  <section class="visual-answers" id="visual-answers" hidden>
+                    <h3>Answered in this version</h3>
+                    <div class="visual-comments-list" id="visual-answers-list"></div>
+                  </section>
+                </aside>
               </div>
             </div>
           </section>

@@ -200,7 +200,12 @@ export async function createApp({
   const waiting = createWaiting({ store, tasks });
   leadPromptState.waiting = waiting;
   const activities = createActivities({ store, tasks });
-  const visuals = createVisuals({ store, runner, tasks });
+  const visuals = createVisuals({
+    store,
+    runner,
+    tasks,
+    sendAsUser: (text, conversationId) => postMessage('user', text, conversationFor(conversationId)),
+  });
   let stopEventLoopMonitor = null;
   const adapters = ['codex', 'claude', 'pi', 'manual', 'demo', ...Object.keys(custom)];
   const withPid = (agent) => {
@@ -500,6 +505,48 @@ export async function createApp({
     const names = paused.map((agent) => `${agent.id} (${agent.status})`).join(', ');
     return `@user Message #${message.id} is queued, but nobody will process it now: ${names} ${paused.length === 1 ? 'does' : 'do'} not run turns until resumed. Ask the lead to take over the request, or resume the agent from its card.`;
   };
+  // Posts a chat message with the checks of a message typed in the chat; the user's comments on a visual take the
+  // same way.
+  const postMessage = async (from, text, conversation) => {
+    if (
+      typeof text !== 'string' ||
+      !text.trim() ||
+      Buffer.byteLength(text) > MAX_MESSAGE_BYTES ||
+      IRC_CONTROL.test(text)
+    )
+      throw bad(`Chat text must contain 1–${MAX_MESSAGE_BYTES} UTF-8 bytes and cannot contain IRC control delimiters`);
+    for (const mention of mentions(text)) {
+      if (!['user', 'all'].includes(mention) && !store.agent(mention))
+        throw bad(`Unknown mention @${mention}; register the agent first`);
+      if (!['user', 'all'].includes(mention) && !conversation.members.includes(mention))
+        throw bad(`@${mention} is not in this conversation; invite the agent to the room first`);
+      // A stopped (retired) agent never runs a turn, so a report that mentions it reaches nobody. Failed agents can be resumed, so they stay mentionable.
+      if (from !== 'user' && store.agent(mention)?.status === 'stopped')
+        throw bad(
+          `@${mention} is stopped and cannot receive messages; address a live agent, such as the agent that assigned the work, or write the agent's id in a code span`,
+        );
+    }
+    if (!chat.state.connected) throw bad(chat.state.error || 'IRC unavailable', 503);
+    let message;
+    try {
+      message = await chat.send(from, text.trim(), conversation.id);
+    } catch (error) {
+      if (!chat.state.connected) throw bad(chat.state.error || error.message || 'IRC unavailable', 503);
+      throw error;
+    }
+    const notice = from === 'user' ? deliveryNotice(conversation, message) : null;
+    if (notice) {
+      try {
+        await chat.send('system', notice, conversation.id);
+      } catch (error) {
+        throw bad(
+          `Message #${message.id} was saved, but its delivery notice could not be posted: ${error.message}`,
+          503,
+        );
+      }
+    }
+    return message;
+  };
   const syncConversation = async (conversation) => {
     try {
       await chat.syncConversation(conversation);
@@ -657,46 +704,7 @@ export async function createApp({
         if (request.headers.origin && input.conversationId === undefined)
           throw bad('Select a conversation before sending. Refresh the dashboard if it is out of date.');
         const conversation = conversationFor(input.conversationId ?? 'common', from);
-        if (
-          typeof input.text !== 'string' ||
-          !input.text.trim() ||
-          Buffer.byteLength(input.text) > MAX_MESSAGE_BYTES ||
-          IRC_CONTROL.test(input.text)
-        )
-          throw bad(
-            `Chat text must contain 1–${MAX_MESSAGE_BYTES} UTF-8 bytes and cannot contain IRC control delimiters`,
-          );
-        for (const mention of mentions(input.text)) {
-          if (!['user', 'all'].includes(mention) && !store.agent(mention))
-            throw bad(`Unknown mention @${mention}; register the agent first`);
-          if (!['user', 'all'].includes(mention) && !conversation.members.includes(mention))
-            throw bad(`@${mention} is not in this conversation; invite the agent to the room first`);
-          // A stopped (retired) agent never runs a turn, so a report that mentions it reaches nobody. Failed agents can be resumed, so they stay mentionable.
-          if (from !== 'user' && store.agent(mention)?.status === 'stopped')
-            throw bad(
-              `@${mention} is stopped and cannot receive messages; address a live agent, such as the agent that assigned the work, or write the agent's id in a code span`,
-            );
-        }
-        if (!chat.state.connected) throw bad(chat.state.error || 'IRC unavailable', 503);
-        let message;
-        try {
-          message = await chat.send(from, input.text.trim(), conversation.id);
-        } catch (error) {
-          if (!chat.state.connected) throw bad(chat.state.error || error.message || 'IRC unavailable', 503);
-          throw error;
-        }
-        const notice = from === 'user' ? deliveryNotice(conversation, message) : null;
-        if (notice) {
-          try {
-            await chat.send('system', notice, conversation.id);
-          } catch (error) {
-            throw bad(
-              `Message #${message.id} was saved, but its delivery notice could not be posted: ${error.message}`,
-              503,
-            );
-          }
-        }
-        return send(response, 201, message);
+        return send(response, 201, await postMessage(from, input.text, conversation));
       }
       if (request.method === 'POST' && pathname === '/api/agents') {
         const input = await body(request);

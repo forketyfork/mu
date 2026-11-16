@@ -94,7 +94,7 @@ The dashboard's **Brag doc** view shows what the team achieved, as a short writt
 
 ## Visuals
 
-A visual is a document that an agent writes for the user and then keeps changing: text with highlighted code and diagrams, in sections, with every version kept. The user reads it in the dashboard and watches the agent rewrite single sections. The guide is [Visuals](visuals.md); this section records the decisions. Comments, forms and animated explainers are the next phases; [Next phases](#next-phases) holds their design.
+A visual is a document that an agent writes for the user and then keeps changing: text with highlighted code and diagrams, in sections, with every version kept. The user reads it in the dashboard and watches the agent rewrite single sections. The guide is [Visuals](visuals.md); this section records the decisions. Forms and animated explainers are the next phases; [Next phases](#next-phases) holds their design.
 
 ### One Markdown document, split into sections
 
@@ -114,6 +114,19 @@ Visuals live in the shared database in the data directory: the visual record, it
 The dashboard stream carries one small record per visual (title, author, task, newest version, a change counter), never content. An open viewer loads the version it shows and loads it again when the counter moves. While the user follows the newest version, the viewer compares the section revisions it showed with the ones it loaded and tells the frame which sections to mark; the frame keeps the element of every section whose revision is the same, so a diagram is not drawn again and the reader keeps their place. A version the user stepped back to is pinned: a newer version is announced, not shown. Only the newest version can still change, while the turn that made it runs, so a viewer pinned to the newest version loads it again as well.
 
 Each visual and each version has an address (`#visuals/<id>` follows the newest version, `#visuals/<id>/v<n>` names one), so the browser's history steps through what the user opened, and a visual's ID in a code span links to it like a task ID.
+
+### Comments
+
+The user selects a part of a visual and tells the author what to change. Comments are the user's side of the document, so the decisions are about where a comment points, how it reaches the author, and what it may do on the way.
+
+- **A comment points at content, not at a position.** It names the version, the section, the revision of that section, the block, and the selected text with a few characters before and after it. The frame finds that text again in what it has drawn, so a mark survives a redraw, a theme change and a different text size. Offsets into the Markdown would not: the user selects rendered text, and the renderer owns the mapping. A comment on a diagram names the block; a comment without a selection names the section or the visual.
+- **A comment stays with the section revision it was written on.** A version changes while its turn runs, so the user can comment on text that the author replaces a moment later. The comment keeps the revision; the frame marks it only on a section drawn from that revision, the panel says that the section changed, and the message to the author says so too. A comment that names another revision than the stored one is refused, so a comment is never attached to text the user did not see.
+- **Comments belong to a version.** A new version starts without comments; the earlier ones keep theirs, and the viewer steps back to them. A patch names the comments it answers (`--resolves`), which marks them in their version and lists them in the new one. The author decides what a change answers; Mu does not guess it from the changed sections.
+- **Feedback goes to the author's session as an ordinary chat message.** Sending posts one message from the user in the visual's conversation, addressed to the author. Mu keeps one native session per agent and conversation, so that message continues the session that wrote the visual, with no second delivery path, and the user can read in the chat what the agent was told. "Send now" sends one comment and "Send all" sends every draft of the version in one message, so one round of feedback costs one agent turn. The message carries each comment's ID, place and a short quote; the agent reads the whole quote with `visual comments`.
+- **Drafts are the user's.** A draft is stored by the service, so it survives a reload and another browser, but only the user credential reads it. Agents see a comment once it is sent.
+- **The message can start the author only.** A chat message starts every agent it mentions, and a comment quotes text that an agent wrote. A quote or a title is therefore written into the message so that no `@name` in it counts as a mention, the user's own text is refused when it mentions anyone, and the finished message is checked once more as a whole. Hostile content cannot use the user's comment to give another agent a turn.
+- **The comment panel is the dashboard's.** The field, the list, the drafts and the send buttons are outside the frame. The frame reports what the user selected and which mark was clicked; the dashboard checks the report against the sections it loaded, cuts the quote to a fixed length, shows it above the field, and sends only on the user's own click. A compromised frame can propose a wrong quote, which the user sees before sending; it cannot send.
+- **Marks are highlights, not markup.** The frame marks commented text with the CSS Custom Highlight API, so marking changes no element of the rendered section: a selection, a later redraw and the search for another quote all see the same text.
 
 ### Security
 
@@ -144,11 +157,9 @@ The libraries are pinned dependencies, served from `node_modules` as they are pu
 
 ### Next phases
 
-The feature lands in phases, each reviewed before its merge. In place: the model, storage, API and CLI, Markdown with code and diagrams, versions and live updates. Designed, not built:
+The feature lands in phases, each reviewed before its merge. In place: the model, storage, API and CLI, Markdown with code and diagrams, versions, live updates and comments. Designed, not built:
 
-- **Comments.** The user selects text in a visual and comments on it. A comment names the version, the section, and the quoted text with a few characters before and after it, and is a draft until it is sent. A new version starts without comments; the earlier ones keep theirs. A patch can name the comments it answers, which marks them in the old version and labels the changed section in the new one.
-- **Feedback goes to the author's session.** Comments and form answers reach the agent as one ordinary chat message from the user in the visual's conversation, addressed to the author. Mu already keeps one native session per agent and conversation, so the message resumes the session that wrote the visual, and needs no second delivery path. "Send now" sends one comment, "send all" sends every draft of the version in one message, so one round of feedback costs one agent turn. The comment field, the comment list and the send buttons are the dashboard's, outside the frame; a quote comes from the frame, so it is cut to a fixed length and sent as a quote, and the message is posted as the user only by the user's own click.
-- **Forms.** A `form` block is a list of fields (choices, text, numbers, toggles). The user's answers are stored per version and sent with the feedback after the dashboard showed them for review; the agent reads them back with the CLI.
+- **Forms.** A `form` block is a list of fields (choices, text, numbers, toggles). The user's answers are stored per version and sent to the author like comments, in the same message, after the dashboard showed them for review; the agent reads them back with the CLI.
 - **Explainers.** A `scene` block is a declarative animation: shapes, steps and captions that Mu's own renderer plays on anime.js timelines, which bring seeking, easing, SVG line drawing and motion paths. Considered: Motion (same role, fewer SVG helpers); GSAP (not an open-source license); Lottie (declarative, but its JSON is exported from design tools and not written by hand); Motion Canvas, Remotion and Manim (animations are programs, which the threat model excludes); SMIL (declarative, but no steps or captions).
 
 ## Waiting for you

@@ -4,7 +4,8 @@
 // docs/architecture.md.
 import { marked } from '/vendor/marked.js';
 import DOMPurify from '/vendor/purify.js';
-import { codeLanguage, parseBlocks } from '/visual/format.js';
+import { COMMENT_LIMITS, codeLanguage, parseBlocks } from '/visual/format.js';
+import { createMarks } from '/visual/marks.js';
 import { createRenderer, visualMarkdown } from '/visual/render.js';
 
 const root = document.documentElement;
@@ -78,6 +79,8 @@ const renderer = createRenderer({
   onProblems: (problems) => tell({ type: 'problems', problems }),
 });
 
+const marks = createMarks({ document, window, container, limits: COMMENT_LIMITS, tell });
+
 function applyTokens(tokens) {
   for (const [name, value] of Object.entries(tokens))
     if (/^[a-z0-9-]+$/.test(name) && typeof value === 'string') root.style.setProperty(`--${name}`, value);
@@ -129,6 +132,7 @@ window.addEventListener('message', (event) => {
     if (message.tokens) applyTokens(message.tokens);
     shown = { sections: message.sections };
     renderer.render(container, { sections: message.sections, flash: message.flash ?? [] });
+    marks.apply();
     if (message.top) window.scrollTo(0, 0);
     reportActive();
   } else if (message?.type === 'theme') {
@@ -136,6 +140,10 @@ window.addEventListener('message', (event) => {
     // A diagram is drawn in the colors of its time, so everything is drawn again.
     renderer.reset();
     if (shown) renderer.render(container, shown);
+  } else if (message?.type === 'comments') {
+    marks.set(message.comments, message.active ?? null);
+  } else if (message?.type === 'reveal') {
+    marks.reveal(message.id);
   } else if (message?.type === 'scrollTo') {
     document.getElementById(`section-${message.sectionId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }

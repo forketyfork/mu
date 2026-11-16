@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { httpError as bad } from './http-error.mjs';
+import { createVisualComments } from './visual-comments.mjs';
 import { LIMITS, SECTION_ID, parseDocument, validateSection } from './visual-format.mjs';
 
 // Visuals: documents that agents write for the user, stored as versions of section revisions.
@@ -19,8 +20,10 @@ const rev = (section) =>
  * @param {import('./store.mjs').Store} options.store
  * @param {{active: Map<string, object>}} options.runner
  * @param {{find: (id: string) => any, list: () => any[]}} options.tasks
+ * @param {(text: string, conversationId: string) => Promise<{ id: number }>} options.sendAsUser
+ *   Posts a chat message as the user; the user's comments reach the author of a visual through it.
  */
-export function createVisuals({ store, runner, tasks }) {
+export function createVisuals({ store, runner, tasks, sendAsUser }) {
   store.db.exec(`
     CREATE TABLE IF NOT EXISTS visuals (id TEXT PRIMARY KEY, data TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS visual_versions (visual_id TEXT NOT NULL, number INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY(visual_id, number));
@@ -93,6 +96,12 @@ export function createVisuals({ store, runner, tasks }) {
       .all(id)
       .map(parseData)
       .map(({ number, createdAt, updatedAt }) => ({ number, createdAt, updatedAt }));
+  // The content of a section as it was under one revision; null for a revision this visual never had.
+  const readSection = (id, hash) => {
+    const row = store.db.prepare('SELECT data FROM visual_sections WHERE visual_id=? AND rev=?').get(id, hash);
+    return row ? parseData(row) : null;
+  };
+  const comments = createVisualComments({ store, visuals: { get, save, readVersion, readSection }, sendAsUser });
   // The sections of `version` that differ from the version before it, by ID.
   const difference = (id, version) => {
     if (version.number === 1) return { changed: [], added: [], removed: [] };
@@ -184,6 +193,9 @@ export function createVisuals({ store, runner, tasks }) {
       taskId: taskFor(input, agent, conversationId, from),
       version: 1,
       revision: 1,
+      commentRevision: 0,
+      draftComments: 0,
+      openComments: 0,
       sectionCount: document.sections.length,
       createdAt: now,
       updatedAt: now,
@@ -255,7 +267,21 @@ export function createVisuals({ store, runner, tasks }) {
     if (visual.agentId !== from)
       throw bad(`Only @${visual.agentId}, which wrote this visual, changes it; write your own with visual create`, 403);
     for (const key of Object.keys(input))
-      if (!['from', 'title', 'source', 'replace', 'remove', 'move', 'after', 'before', 'first', 'amend'].includes(key))
+      if (
+        ![
+          'from',
+          'title',
+          'source',
+          'replace',
+          'remove',
+          'move',
+          'after',
+          'before',
+          'first',
+          'amend',
+          'resolves',
+        ].includes(key)
+      )
         throw bad(`Unknown visual field ${key}`);
     for (const flag of ['replace', 'amend'])
       if (input[flag] !== undefined && typeof input[flag] !== 'boolean') throw bad(`${flag} must be a boolean`);
@@ -272,21 +298,38 @@ export function createVisuals({ store, runner, tasks }) {
     const reordered = sections.map((section) => section.id).join('\n') !== current.sections.map((s) => s.id).join('\n');
     const turn = runner.active.get(from) ?? null;
     if (input.amend && turn) throw bad('A managed turn needs no amend: every change of one turn goes into one version');
-    const response = (version, extra) => ({ id, title, version, ...changes, ...extra });
-    if (
+    const unchanged =
       !reordered &&
       title === visual.title &&
       !changes.changed.length &&
       !changes.added.length &&
-      !changes.removed.length
-    )
-      return response(visual.version, { unchanged: true });
+      !changes.removed.length;
     const amend = turn ? turnVersions.get(turn)?.get(id) === visual.version : input.amend === true;
-    const number = amend ? visual.version : visual.version + 1;
+    const number = unchanged || amend ? visual.version : visual.version + 1;
+    // The comments this change answers. Named without a change, they are answered by the newest version, which an
+    // earlier call made.
+    const answered = input.resolves === undefined ? [] : comments.answerable(id, input.resolves, number);
+    const response = (extra) => ({
+      id,
+      title,
+      version: number,
+      ...changes,
+      ...(answered.length ? { resolved: answered.map((comment) => comment.id) } : {}),
+      ...extra,
+    });
+    if (unchanged) {
+      if (answered.length)
+        store.transaction(() => {
+          comments.markAnswered(answered, number);
+          save(comments.counted(visual));
+        });
+      return response({ unchanged: true });
+    }
     const now = new Date().toISOString();
     store.transaction(() => {
       writeVersion(id, { number, title, createdAt: amend ? current.createdAt : now, updatedAt: now }, sections);
-      save({
+      comments.markAnswered(answered, number);
+      const next = {
         ...visual,
         title,
         sessionId: store.agent(from).sessionIds?.[visual.conversationId] ?? visual.sessionId,
@@ -294,24 +337,58 @@ export function createVisuals({ store, runner, tasks }) {
         revision: visual.revision + 1,
         sectionCount: sections.length,
         updatedAt: now,
-      });
+      };
+      save(answered.length ? comments.counted(next) : next);
     });
     if (turn) turnVersions.set(turn, new Map([...(turnVersions.get(turn) ?? []), [id, number]]));
-    return response(number, { newVersion: !amend });
+    return response({ newVersion: !amend });
   };
 
   const read = (id, caller, number) => {
     const visual = readable(id, caller);
     const version = readVersion(id, number ?? visual.version);
-    return { ...visual, shown: { ...version, ...difference(id, version) }, versions: versions(id) };
+    const counts = comments.perVersion(id, caller);
+    return {
+      ...visual,
+      shown: {
+        ...version,
+        ...difference(id, version),
+        comments: comments.ofVersion(id, version.number, caller),
+        // The comments on earlier versions that this version answers.
+        answers: comments.answeredIn(id, version.number),
+      },
+      versions: versions(id).map((item) => ({ ...item, comments: counts.get(item.number) ?? 0 })),
+    };
   };
 
   const handle = async ({ request, response, pathname, body, send, actor }) => {
-    const match = pathname.match(/^\/api\/visuals(?:\/([^/]+))?$/);
+    const match = pathname.match(/^\/api\/visuals(?:\/([^/]+)(\/comments(?:\/([^/]+))?)?)?$/);
     if (!match) return false;
-    const [, id] = match;
+    const [, id, commentsPath, commentId] = match;
     if (id !== undefined && !VISUAL_ID.test(id)) throw bad(`Unknown visual ${id}`, 404);
     const query = new URL(request.url, 'http://mu').searchParams;
+    if (commentsPath) {
+      if (request.method === 'GET' && !commentId) {
+        readable(id, request.caller);
+        send(response, 200, comments.list(id, request.caller));
+        return true;
+      }
+      // A comment is the user's word to an agent, so only the user writes and sends one.
+      const input = await body(request);
+      if (request.caller !== 'user' || actor(request, input) !== 'user')
+        throw bad(
+          'Only the user comments on a visual; an agent reads the comments and answers them with a change',
+          403,
+        );
+      get(id);
+      if (request.method === 'POST' && !commentId) {
+        send(response, 201, comments.create(id, input));
+      } else if (request.method === 'POST' && commentId === 'send') send(response, 200, await comments.send(id, input));
+      else if (request.method === 'PATCH' && commentId) send(response, 200, comments.update(id, commentId, input));
+      else if (request.method === 'DELETE' && commentId) send(response, 200, comments.remove(id, commentId));
+      else throw bad('Unsupported comment operation', 405);
+      return true;
+    }
     if (request.method === 'GET' && !id) {
       const filters = [
         ['task', 'taskId'],
@@ -347,5 +424,5 @@ export function createVisuals({ store, runner, tasks }) {
     throw bad('Unsupported visual operation', 405);
   };
 
-  return { find, get, list, create, patch, read, handle };
+  return { find, get, list, create, patch, read, handle, comments };
 }

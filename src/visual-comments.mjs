@@ -1,0 +1,304 @@
+import { randomUUID } from 'node:crypto';
+import { httpError as bad } from './http-error.mjs';
+import { mentions } from './store.mjs';
+import { COMMENT_LIMITS, SECTION_ID, parseBlocks } from './visual-format.mjs';
+
+// The user's comments on a visual. A comment belongs to one version and names the section, the block and the quoted
+// text it is about; it is a draft until the user sends it, and then reaches the author as a chat message from the
+// user in the visual's conversation. See "Visuals" in docs/architecture.md.
+
+const COMMENT_ID = /^vc-[0-9a-f]{8}$/;
+// NUL and the CTCP marker cannot travel in the chat message that carries a comment.
+const control = (text) => text.includes('\0') || text.includes('\u0001');
+// A quote in the chat message is a locator; the comment itself keeps the whole quote.
+const MESSAGE_QUOTE_CHARS = 160;
+const MESSAGE_TITLE_CHARS = 80;
+const parseData = (row) => JSON.parse(/** @type {string} */ (row.data));
+
+// Text that the user did not write (a quote from the frame, a title from the agent), as one line of a chat message
+// that can neither end its code span nor mention anybody.
+const locator = (text, max) => {
+  const line = [...text.replace(/\s+/g, ' ').trim()];
+  const cut = line.length > max ? `${line.slice(0, max).join('')}…` : line.join('');
+  return `\`${cut.replaceAll('`', "'").replace(/@(?=[a-z])/gi, '@ ')}\``;
+};
+
+/**
+ * @param {object} options
+ * @param {import('./store.mjs').Store} options.store
+ * @param {{ get: (id: string) => any, save: (visual: any) => any, readVersion: (id: string, number: number) => any, readSection: (id: string, rev: string) => any }} options.visuals
+ * @param {(text: string, conversationId: string) => Promise<{ id: number }>} options.sendAsUser
+ *   Posts a chat message as the user, with the checks and the delivery notice of a message typed in the chat.
+ */
+export function createVisualComments({ store, visuals, sendAsUser }) {
+  store.db.exec(`
+    CREATE TABLE IF NOT EXISTS visual_comments (id TEXT PRIMARY KEY, visual_id TEXT NOT NULL, version INTEGER NOT NULL, data TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS visual_comments_version ON visual_comments (visual_id, version);`);
+
+  const all = (visualId) =>
+    store.db.prepare('SELECT data FROM visual_comments WHERE visual_id=? ORDER BY rowid').all(visualId).map(parseData);
+  // An agent reads what the user sent; a draft is the user's until then.
+  const visible = (comments, caller) =>
+    caller === 'user' ? comments : comments.filter((comment) => comment.status === 'sent');
+  // A new comment is inserted and never written over: an ID that another comment has must fail.
+  const insert = (comment) =>
+    store.db
+      .prepare('INSERT INTO visual_comments (id,visual_id,version,data) VALUES (?,?,?,?)')
+      .run(comment.id, comment.visualId, comment.version, JSON.stringify(comment));
+  const write = (comment) =>
+    store.db.prepare('UPDATE visual_comments SET data=? WHERE id=?').run(JSON.stringify(comment), comment.id);
+  // The record of a visual carries the counts, so that a change of a comment reaches every open dashboard.
+  const counted = (visual) => {
+    const comments = all(visual.id);
+    return {
+      ...visual,
+      commentRevision: (visual.commentRevision ?? 0) + 1,
+      draftComments: comments.filter((comment) => comment.status === 'draft').length,
+      openComments: comments.filter((comment) => comment.status === 'sent' && comment.answeredIn === null).length,
+    };
+  };
+  const find = (visualId, id) => {
+    const row = COMMENT_ID.test(id)
+      ? store.db.prepare('SELECT data FROM visual_comments WHERE id=? AND visual_id=?').get(id, visualId)
+      : null;
+    if (!row) throw bad(`Visual ${visualId} has no comment ${id}`, 404);
+    return parseData(row);
+  };
+  const draft = (visualId, id) => {
+    const comment = find(visualId, id);
+    if (comment.status !== 'draft') throw bad(`Comment ${id} was sent; only a draft changes`, 409);
+    return comment;
+  };
+
+  const textOf = (value) => {
+    const text = typeof value === 'string' ? value.trim() : '';
+    if (!text || Buffer.byteLength(text) > COMMENT_LIMITS.textBytes || control(text))
+      throw bad(`A comment must contain 1–${COMMENT_LIMITS.textBytes} UTF-8 bytes`);
+    const named = mentions(text);
+    if (named.length)
+      throw bad(
+        `A comment goes to the author of the visual only. Write @${named[0]} in a code span, or mention the agent in the chat.`,
+      );
+    return text;
+  };
+  const quoteOf = (value) => {
+    if (value === undefined || value === null) return null;
+    const part = (key, max, needed) => {
+      const text = value[key];
+      if (typeof text !== 'string' || [...text].length > max || control(text) || (needed && !text.trim()))
+        throw bad(`quote.${key} must be text of at most ${max} characters`);
+      return text;
+    };
+    if (typeof value !== 'object' || Array.isArray(value)) throw bad('quote must be an object');
+    return {
+      text: part('text', COMMENT_LIMITS.quoteChars, true),
+      prefix: part('prefix', COMMENT_LIMITS.contextChars, false),
+      suffix: part('suffix', COMMENT_LIMITS.contextChars, false),
+    };
+  };
+  // Where a comment points: the visual as a whole, a section, a block of it, or quoted text in a block.
+  const targetOf = (input, version) => {
+    const quote = quoteOf(input.quote);
+    if (input.sectionId === undefined || input.sectionId === null) {
+      if (quote || (input.block !== undefined && input.block !== null))
+        throw bad('A quote or a block needs the section it is in');
+      return { sectionId: null, sectionRev: null, block: null, quote: null };
+    }
+    const section =
+      typeof input.sectionId === 'string' && SECTION_ID.test(input.sectionId)
+        ? version.sections.find((item) => item.id === input.sectionId)
+        : null;
+    if (!section) throw bad(`Version ${version.number} has no section ${input.sectionId}`);
+    // The newest version changes while its turn runs. A comment is about the content its writer saw, so a section
+    // that changed since then needs a new look, not a comment that points into other text.
+    if (input.sectionRev !== undefined && input.sectionRev !== section.rev)
+      throw bad(
+        `Section ${section.id} of version ${version.number} changed while you wrote. Read it again, then select what the comment is about.`,
+        409,
+      );
+    if (input.block === undefined || input.block === null) {
+      if (quote) throw bad('A quote needs the block it is in');
+      return { sectionId: section.id, sectionRev: section.rev, block: null, quote: null };
+    }
+    const blocks = parseBlocks(section.body);
+    if (!Number.isInteger(input.block) || input.block < 0 || input.block >= blocks.length)
+      throw bad(`Section ${section.id} has ${blocks.length} ${blocks.length === 1 ? 'block' : 'blocks'}`);
+    return { sectionId: section.id, sectionRev: section.rev, block: input.block, quote };
+  };
+
+  function create(visualId, input) {
+    for (const key of Object.keys(input))
+      if (!['from', 'version', 'sectionId', 'sectionRev', 'block', 'quote', 'text'].includes(key))
+        throw bad(`Unknown comment field ${key}`);
+    const visual = visuals.get(visualId);
+    if (!Number.isInteger(input.version) || input.version < 1) throw bad('version must be a positive integer');
+    const version = visuals.readVersion(visualId, input.version);
+    const target = targetOf(input, version);
+    const text = textOf(input.text);
+    if (all(visualId).filter((comment) => comment.version === version.number).length >= COMMENT_LIMITS.perVersion)
+      throw bad(`A version holds at most ${COMMENT_LIMITS.perVersion} comments`);
+    const now = new Date().toISOString();
+    const comment = {
+      id: `vc-${randomUUID().slice(0, 8)}`,
+      visualId,
+      version: version.number,
+      ...target,
+      text,
+      status: 'draft',
+      createdAt: now,
+      updatedAt: now,
+      sentAt: null,
+      messageId: null,
+      answeredIn: null,
+    };
+    store.transaction(() => {
+      insert(comment);
+      visuals.save(counted(visual));
+    });
+    return comment;
+  }
+
+  function update(visualId, id, input) {
+    for (const key of Object.keys(input))
+      if (!['from', 'text'].includes(key)) throw bad(`Unknown comment field ${key}`);
+    const comment = { ...draft(visualId, id), text: textOf(input.text), updatedAt: new Date().toISOString() };
+    store.transaction(() => {
+      write(comment);
+      visuals.save(counted(visuals.get(visualId)));
+    });
+    return comment;
+  }
+
+  function remove(visualId, id) {
+    const comment = draft(visualId, id);
+    store.transaction(() => {
+      store.db.prepare('DELETE FROM visual_comments WHERE id=?').run(comment.id);
+      visuals.save(counted(visuals.get(visualId)));
+    });
+    return { removed: comment.id };
+  }
+
+  function message(visual, version, comments) {
+    const order = new Map(version.sections.map((section, index) => [section.id, index]));
+    // The visual as a whole first, then in the order of the document; a section that the version lost comes last.
+    const position = (comment) => [
+      comment.sectionId === null ? -1 : (order.get(comment.sectionId) ?? order.size),
+      comment.block ?? -1,
+      comment.createdAt,
+    ];
+    const sorted = [...comments].sort((a, b) => {
+      const [left, right] = [position(a), position(b)];
+      return left[0] - right[0] || left[1] - right[1] || left[2].localeCompare(right[2]);
+    });
+    const where = (comment) => {
+      if (comment.sectionId === null) return 'on the visual as a whole';
+      // The author may have changed the section in the same turn, after the user read it.
+      const now = version.sections.find((item) => item.id === comment.sectionId);
+      const since = !now
+        ? ', which you removed after the comment was written'
+        : now.rev === comment.sectionRev
+          ? ''
+          : ', which you changed after the comment was written';
+      const section = `on section \`${comment.sectionId}\`${since}`;
+      if (comment.block === null) return `${section}${since ? '' : ' as a whole'}`;
+      if (comment.quote) return `${section}, at ${locator(comment.quote.text, MESSAGE_QUOTE_CHARS)}`;
+      const { body } = visuals.readSection(visual.id, comment.sectionRev);
+      return `${section}, block ${comment.block + 1} (${parseBlocks(body)[comment.block].type})`;
+    };
+    const newest = visual.version === version.number ? '' : `, the newest is ${visual.version}`;
+    const text = [
+      `@${visual.agentId} ${sorted.length === 1 ? 'A comment' : `${sorted.length} comments`} on visual \`${visual.id}\` ${locator(visual.title, MESSAGE_TITLE_CHARS)}, version ${version.number}${newest}:`,
+      ...sorted.map(
+        (comment, index) =>
+          `${index + 1}. \`${comment.id}\` ${where(comment)}:\n${comment.text
+            .split('\n')
+            .map((line) => `> ${line}`)
+            .join('\n')}`,
+      ),
+      `Change the sections these concern with \`visual patch --id ${visual.id}\`, and name the comments a change answers with \`--resolves\`. \`visual comments --id ${visual.id}\` shows each comment with its whole quote.`,
+    ].join('\n\n');
+    // The parts were made safe one by one; this holds for the message they make together.
+    const named = mentions(text).filter((name) => name !== visual.agentId);
+    if (named.length)
+      throw bad(
+        `Together these comments read as a mention of @${named[0]}. Send them one by one, or put the name in a code span.`,
+      );
+    return { text, sorted };
+  }
+
+  /** Sends the drafts of one version, all of them or the named ones, as one chat message to the author. */
+  async function send(visualId, input) {
+    for (const key of Object.keys(input))
+      if (!['from', 'version', 'ids'].includes(key)) throw bad(`Unknown field ${key}`);
+    const visual = visuals.get(visualId);
+    if (!Number.isInteger(input.version) || input.version < 1) throw bad('version must be a positive integer');
+    if (input.ids !== undefined && (!Array.isArray(input.ids) || !input.ids.length))
+      throw bad('ids must be a list of comment IDs');
+    const drafts = input.ids
+      ? [...new Set(input.ids)].map((id) => draft(visualId, String(id)))
+      : all(visualId).filter((comment) => comment.version === input.version && comment.status === 'draft');
+    if (drafts.some((comment) => comment.version !== input.version))
+      throw bad(`Every comment of one message belongs to version ${input.version}`);
+    if (!drafts.length) throw bad(`Version ${input.version} has no draft to send`);
+    const { text, sorted } = message(visual, visuals.readVersion(visualId, input.version), drafts);
+    const posted = await sendAsUser(text, visual.conversationId);
+    const now = new Date().toISOString();
+    const sent = sorted.map((comment) => ({
+      ...comment,
+      status: 'sent',
+      sentAt: now,
+      updatedAt: now,
+      messageId: posted.id,
+    }));
+    store.transaction(() => {
+      for (const comment of sent) write(comment);
+      visuals.save(counted(visuals.get(visualId)));
+    });
+    return { messageId: posted.id, comments: sent };
+  }
+
+  /** The sent comments that a change of the visual may answer; a comment is answered in a later version than its own. */
+  function answerable(visualId, ids, number) {
+    if (!Array.isArray(ids) || !ids.length || !ids.every((id) => typeof id === 'string'))
+      throw bad('resolves must be a list of comment IDs');
+    return [...new Set(ids)].map((id) => {
+      const comment = find(visualId, id);
+      if (comment.status !== 'sent') throw bad(`Visual ${visualId} has no comment ${id}`, 404);
+      if (comment.answeredIn !== null) throw bad(`Comment ${id} was answered in version ${comment.answeredIn}`, 409);
+      if (comment.version >= number)
+        throw bad(
+          `Comment ${id} is on version ${comment.version}, which is the newest: change the visual, then name the comments the change answers`,
+        );
+      return comment;
+    });
+  }
+
+  /** Marks comments as answered in a version. The caller saves the record with `counted` in the same transaction. */
+  function markAnswered(comments, number) {
+    const now = new Date().toISOString();
+    for (const comment of comments) write({ ...comment, answeredIn: number, updatedAt: now });
+  }
+
+  return {
+    create,
+    update,
+    remove,
+    send,
+    answerable,
+    markAnswered,
+    counted,
+    list: (visualId, caller) => visible(all(visualId), caller),
+    ofVersion: (visualId, number, caller) =>
+      visible(
+        all(visualId).filter((comment) => comment.version === number),
+        caller,
+      ),
+    answeredIn: (visualId, number) => all(visualId).filter((comment) => comment.answeredIn === number),
+    perVersion: (visualId, caller) => {
+      const counts = new Map();
+      for (const comment of visible(all(visualId), caller))
+        counts.set(comment.version, (counts.get(comment.version) ?? 0) + 1);
+      return counts;
+    },
+  };
+}

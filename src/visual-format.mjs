@@ -11,6 +11,15 @@ export const LIMITS = Object.freeze({
   documentBytes: 1024 * 1024,
 });
 
+// A comment quotes the text it is about with a little of what stands before and after it, which tells one occurrence
+// of the same words in a block from another.
+export const COMMENT_LIMITS = Object.freeze({
+  textBytes: 4000,
+  quoteChars: 600,
+  contextChars: 32,
+  perVersion: 200,
+});
+
 export const SECTION_ID = /^[a-z][a-z0-9-]{0,47}$/;
 // The section that holds the text before the first heading.
 export const LEAD_SECTION = 'intro';

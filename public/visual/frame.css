@@ -329,6 +329,9 @@ body {
   border: 1px solid var(--line);
   border-radius: var(--border-radius-12px);
   background: var(--surface);
+
+  /* A click on a drawn block offers a comment on it. */
+  cursor: pointer;
 }
 
 .visual-mermaid {
@@ -386,4 +389,33 @@ body {
   font-family: var(--font-mono);
   font-size: var(--font-size-13px);
   white-space: pre-wrap;
+}
+
+/* What the user's comments are about. The dashboard names the ranges; the frame paints them. */
+::highlight(comment-answered) {
+  text-decoration: underline dotted var(--green);
+}
+
+::highlight(comment-sent) {
+  background-color: var(--accent-soft);
+}
+
+::highlight(comment-draft) {
+  background-color: var(--attention-icon-surface);
+  text-decoration: underline var(--amber);
+}
+
+::highlight(comment-active) {
+  background-color: var(--accent);
+  color: var(--button-primary-ink);
+}
+
+/* A comment on a block or a section as a whole. */
+.commented {
+  outline: 1px dashed var(--accent);
+  outline-offset: var(--space-6px);
+}
+
+.commented.comment-active {
+  outline-style: solid;
 }

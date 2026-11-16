@@ -179,7 +179,9 @@ async function cdp(port) {
   };
 }
 
-test('a visual renders in the sandboxed frame of a real browser', async (t) => {
+// A Mu app with one visual of a worker whose turn runs, and a browser that shows the visual in the dashboard.
+// `shots` starts the names of the screenshots of one test.
+async function opened(t, shots) {
   const port = await freePort();
   const app = await createApp({
     home: await temporaryMuHome(t),
@@ -316,7 +318,7 @@ test('a visual renders in the sandboxed frame of a real browser', async (t) => {
     // A picture shows what is painted, which is a moment after what the document holds.
     await sleep(300);
     const { data } = await browser.send('Page.captureScreenshot', { format: 'png' }, sessionId);
-    await writeFile(join(SHOTS, `shot-${name}.png`), Buffer.from(data, 'base64'));
+    await writeFile(join(SHOTS, `shot-${shots}${name}.png`), Buffer.from(data, 'base64'));
   };
   const frameSession = () => [...sessions].find(([, info]) => info.type === 'iframe')?.[0];
 
@@ -335,6 +337,27 @@ test('a visual renders in the sandboxed frame of a real browser', async (t) => {
     inFrame(`${drawn} && document.querySelectorAll('code.hljs').length === 2`),
   );
   await shot('2-viewer');
+  return {
+    app,
+    url,
+    user,
+    worker,
+    visual,
+    elsewhere,
+    reached,
+    requests,
+    refused,
+    logs,
+    evaluate,
+    inFrame,
+    shot,
+    drawn,
+  };
+}
+
+test('a visual renders in the sandboxed frame of a real browser', async (t) => {
+  const { app, url, worker, visual, elsewhere, reached, requests, refused, logs, evaluate, inFrame, shot, drawn } =
+    await opened(t, '');
   const facts = await inFrame(`(async () => {
     const result = {
       origin: window.origin,
@@ -589,4 +612,169 @@ test('a visual renders in the sandboxed frame of a real browser', async (t) => {
       ),
   );
   assert.deepEqual(unexpected, []);
+});
+
+test('the user comments on selected text, a diagram and code, and the author answers', async (t) => {
+  const { app, user, worker, visual, reached, evaluate, inFrame, shot, drawn } = await opened(t, 'comments-');
+  // The turn that wrote the visual has ended; version 1 stays as it is.
+  app.runner.active.clear();
+  const highlights = `Object.fromEntries(['draft', 'sent', 'answered', 'active'].map((state) => [state, CSS.highlights.get('comment-' + state).size]))`;
+  const cards = `[...document.querySelectorAll('#visual-comments-list .visual-comment')].map((card) => [card.querySelector('.visual-comment-where').textContent, card.querySelector('.visual-comment-state').textContent, card.querySelector('.visual-comment-quote')?.textContent ?? null, card.querySelector('.visual-comment-text').textContent])`;
+  const scopes = `[...document.querySelectorAll('.visual-scope')].map((option) => option.textContent + (option.getAttribute('aria-pressed') === 'true' ? '*' : ''))`;
+  const write = (text) =>
+    evaluate(`(() => {
+      const field = document.getElementById('visual-composer-text');
+      field.focus();
+      field.value = ${JSON.stringify(text)};
+      field.dispatchEvent(new Event('input'));
+    })()`);
+  const bubble = `!document.getElementById('visual-comment-bubble').hidden`;
+  // A click on a button, which takes the focus from the comment field as a pointer does.
+  const press = (id) =>
+    evaluate(`(() => { const button = document.getElementById('${id}'); button.focus(); button.click(); })()`);
+
+  // Text selected across two elements of a paragraph.
+  await inFrame(`(() => {
+    const paragraph = document.querySelector('#section-intro p');
+    const range = document.createRange();
+    range.setStart(paragraph.querySelector('strong').firstChild, 0);
+    range.setEnd(paragraph.querySelector('strong').nextSibling, 11);
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+  })()`);
+  await until('the offer to comment on the selection', () => evaluate(bubble));
+  await shot('1-selected');
+  assert.deepEqual(await evaluate(scopes), ['Selected text*', 'Section “Introduction”', 'Whole visual']);
+  assert.equal(
+    await evaluate(`document.getElementById('visual-composer-quote').textContent`),
+    'session store from files',
+  );
+  await evaluate(`document.getElementById('visual-comment-bubble').click()`);
+  await write('Which files? Name them.');
+  await until('the mark of the comment that is written', async () => (await inFrame(highlights)).active === 1);
+  await shot('2-writing');
+  await press('visual-composer-draft');
+  await until('the draft', async () => (await evaluate(cards)).length === 1);
+  assert.deepEqual(await evaluate(cards), [
+    ['Introduction', 'Draft', 'session store from files', 'Which files? Name them.'],
+  ]);
+
+  // A click on a diagram offers a comment on it.
+  await inFrame(`getSelection().removeAllRanges()`);
+  await inFrame(
+    `document.querySelector('#section-flow .visual-mermaid svg .node').dispatchEvent(new MouseEvent('click', { bubbles: true }))`,
+  );
+  await until('the offer to comment on the diagram', async () => (await evaluate(scopes))[0] === 'Block 1*');
+  await evaluate(`document.getElementById('visual-comment-bubble').click()`);
+  await write('Show the cache in this diagram.');
+  await press('visual-composer-draft');
+  await until('the second draft', async () => (await evaluate(cards)).length === 2);
+
+  // Text inside highlighted code, where every token is an element of its own.
+  await inFrame(`(() => {
+    const code = document.querySelector('#section-steps code.hljs');
+    const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT);
+    const texts = [];
+    while (walker.nextNode()) texts.push(walker.currentNode);
+    const start = texts.find((node) => node.data.includes('JSON'));
+    const end = texts.find((node) => node.data.includes('body'));
+    const range = document.createRange();
+    range.setStart(start, start.data.indexOf('JSON'));
+    range.setEnd(end, end.data.indexOf('body') + 4);
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+  })()`);
+  await until('the offer to comment on the code', async () =>
+    (await evaluate(`document.getElementById('visual-composer-quote').textContent`)).startsWith('JSON.stringify'),
+  );
+  await evaluate(`document.getElementById('visual-comment-bubble').click()`);
+  await write('Why not hash the body alone?');
+  await press('visual-composer-draft');
+  await until('the third draft', async () => (await evaluate(cards)).length === 3);
+  await inFrame(`getSelection().removeAllRanges()`);
+  await until('the marks of three drafts', async () => {
+    const marks = await inFrame(`({ ...${highlights}, blocks: document.querySelectorAll('.commented').length })`);
+    // The comment saved last is the one in view, and marked as such.
+    return marks.draft + marks.active === 2 && marks.blocks === 1;
+  });
+  await shot('3-drafts');
+  assert.deepEqual(
+    (await evaluate(cards)).map(([where, state, quote]) => [where, state, quote]),
+    [
+      ['Introduction', 'Draft', 'session store from files'],
+      ['Flow, block 1', 'Draft', null],
+      ['Steps', 'Draft', 'JSON.stringify([section.id, section.title, section.body'],
+    ],
+  );
+  // A click on marked text names its comment in the list.
+  await inFrame(`(() => {
+    const mark = [...CSS.highlights.get('comment-draft')][0].getClientRects()[0];
+    document.getElementById('document').dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: mark.left + 2, clientY: mark.top + 2 }));
+  })()`);
+  await until('the comment of the clicked text', () =>
+    evaluate(`Boolean(document.querySelector('#visual-comments-list .visual-comment[aria-current="true"]'))`),
+  );
+
+  await press('visual-comments-send-all');
+  await until('the sent comments', async () => (await evaluate(cards)).every(([, state]) => state === 'Sent'));
+  await until('the marks of sent comments', async () => {
+    const marks = await inFrame(highlights);
+    return marks.sent + marks.active === 2 && marks.draft === 0;
+  });
+  await shot('4-sent');
+  const messages = (await user('GET', '/api/conversations/work/messages?limit=20')).body.messages;
+  const message = messages.find((item) => item.from === 'user');
+  const comments = (await worker('GET', `/api/visuals/${visual.id}/comments`)).body;
+  assert.equal(comments.length, 3);
+  assert.equal(
+    message.text,
+    [
+      `@worker 3 comments on visual \`${visual.id}\` \`Storage migration plan\`, version 1:`,
+      `1. \`${comments[0].id}\` on section \`intro\`, at \`session store from files\`:\n> Which files? Name them.`,
+      `2. \`${comments[1].id}\` on section \`flow\`, block 1 (mermaid):\n> Show the cache in this diagram.`,
+      `3. \`${comments[2].id}\` on section \`steps\`, at \`JSON.stringify([section.id, section.title, section.body\`:\n> Why not hash the body alone?`,
+      `Change the sections these concern with \`visual patch --id ${visual.id}\`, and name the comments a change answers with \`--resolves\`. \`visual comments --id ${visual.id}\` shows each comment with its whole quote.`,
+    ].join('\n\n'),
+  );
+
+  // The author answers two of them in its next turn. The dashboard follows to version 2 and names what it answers.
+  app.runner.active.set('worker', { conversationId: 'work' });
+  const answer = await worker('PATCH', `/api/visuals/${visual.id}`, {
+    source:
+      '# Storage migration plan\n\nThis plan moves the **session store** from the files `sessions/*.json` to SQLite.\n\n## Flow {#flow}\n\n```mermaid\nflowchart LR\n  A[Agent] --> B(Mu service) --> C[(SQLite)]\n  B --> K[[Cache]]\n```\n',
+    resolves: [comments[0].id, comments[1].id],
+  });
+  assert.deepEqual(answer.body.resolved, [comments[0].id, comments[1].id]);
+  await until(
+    'version 2 with its answers',
+    async () =>
+      (await evaluate(`document.getElementById('visual-version-label').textContent`)) === 'Version 2 of 2' &&
+      (await evaluate(`document.querySelectorAll('#visual-answers-list .visual-comment').length`)) === 2,
+  );
+  await until('the new diagram', () =>
+    inFrame(`${drawn} && document.querySelector('#section-flow').textContent.includes('Cache')`),
+  );
+  await shot('5-answered');
+  assert.deepEqual(await evaluate(cards), [], 'a new version starts without comments');
+  assert.equal(
+    await evaluate(`document.getElementById('visual-comments-note').textContent`),
+    'Comments on other versions:v1 (3)',
+  );
+  // Version 1 keeps its comments, each with its state and its mark.
+  await evaluate(`document.querySelector('#visual-answers-list .visual-comment button').click()`);
+  await until('version 1 with its comments', async () => (await evaluate(cards)).length === 3);
+  assert.deepEqual(
+    (await evaluate(cards)).map(([where, state]) => [where, state]),
+    [
+      ['Introduction', 'Answered'],
+      ['Flow, block 1', 'Answered'],
+      ['Steps', 'Sent'],
+    ],
+  );
+  await until('the marks of version 1', async () => {
+    const marks = await inFrame(`({ ...${highlights}, blocks: document.querySelectorAll('.commented').length })`);
+    return marks.answered === 1 && marks.sent === 1 && marks.blocks === 1;
+  });
+  await shot('6-version-1');
+  assert.deepEqual(reached, []);
 });
