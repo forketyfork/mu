@@ -46,8 +46,18 @@ export class FakeChat extends EventEmitter {
   }
 }
 
+// The browser's exit is reported by a separate event, which can come a moment after the connection broke.
+async function whyGone(failure, fallback) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const gone = failure();
+    if (gone) return gone;
+    await sleep(100);
+  }
+  return fallback;
+}
+
 // `failure` returns the error to throw once the browser is known to be gone; polling a port nobody listens on would
-// end in a bare "fetch failed" after ten seconds.
+// end in a bare "fetch failed" after ten seconds, and a connection that breaks while opening would say nothing of why.
 export async function cdp(port, failure = () => undefined) {
   let version;
   for (let attempt = 0; ; attempt += 1) {
@@ -64,7 +74,9 @@ export async function cdp(port, failure = () => undefined) {
   const socket = new WebSocket(version.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => {
     socket.onopen = resolve;
-    socket.onerror = reject;
+    socket.onerror = socket.onclose = (event) => {
+      whyGone(failure, new Error(`The DevTools connection failed to open: ${event.type}`)).then(reject, reject);
+    };
   });
   let next = 0;
   const pending = new Map();
@@ -131,6 +143,7 @@ export async function startBrowser(t, { chrome: binary = CHROME } = {}) {
     { stdio: ['ignore', 'ignore', 'pipe'] },
   );
   let stderr = '';
+  chrome.stderr.setEncoding('utf8');
   chrome.stderr.on('data', (chunk) => {
     stderr = (stderr + chunk).slice(-STDERR_TAIL);
   });
@@ -139,8 +152,8 @@ export async function startBrowser(t, { chrome: binary = CHROME } = {}) {
   chrome.once('error', (error) => {
     failure = new Error(`${binary} did not start: ${error.message}`);
   });
-  // 'close' comes after the last of the output, 'exit' may not.
-  chrome.once('close', (code, signal) => {
+  // Not 'close': that waits for every process that holds the stderr pipe, and Chrome's helpers can outlive it.
+  chrome.once('exit', (code, signal) => {
     failure ??= earlyExit(binary, { code, signal, stderr, elapsed: Date.now() - started });
   });
   t.after(async () => {
