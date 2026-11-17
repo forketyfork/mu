@@ -1319,7 +1319,8 @@ function dropTarget(container, clientX, clientY) {
   const width = area.width / columns;
   const columnOf = (x) => (width > 0 ? Math.min(columns - 1, Math.max(0, Math.floor((x - area.left) / width))) : 0);
   const cards = [...container.querySelectorAll('.activity-card:not(.dragging)')];
-  const column = columnOf(clientX);
+  // Above the container (on the lane's header) the card goes first, whichever column the pointer is over.
+  const column = clientY < area.top ? 0 : columnOf(clientX);
   const index = cards.filter((card) => {
     const box = card.getBoundingClientRect();
     const cardColumn = columnOf(box.left + 1);

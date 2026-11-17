@@ -155,10 +155,10 @@ test('a card dropped anywhere in a lane box moves to that lane, also below its c
   });
   assert.deepEqual((await lanes()).control, ['Audit report', 'Decide on the release', 'Reply to the auditor']);
 
-  // On the header of the other lane: the card lands first.
+  // Above the cards of the other lane, over its header and over the column that is not the first: the card lands first.
   await drag('Audit report', async () => {
     const header = await box('.activity-lane[data-lane="focus"] .lane-header');
-    return { x: header.left + header.width / 2, y: header.top + header.height / 2 };
+    return { x: header.right - 60, y: header.top + header.height / 2 };
   });
   assert.equal((await lanes()).focus[0], 'Audit report', 'dropped on the header');
 
