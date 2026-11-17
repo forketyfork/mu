@@ -89,7 +89,7 @@ test('lead prompts list only active tasks with no waiting card and no working or
         agentIds: [],
       })),
     ],
-    waiting: [{ taskId: 'waiting-task' }],
+    waiting: [{ id: 'wait-00000001', text: 'Open decision', taskId: 'waiting-task' }],
   });
   const { runner } = await runnerFor(t, store, { leadTaskContext: taskContext });
   const prompts = [];
@@ -100,8 +100,8 @@ test('lead prompts list only active tasks with no waiting card and no working or
 
   await turn(runner, store, 'task-context-trigger', 'Check the work');
 
-  const prompt = prompts[0];
-  assert.ok(prompt);
+  assert.ok(prompts[0]);
+  const prompt = prompts[0].split('Open "Waiting for you" cards')[0];
   assert.ok(prompt.includes('quiet-task — Review the completed result'));
   assert.ok(prompt.includes('unassigned-task — No workers assigned'));
   assert.ok(prompt.includes('bulk-task-17 — Bulk task 17'));
@@ -110,6 +110,55 @@ test('lead prompts list only active tasks with no waiting card and no working or
   assert.ok(prompt.includes('task list'));
   for (const id of ['waiting-task', 'working-task', 'blocked-task', 'ready-task'])
     assert.doesNotMatch(prompt, new RegExp(id));
+});
+
+test('lead turn for a user message in the direct chat lists the open waiting cards', async (t) => {
+  const store = new Store();
+  store.createAgent({ id: 'lead', role: 'lead', adapter: 'claude', cwd: ROOT, task: 'Coordinate' });
+  const cards = Array.from({ length: 22 }, (_, index) => ({
+    id: `wait-0000000${index % 10}`,
+    text: `Decision ${index}`,
+    taskId: index === 0 ? 'task-linked' : null,
+  }));
+  const { runner } = await runnerFor(t, store, { leadTaskContext: () => ({ tasks: [], waiting: cards }) });
+  const prompts = [];
+  runner.execute = async (command, _agent, _message, value) => {
+    prompts.push(value);
+    return leadOutput(command.format, 'NO_REPLY');
+  };
+
+  await turn(runner, store, 'cards-direct-user', 'Go ahead with the release');
+  assert.ok(prompts[0].includes('wait-00000000 — Decision 0 (task task-linked)'));
+  assert.ok(prompts[0].includes('wait-00000001 — Decision 1\n'));
+  assert.ok(prompts[0].includes('Decision 19'));
+  assert.doesNotMatch(prompts[0], /Decision 20/);
+  assert.ok(prompts[0].includes('2 more cards are open'));
+  assert.ok(prompts[0].includes('remove it in this turn'));
+
+  store.createConversation({ id: 'card-room', kind: 'room', name: 'Card room', members: ['lead'] });
+  store.addMessage('cards-room-user', 'user', '@lead Room question', 'card-room');
+  runner.kick();
+  await until(() => prompts.length === 2 && !runner.active.size && store.agent('lead').status === 'idle');
+  assert.doesNotMatch(prompts[1], /Open "Waiting for you" cards/);
+});
+
+test('lead turn omits the card block when there are no cards', async (t) => {
+  const store = new Store();
+  store.createAgent({ id: 'lead', role: 'lead', adapter: 'claude', cwd: ROOT, task: 'Coordinate' });
+  let waiting = [];
+  const { runner } = await runnerFor(t, store, { leadTaskContext: () => ({ tasks: [], waiting }) });
+  const prompts = [];
+  runner.execute = async (command, _agent, _message, value) => {
+    prompts.push(value);
+    return leadOutput(command.format, 'NO_REPLY');
+  };
+
+  await turn(runner, store, 'no-cards-direct', 'Hello');
+  assert.doesNotMatch(prompts[0], /Open "Waiting for you" cards/);
+
+  waiting = [{ id: 'wait-00000001', text: 'Approve the release', taskId: null }];
+  await turn(runner, store, 'cards-second', 'Approved');
+  assert.ok(prompts[1].includes('wait-00000001 — Approve the release\n'));
 });
 
 test('lead direct chat carries shortened messages from other sessions and does not repeat its own replies', async (t) => {
