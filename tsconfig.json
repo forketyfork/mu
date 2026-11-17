@@ -21,6 +21,7 @@
       "/visual/render.js": ["./public/visual/render.js"],
       "/visual/anchor.js": ["./public/visual/anchor.js"],
       "/visual/marks.js": ["./public/visual/marks.js"],
+      "/visual/sheen.js": ["./public/visual/sheen.js"],
       "/visual/form.js": ["./public/visual/form.js"]
     }
   },

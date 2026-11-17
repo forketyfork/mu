@@ -73,8 +73,9 @@ export async function team(t) {
   const task = (
     await user('POST', '/api/tasks', { title: 'Plan', conversationId: 'work', agentIds: ['worker'], from: 'lead' })
   ).body;
-  // A managed turn as the runner records it; each object is one turn.
-  const startTurn = (id, conversationId = 'work') => app.runner.active.set(id, { conversationId });
+  // A managed turn as the runner records it; each object is one turn. `messageIds` are the chat messages it works on.
+  const startTurn = (id, conversationId = 'work', messageIds = []) =>
+    app.runner.active.set(id, { conversationId, messageIds });
   return {
     app,
     url,

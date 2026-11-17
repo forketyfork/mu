@@ -154,7 +154,13 @@ export class Runner {
         continue;
       const batch = this.batch(agent);
       if (batch.length) {
-        const entry = { child: null, stopped: false, conversationId: batch[0].conversationId || 'common' };
+        const entry = {
+          child: null,
+          stopped: false,
+          conversationId: batch[0].conversationId || 'common',
+          // What the turn works on; a visual shows it on the comments that these messages carried.
+          messageIds: batch.map((message) => message.id),
+        };
         this.active.set(agent.id, entry);
         // Settles once the turn has ended: its reply is posted and its messages acknowledged, or its failure recorded.
         entry.done = this.turn(agent, batch, entry)

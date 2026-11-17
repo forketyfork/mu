@@ -380,3 +380,130 @@ test('a comment that changes on the service is loaded again, also on a pinned ve
   assert.equal(ui.$('#visual-comments-list .visual-comment-state').textContent, 'Answered');
   assert.equal(ui.posted.at(-1).type, 'render', 'the content was not sent again as a change');
 });
+
+test('the comments that the author works on are lit for as long as its turn runs, and no longer', async (t) => {
+  const visual = record();
+  const state = (turn, overrides = visual) => ({
+    ...withVisuals(overrides),
+    agents: [{ ...initialState().agents[0], status: turn ? 'working' : 'idle', activeMessageId: turn }],
+  });
+  const onText = comment('vc-0000000a', { messageId: 7 });
+  const onSection = comment('vc-0000000b', {
+    messageId: 7,
+    block: null,
+    quote: null,
+    sectionId: 'b',
+    sectionRev: 'b1',
+  });
+  const onAll = comment('vc-0000000c', { messageId: 7, block: null, quote: null, sectionId: null, sectionRev: null });
+  const later = comment('vc-0000000d', { messageId: 9 });
+  const draft = comment('vc-0000000e', { status: 'draft', sentAt: null, messageId: null });
+  const shown = { comments: [onText, onSection, onAll, later, draft] };
+  const ui = await commenting(t, { shown });
+  const lit = () => ui.working.at(-1).targets.map((target) => target.id);
+  const states = () => ui.cards().map(([, cardState]) => cardState);
+
+  // The comments are sent and nobody works on them.
+  assert.deepEqual(ui.working.at(-1), { type: 'working', targets: [], targetOrigin: '*' });
+  assert.deepEqual(states(), ['Sent', 'Sent', 'Sent', 'Draft', 'Sent']);
+  assert.equal(ui.asked.length, 1);
+
+  // The author's turn starts: the service is asked which comments it holds.
+  ui.served.versions.latest = {
+    ...versionOf(visual, 2, SECTIONS, shown),
+    working: { turn: 7, comments: [onText.id, onSection.id, onAll.id] },
+  };
+  ui.update(state(7));
+  await settle();
+  assert.equal(ui.asked.length, 2);
+  // The frame gets where each comment is, and nothing else of it.
+  assert.deepEqual(ui.working.at(-1).targets, [
+    { id: onText.id, ...ON_TEXT },
+    { id: onSection.id, sectionId: 'b', sectionRev: 'b1', block: null, quote: null },
+    { id: onAll.id, sectionId: null, sectionRev: null, block: null, quote: null },
+  ]);
+  assert.deepEqual(states(), ['In work', 'In work', 'Sent', 'Draft', 'In work']);
+  const card = ui.$(`.visual-comment[data-comment="${onText.id}"]`);
+  assert.equal(card.classList.contains('working'), true);
+  assert.equal(card.querySelector('.visual-comment-state').title, '@lead is working on this comment');
+  assert.equal(ui.posted.at(-1).type, 'render');
+  assert.deepEqual(ui.posted.at(-1).flash, [], 'a turn that starts changes no content');
+
+  // More news of the same turn asks for nothing and says nothing again.
+  const told = ui.working.length;
+  ui.update({ ...state(7), activities: [] });
+  await settle();
+  assert.deepEqual([ui.asked.length, ui.working.length], [2, told]);
+  // A frame that drew everything again has no lights: it is told again.
+  ui.fromFrame({ type: 'ready' });
+  assert.equal(ui.working.length, told + 1);
+  assert.deepEqual(lit(), [onText.id, onSection.id, onAll.id]);
+
+  // The turn ends, by a reply, an error or a restart: the lights go out with the news, without a request.
+  ui.update(state(null));
+  await settle();
+  assert.equal(ui.asked.length, 2);
+  assert.deepEqual(lit(), []);
+  assert.deepEqual(states(), ['Sent', 'Sent', 'Sent', 'Draft', 'Sent']);
+  assert.equal(ui.window.document.querySelector('.visual-comment.working'), null);
+
+  // The next turn holds the other message. What was loaded for the turn before lights nothing meanwhile.
+  ui.served.versions.latest = { ...ui.served.versions.latest, working: { turn: 9, comments: [later.id] } };
+  ui.update(state(9));
+  assert.deepEqual(lit(), []);
+  await settle();
+  assert.equal(ui.asked.length, 3);
+  assert.deepEqual(lit(), [later.id]);
+
+  // The turn writes its version: the service names no comment for it, and the change is marked in place.
+  const next = record({ version: 3, revision: 4 });
+  ui.served.versions.latest = { ...versionOf(next, 3, [section('a', 'a2'), section('b', 'b1')]), working: null };
+  ui.update(state(9, next));
+  await settle();
+  assert.deepEqual(lit(), []);
+  assert.deepEqual(ui.posted.at(-1).flash, ['a']);
+
+  // A turn on something else: one request, which finds no comment, and no light.
+  const asked = ui.asked.length;
+  ui.update(state(11, next));
+  await settle();
+  ui.update(state(11, next));
+  await settle();
+  assert.equal(ui.asked.length, asked + 1);
+  assert.deepEqual(lit(), []);
+});
+
+test('a visual that is opened while its author works shows that at once', async (t) => {
+  const visual = record();
+  const onAll = comment('vc-0000000c', { messageId: 7, block: null, quote: null, sectionId: null, sectionRev: null });
+  const latest = {
+    ...versionOf(visual, 2, SECTIONS, { comments: [onAll] }),
+    working: { turn: 7, comments: [onAll.id] },
+  };
+  const ui = await viewer(t, {
+    hash: `#visuals/${ID}`,
+    visuals: [visual],
+    versions: { latest },
+  });
+  ui.update({
+    ...withVisuals(visual),
+    agents: [{ ...initialState().agents[0], status: 'working', activeMessageId: 7 }],
+  });
+  await settle();
+  ui.attach();
+  ui.fromFrame({ type: 'ready' });
+  assert.deepEqual(
+    ui.working.at(-1).targets.map((target) => target.id),
+    [onAll.id],
+  );
+  assert.equal(ui.$('#visual-comments-list .visual-comment-state').textContent, 'In work');
+  // The turn that was loaded is known: the next news of it asks for nothing.
+  const asked = ui.asked.length;
+  ui.update({
+    ...withVisuals(visual),
+    agents: [{ ...initialState().agents[0], status: 'working', activeMessageId: 7 }],
+    activities: [],
+  });
+  await settle();
+  assert.equal(ui.asked.length, asked);
+});

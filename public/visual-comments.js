@@ -74,8 +74,9 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
 
   /** @type {any} What the service answered for the version shown. */
   let data = null;
-  /** @type {{ id: string, status: string } | null} */
+  /** @type {{ id: string, status: string, turn: number | null } | null} The author, and the message its turn is on. */
   let author = null;
+  let workingSent = '[]';
   // What the reader selected last, and the selection the comment field is about. The field follows the selection
   // until it holds text; after that, only the user moves it.
   let selection = null;
@@ -137,6 +138,24 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
     post({ type: 'comments', comments: marks, active: marks.some((mark) => mark.id === PENDING) ? PENDING : active });
   }
 
+  // The comments that the author works on now. The service says which comments the author's running turn holds;
+  // the agent's record in the dashboard's state says whether that turn still runs. So the light goes out with the
+  // turn, whatever ended it, without another request.
+  const inWork = () =>
+    new Set(data?.working && author && author.turn === data.working.turn ? data.working.comments : []);
+
+  /** Tells the frame what to put the moving light on. */
+  function sendWorking(always = false) {
+    const ids = inWork();
+    const targets = (data?.shown.comments ?? [])
+      .filter((comment) => ids.has(comment.id))
+      .map(({ id, sectionId, sectionRev, block, quote }) => ({ id, sectionId, sectionRev, block, quote }));
+    const signature = JSON.stringify(targets);
+    if (!always && signature === workingSent) return;
+    workingSent = signature;
+    post({ type: 'working', targets });
+  }
+
   function whereOf(comment) {
     if (comment.sectionId === null) return 'Whole visual';
     const title = titleOf(comment.sectionId);
@@ -174,9 +193,9 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
     for (const id of ['visual-composer-send', 'visual-composer-draft']) $(id).disabled = busy || !field().value.trim();
   }
 
-  function card(comment, { answer = false } = {}) {
+  function card(comment, { answer = false, working = false } = {}) {
     const state = comment.status === 'draft' ? 'draft' : comment.answeredIn === null ? 'sent' : 'answered';
-    const item = node('article', `visual-comment ${answer ? 'answer' : state}`);
+    const item = node('article', `visual-comment ${answer ? 'answer' : state}${working ? ' working' : ''}`);
     item.dataset.comment = comment.id;
     if (comment.id === active) item.setAttribute('aria-current', 'true');
     const head = node('header', 'visual-comment-head');
@@ -185,9 +204,14 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
       node(
         'span',
         'visual-comment-state',
-        answer ? `On v${comment.version}` : { draft: 'Draft', sent: 'Sent', answered: 'Answered' }[state],
+        answer
+          ? `On v${comment.version}`
+          : working
+            ? 'In work'
+            : { draft: 'Draft', sent: 'Sent', answered: 'Answered' }[state],
       ),
     );
+    if (working) head.lastElementChild.title = `@${author.id} is working on this comment`;
     item.append(head);
     if (comment.quote) item.append(node('blockquote', 'visual-comment-quote', comment.quote.text));
     item.append(node('p', 'visual-comment-text', comment.text));
@@ -252,9 +276,10 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
     $('visual-comments-send-all').hidden = drafts.length < 2;
     $('visual-comments-send-all').textContent = `Send all ${drafts.length}`;
     $('visual-comments-send-all').disabled = busy;
+    const working = inWork();
     $('visual-comments-list').replaceChildren(
       ...(sorted.length
-        ? sorted.map((comment) => card(comment))
+        ? sorted.map((comment) => card(comment, { working: working.has(comment.id) }))
         : [
             node(
               'p',
@@ -434,9 +459,20 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
       renderComposer();
       renderList();
       sendMarks();
+      sendWorking();
+    },
+    /** The state of the workspace changed: the author's turn may have started or ended. */
+    author(nextAuthor) {
+      if (!data || JSON.stringify(nextAuthor) === JSON.stringify(author)) return;
+      author = nextAuthor;
+      renderList();
+      sendWorking();
     },
     /** The frame is new or drew everything again: it has no marks. */
-    marks: sendMarks,
+    marks() {
+      sendMarks();
+      sendWorking(true);
+    },
     /** A report of the frame about what the reader selected. */
     selection(message) {
       if (!data) return;
@@ -479,6 +515,8 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
     },
     close() {
       data = null;
+      author = null;
+      workingSent = '[]';
       selection = null;
       reading = null;
       active = null;

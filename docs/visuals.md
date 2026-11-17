@@ -19,7 +19,7 @@ The viewer shows the title, the author and the task above the document, and the 
 Each turn in which the agent changes a visual makes one new version. The header shows which version you are reading.
 
 - While **Following** is shown, you see the newest version. When the agent changes a section, that section is redrawn in place and flashes; the rest of the page stays where it was.
-- **‹** and **›** step through the versions. In the section list, `new` and `changed` mark what a version did; removed sections are named below the list.
+- The arrow buttons on both sides of the version number step to the previous and the next version; hover over one, or reach it with Tab, to read its name. At the first and at the last version, the arrow that leads nowhere is faint, with a dashed edge. In the section list, `new` and `changed` mark what a version did; removed sections are named below the list.
 - An older version stays on screen when a newer one arrives. The button **Newest: vN** returns to following.
 - Every visual and every version has its own address, so the browser's Back button and bookmarks work.
 
@@ -32,6 +32,7 @@ Tell the author what to change, at the place where you read it. The comments are
 - Type what you want, or click a ready request: **Simpler**, **More detail**, **Example**, **Shorter**, **Why?**.
 - **Send now** sends the comment to the author at once (also Ctrl or ⌘ + Enter). **Save draft** keeps it; only you see a draft, and you can edit, send or delete it. **Send all** sends every draft of the version in one message, so the author answers them in one turn.
 - The text you commented on is marked in the document. Click a mark to see its comment, and a comment to see its place.
+- While the author works on a comment, a soft light moves across what the comment is about: the selected text, the block, the section, or the whole visual. The comment shows **In work**. With several comments in one turn, each place is lit. The light goes out when the author's turn writes its version, where the changed sections flash, or when the turn ends without a change, also after an error or a restart of Mu. If your system asks for reduced motion, the place has a still tint and nothing moves.
 
 A comment reaches the agent that wrote the visual as a chat message from you in the visual's conversation, so it continues the session in which the agent wrote the visual. The message names the section and quotes the text; you can read it in that conversation's chat. The agent changes the sections that the comments concern, which makes a new version, and each changed section flashes as it is redrawn. Write a name in a comment without `@`: a comment that mentions an agent is refused, because the message would start that agent too. A comment, the selected text or an answer that holds a character which is not shown, such as a zero-width space pasted from another page, is refused with the character named, so the author gets only what you saw.
 

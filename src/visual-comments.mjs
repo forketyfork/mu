@@ -212,6 +212,18 @@ export function createVisualComments({ store, visuals, sendAsUser }) {
       const { body } = visuals.readSection(visual.id, comment.sectionRev);
       return `${section}, block ${comment.block + 1} (${parseBlocks(body)[comment.block].type})`;
     };
+    // The message says what the user saw. A draft is checked where it is written, and here again: the store may
+    // hold one that was saved under an older rule.
+    for (const comment of sorted) {
+      const { text, prefix, suffix } = comment.quote ?? {};
+      const hidden = [comment.text, text, prefix, suffix]
+        .map((part) => (typeof part === 'string' ? unseen(part, true) : null))
+        .find(Boolean);
+      if (hidden)
+        throw bad(
+          `Comment ${comment.id} holds a character that is not shown (${hidden}). Delete the draft and write it again.`,
+        );
+    }
     return {
       sorted,
       lines: sorted.map(
@@ -338,6 +350,11 @@ export function createVisualComments({ store, visuals, sendAsUser }) {
     markAnswered,
     counted,
     list: (visualId, caller) => visible(all(visualId), caller),
+    /** The sent comments without an answer that reached the author in one of these chat messages. */
+    waitingIn: (visualId, messageIds) =>
+      all(visualId).filter(
+        (comment) => comment.status === 'sent' && comment.answeredIn === null && messageIds.includes(comment.messageId),
+      ),
     ofVersion: (visualId, number, caller) =>
       visible(
         all(visualId).filter((comment) => comment.version === number),

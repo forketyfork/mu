@@ -20,7 +20,7 @@ export const sectionRev = (section) =>
 /**
  * @param {object} options
  * @param {import('./store.mjs').Store} options.store
- * @param {{active: Map<string, object>}} options.runner
+ * @param {{active: Map<string, { conversationId?: string, messageIds?: number[] }>}} options.runner
  * @param {{find: (id: string) => any, list: () => any[]}} options.tasks
  * @param {(text: string, conversationId: string) => Promise<{ id: number }>} options.sendAsUser
  *   Posts a chat message as the user; the user's comments and answers reach the author of a visual through it.
@@ -374,12 +374,24 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
     return response({ newVersion: !amend });
   };
 
+  // The comments that the author works on at this moment: its running turn got them and has not written a version
+  // of the visual yet. Nothing of this is stored, so it ends with the turn, however the turn ends. `turn` is the
+  // newest message of that turn, which the agent's record names as `activeMessageId` for as long as the turn runs.
+  const working = (visual) => {
+    const turn = runner.active.get(visual.agentId);
+    if (!turn?.messageIds?.length || turnVersions.get(turn)?.has(visual.id)) return null;
+    const held = comments.waitingIn(visual.id, turn.messageIds);
+    return held.length ? { turn: turn.messageIds.at(-1), comments: held.map((comment) => comment.id) } : null;
+  };
+
   const read = (id, caller, number) => {
     const visual = readable(id, caller);
     const version = readVersion(id, number ?? visual.version);
     const counts = comments.perVersion(id, caller);
     return {
       ...recordFor(visual, caller),
+      // For the dashboard, which shows it on the visual; the author knows what it works on.
+      ...(caller === 'user' ? { working: working(visual) } : {}),
       shown: {
         ...version,
         ...difference(id, version),

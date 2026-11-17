@@ -212,7 +212,46 @@ test('the user steps through versions; an older version stays put when a newer o
   ui.attach();
   ui.fromFrame({ type: 'ready' });
 
+  // The steps are buttons that say what they do, with an icon and no text; at an end, the step that leads nowhere
+  // is off, and a click on it goes nowhere.
+  const steps = () =>
+    ['previous', 'next'].map((step) => {
+      const button = $(`#visual-version-${step}`);
+      return [button.tagName, button.type, button.title, button.getAttribute('aria-label'), button.disabled];
+    });
+  assert.deepEqual(steps(), [
+    ['BUTTON', 'button', 'Previous version', 'Previous version', false],
+    ['BUTTON', 'button', 'Next version', 'Next version', true],
+  ]);
+  for (const step of ['previous', 'next']) {
+    const button = $(`#visual-version-${step}`);
+    assert.equal(button.textContent.trim(), '');
+    assert.equal(button.querySelector('svg').getAttribute('aria-hidden'), 'true');
+    assert.equal(button.hasAttribute('tabindex'), false, 'the button is in the order of the Tab key');
+  }
+  ui.click('#visual-version-next');
+  await settle();
+  assert.equal(window.location.hash, `#visuals/${ID}`);
+
   ui.click('#visual-version-previous');
+  await settle();
+  assert.equal(window.location.hash, `#visuals/${ID}/v2`);
+  assert.equal($('#visual-version-label').textContent, 'Version 2 of 3');
+  assert.deepEqual(
+    steps().map((step) => step.at(-1)),
+    [false, false],
+  );
+  ui.click('#visual-version-previous');
+  await settle();
+  assert.equal($('#visual-version-label').textContent, 'Version 1 of 3');
+  assert.deepEqual(
+    steps().map((step) => step.at(-1)),
+    [true, false],
+  );
+  ui.click('#visual-version-previous');
+  await settle();
+  assert.equal(window.location.hash, `#visuals/${ID}/v1`);
+  ui.click('#visual-version-next');
   await settle();
   assert.equal(window.location.hash, `#visuals/${ID}/v2`);
   assert.equal($('#visual-version-label').textContent, 'Version 2 of 3');

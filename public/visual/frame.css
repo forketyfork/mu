@@ -577,3 +577,95 @@ textarea.form-input {
 .commented.comment-active {
   outline-style: solid;
 }
+
+/*
+ * What the author works on now: a faint tint with a soft light that crosses it. The lights are in a layer over the
+ * document, placed by the frame's script, and take no click.
+ */
+.working-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.working-sheen {
+  position: absolute;
+  overflow: hidden;
+  border-radius: var(--border-radius-12px);
+  animation: working-in var(--duration-0-6s) var(--motion-easing) both;
+}
+
+.working-sheen.text {
+  border-radius: 0;
+}
+
+/* The tint, which stays when nothing moves. */
+.working-sheen::before,
+.working-sheen::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+}
+
+.working-sheen::before {
+  background: var(--accent);
+  opacity: 0.07;
+}
+
+.working-sheen.text::before {
+  opacity: 0.16;
+}
+
+/* The light: a band as wide as the target, which enters at the left and leaves at the right. */
+.working-sheen::after {
+  background: linear-gradient(90deg, transparent 0%, var(--accent) 50%, transparent 100%);
+  opacity: 0.2;
+  transform: translateX(-100%);
+  animation: working-sweep calc(var(--duration-1-5s) * 1.8) var(--motion-easing) infinite;
+}
+
+.working-sheen.text::after {
+  opacity: 0.34;
+}
+
+@keyframes working-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes working-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  70%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .working-sheen {
+    animation: none;
+  }
+
+  .working-sheen::after {
+    display: none;
+  }
+
+  .working-sheen::before {
+    opacity: 0.12;
+  }
+
+  .working-sheen.text::before {
+    opacity: 0.24;
+  }
+}

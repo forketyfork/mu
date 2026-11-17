@@ -145,14 +145,16 @@ export async function viewer(t, { hash = '', visuals = [record()], versions }) {
     return answer(200, { ...body, shown: { ...body.shown, comments: [...body.shown.comments, ...made] } });
   };
   const frame = () => ui.window.document.querySelector('iframe.visual-frame');
-  // What the dashboard sends to the frame: the content and the like in `posted`; the marks of the comments and the
-  // state of the answers apart.
+  // What the dashboard sends to the frame: the content and the like in `posted`; the marks of the comments, the
+  // state of the answers and what the author works on apart.
   const posted = [];
   const marks = [];
   const answers = [];
+  const working = [];
+  const apart = { comments: marks, answers, working };
   const attach = () => {
     frame().contentWindow.postMessage = (data, targetOrigin) =>
-      (data.type === 'comments' ? marks : data.type === 'answers' ? answers : posted).push({ ...data, targetOrigin });
+      (apart[data.type] ?? posted).push({ ...data, targetOrigin });
   };
   const fromFrame = (data, source = frame().contentWindow) =>
     ui.window.dispatchEvent(new ui.window.MessageEvent('message', { data, source }));
@@ -160,5 +162,5 @@ export async function viewer(t, { hash = '', visuals = [record()], versions }) {
     ui.window.location.hash = hash;
     await new Promise((resolve) => ui.window.addEventListener('hashchange', resolve, { once: true }));
   }
-  return { ...ui, served, asked, calls, frame, posted, marks, answers, attach, fromFrame };
+  return { ...ui, served, asked, calls, frame, posted, marks, answers, working, attach, fromFrame };
 }

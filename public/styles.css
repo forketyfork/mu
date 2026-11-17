@@ -4499,7 +4499,8 @@ kbd {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .visual-working {
+  .visual-working,
+  .visual-comment.working .visual-comment-state {
     animation: none;
   }
 }
@@ -4523,9 +4524,39 @@ kbd {
   text-align: center;
 }
 
-.visual-versions .filter:disabled {
-  opacity: 0.35;
-  pointer-events: none;
+/* The steps through the versions: icon buttons that read as buttons, also at the first and the last version. */
+.visual-step {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid var(--button-secondary-edge);
+  border-radius: var(--border-radius-7px);
+  background: var(--button-secondary-surface);
+  color: var(--button-secondary-ink);
+}
+
+.visual-step svg {
+  width: 20px;
+  height: 20px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.visual-step:hover:not(:disabled) {
+  border-color: var(--button-secondary-hover-edge);
+  background: var(--button-secondary-hover-surface);
+  color: var(--button-secondary-hover-ink);
+}
+
+.visual-step:disabled {
+  border-style: dashed;
+  background: transparent;
+  color: var(--subtle);
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .visual-versions .filter.has-news {
@@ -4956,6 +4987,13 @@ kbd {
 
 .visual-comment.sent {
   border-left-color: var(--accent);
+}
+
+/* The author's turn holds this comment: the same word and pulse as beside the author's name. */
+.visual-comment.working .visual-comment-state {
+  color: var(--accent);
+  font-weight: var(--font-weight-600);
+  animation: visual-working var(--duration-1-5s) var(--ease-pulse) infinite;
 }
 
 .visual-comment.answered,

@@ -75,13 +75,18 @@ export function createVisualsView({
 
   // What the viewer shows: the visual, the version the user pinned (null follows the newest), the content last
   // loaded, and whether the frame has asked for content.
-  /** @type {{ id: string, pinned: number | null, data: any, ready: boolean, loads: number, active: string | null } | null} */
+  /** @type {{ id: string, pinned: number | null, data: any, ready: boolean, loads: number, active: string | null, turn: number | null } | null} */
   let open = null;
   /** @type {HTMLIFrameElement | null} */
   let frame = null;
   let indexSignature = null;
 
   const record = (id) => (getState()?.visuals ?? []).find((visual) => visual.id === id);
+  // The author as the comments need it: its status, and the message that its running turn is on.
+  const authorOf = (agentId) => {
+    const agent = getState().agents.find((item) => item.id === agentId);
+    return agent ? { id: agent.id, status: agent.status, turn: agent.activeMessageId ?? null } : null;
+  };
   const post = (message) => frame?.contentWindow?.postMessage(message, '*');
 
   function visualLink(visual, className) {
@@ -282,11 +287,12 @@ export function createVisualsView({
       // The user moved on, or a newer request for the same visual is under way.
       if (open !== target || target.loads !== load) return;
       target.data = data;
+      // What was loaded knows this turn of the author, so its start is no news.
+      if (data.working) target.turn = data.working.turn;
       showError('');
       renderHeader();
       renderOutline();
-      const author = getState().agents.find((agent) => agent.id === data.agentId);
-      comments.show(data, author ? { id: author.id, status: author.status } : null);
+      comments.show(data, authorOf(data.agentId));
       // A change that arrives is marked in place: a new version for a user who follows the newest one, or new content
       // of the version on screen. A version the user switched to starts at its top.
       const live = flash && previous && (target.pinned === null || previous.shown.number === data.shown.number);
@@ -327,7 +333,7 @@ export function createVisualsView({
       return;
     }
     close();
-    open = { id: route.id, pinned: route.version, data: null, ready: false, loads: 0, active: null };
+    open = { id: route.id, pinned: route.version, data: null, ready: false, loads: 0, active: null, turn: null };
     $('visuals-index').hidden = true;
     $('visual-viewer').hidden = false;
     $('visual-problems').hidden = true;
@@ -423,6 +429,13 @@ export function createVisualsView({
       const visual = record(open.id);
       renderHeader();
       if (!visual || !open.data) return;
+      // The comments that the author works on are those of its running turn, so a turn that starts is news for
+      // them; a turn that ends needs no request, because the comments compare the turn with what was loaded.
+      const author = authorOf(open.data.agentId);
+      const turn = author?.turn ?? null;
+      const started = turn !== null && turn !== open.turn;
+      open.turn = turn;
+      comments.author(author);
       // The newest version changes for as long as the turn that made it runs, so a user who pinned it sees those
       // changes too. A version before it never changes.
       if (visual.revision !== open.data.revision && (open.pinned === null || open.pinned >= open.data.version))
@@ -431,7 +444,8 @@ export function createVisualsView({
       // An answer changes on the newest version, and shows on every version that asks the same question.
       else if (
         visual.commentRevision !== open.data.commentRevision ||
-        visual.answerRevision !== open.data.answerRevision
+        visual.answerRevision !== open.data.answerRevision ||
+        started
       )
         void load();
     },

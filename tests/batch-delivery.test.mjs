@@ -119,6 +119,8 @@ test('messages that arrive during a turn are delivered together in the next turn
   const first = post(store, 'lead', '@worker HOLD-GATE first');
   runner.kick();
   await until(() => runner.active.get('worker')?.child);
+  // The entry of a turn names the messages that the turn works on.
+  assert.deepEqual(runner.active.get('worker').messageIds, [first.id]);
   const second = post(store, 'lead', '@worker second request');
   const third = post(store, 'reviewer', '@worker third request');
   runner.kick();

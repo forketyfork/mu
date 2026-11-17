@@ -326,6 +326,20 @@ async function opened(t, shots) {
   // The mouse of a real user: `type` is mousePressed or mouseReleased, at a point of the page.
   const mouse = (type, { x, y }) =>
     browser.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 }, sessionId);
+  // A key of a real keyboard, pressed and let go in the dashboard.
+  const KEYS = { Enter: [13, '\r'], Tab: [9, undefined], ' ': [32, ' '] };
+  const keyboard = async (key) => {
+    const [windowsVirtualKeyCode, text] = KEYS[key];
+    const pressed = { key, code: key === ' ' ? 'Space' : key, windowsVirtualKeyCode };
+    await browser.send('Input.dispatchKeyEvent', { type: 'keyDown', ...pressed, text }, sessionId);
+    await browser.send('Input.dispatchKeyEvent', { type: 'keyUp', ...pressed }, sessionId);
+  };
+  // What the user asked of the system about motion, for the dashboard and for the frame, which is a page of its own.
+  const reducedMotion = async (on) => {
+    const features = [{ name: 'prefers-reduced-motion', value: on ? 'reduce' : '' }];
+    for (const session of [sessionId, frameSession()])
+      await browser.send('Emulation.setEmulatedMedia', { features }, session);
+  };
 
   await browser.send('Page.navigate', { url: `${url}/?token=${app.identity.token}#visuals` }, sessionId);
   await until('the list of visuals', () => evaluate(`Boolean(document.querySelector('.visual-card'))`));
@@ -359,6 +373,8 @@ async function opened(t, shots) {
     drawn,
     viewport,
     mouse,
+    keyboard,
+    reducedMotion,
   };
 }
 
@@ -979,4 +995,265 @@ test('the user answers the questions of a visual, reviews the answers beside the
   assert.equal(await inFrame(`window.pwned ?? null`), null);
   assert.equal(await evaluate(`window.pwned ?? null`), null);
   assert.deepEqual(reached, []);
+});
+
+test('what the author works on is lit until its turn writes a version or ends, and the versions have icon buttons', async (t) => {
+  const {
+    app,
+    user,
+    worker,
+    visual,
+    reached,
+    logs,
+    evaluate,
+    inFrame,
+    shot,
+    drawn,
+    viewport,
+    keyboard,
+    reducedMotion,
+  } = await opened(t, 'sheen-');
+  app.runner.active.clear();
+  const path = `/api/visuals/${visual.id}`;
+  const rev = Object.fromEntries(
+    (await user('GET', path)).body.shown.sections.map((section) => [section.id, section.rev]),
+  );
+  const draft = async (input) => {
+    const made = await user('POST', `${path}/comments`, { version: 1, ...input });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    return made.body.id;
+  };
+  const QUOTE = 'session store from files to SQLite. Read the SQLite docs';
+  const onText = await draft({
+    sectionId: 'intro',
+    sectionRev: rev.intro,
+    block: 0,
+    quote: { text: QUOTE, prefix: 'moves the ', suffix: ' or jump' },
+    text: 'Which files? Name them.',
+  });
+  const onDiagram = await draft({ sectionId: 'flow', sectionRev: rev.flow, block: 0, text: 'Show the cache.' });
+  const onSection = await draft({ sectionId: 'steps', sectionRev: rev.steps, text: 'Add a rollback step.' });
+  const onAll = await draft({ text: 'Shorter, please.' });
+  const send = async (ids) => (await user('POST', `${path}/comments/send`, { version: 1, ids })).body.messageId;
+  const first = await send([onText, onDiagram, onSection]);
+  const second = await send([onAll]);
+  // What the runner does when a turn of the author starts on these messages, and when it ends.
+  const turn = (messageIds) => {
+    app.runner.active.set('worker', { conversationId: 'work', messageIds });
+    app.store.updateAgent('worker', { status: 'working', activeMessageId: messageIds.at(-1) });
+  };
+  const turnEnds = (status) => {
+    app.runner.active.clear();
+    app.store.updateAgent('worker', { status, activeMessageId: null });
+  };
+
+  const lights = `[...document.querySelectorAll('.working-layer > .working-sheen')].map((light) => {
+    const box = light.getBoundingClientRect();
+    const band = getComputedStyle(light, '::after');
+    return {
+      id: light.dataset.comment,
+      kind: light.className.replace('working-sheen ', ''),
+      box: [box.left, box.top, box.width, box.height].map(Math.round),
+      lines: (light.style.clipPath.match(/M/g) ?? []).length,
+      animation: band.animationName,
+      band: band.display === 'none' ? null : band.transform,
+      tint: Number(getComputedStyle(light, '::before').opacity),
+    };
+  })`;
+  const kinds = async () => Object.fromEntries((await inFrame(lights)).map((light) => [light.id, light.kind]));
+  const places = `(() => {
+    const box = (element) => {
+      const rect = element.getBoundingClientRect();
+      return [rect.left, rect.top, rect.width, rect.height].map(Math.round);
+    };
+    return {
+      strong: box(document.querySelector('#section-intro strong')),
+      paragraph: box(document.querySelector('#section-intro [data-block="0"]')),
+      block: box(document.querySelector('#section-flow > [data-block="0"]')),
+      section: box(document.getElementById('section-steps')),
+      whole: box(document.getElementById('document')),
+    };
+  })()`;
+  const states = `Object.fromEntries([...document.querySelectorAll('#visual-comments-list .visual-comment')].map((card) => [card.dataset.comment, card.querySelector('.visual-comment-state').textContent]))`;
+  const within = ([left, top, width, height], [outerLeft, outerTop, outerWidth, outerHeight]) =>
+    left >= outerLeft - 1 &&
+    top >= outerTop - 1 &&
+    left + width <= outerLeft + outerWidth + 1 &&
+    top + height <= outerTop + outerHeight + 1;
+
+  // Sent, and the author does nothing: no light.
+  await until('the sent comments', async () => Object.keys(await evaluate(states)).length === 4);
+  assert.deepEqual(await inFrame(lights), []);
+  await shot('1-sent');
+
+  // The author's turn starts on the first message.
+  turn([first]);
+  await until('the lights of the first message', async () => (await inFrame(lights)).length === 3);
+  assert.deepEqual(await kinds(), { [onText]: 'text', [onDiagram]: 'block', [onSection]: 'section' });
+  assert.deepEqual(await evaluate(states), {
+    [onText]: 'In work',
+    [onDiagram]: 'In work',
+    [onSection]: 'In work',
+    [onAll]: 'Sent',
+  });
+  let placed = await inFrame(places);
+  let lit = Object.fromEntries((await inFrame(lights)).map((light) => [light.id, light]));
+  // A block and a section are covered exactly; the text is covered by its lines only, not by its paragraph.
+  assert.deepEqual(lit[onDiagram].box, placed.block);
+  assert.deepEqual(lit[onSection].box, placed.section);
+  assert.ok(within(placed.strong, lit[onText].box), JSON.stringify([placed.strong, lit[onText].box]));
+  assert.ok(lit[onText].box[2] < placed.paragraph[2], 'the light is as wide as the quote, not as its paragraph');
+  assert.ok(lit[onText].lines >= 3, 'the quote runs through three elements, each with a box of its own');
+  for (const light of Object.values(lit)) assert.equal(light.animation, 'working-sweep');
+  // The light moves.
+  const seen = new Set();
+  await until('the band to move', async () => {
+    seen.add((await inFrame(lights))[0].band);
+    return seen.size > 2;
+  });
+  // It takes no click and no selection from what it lies on.
+  assert.equal(
+    await inFrame(`(() => {
+      document.getElementById('section-steps').scrollIntoView();
+      const box = document.querySelector('.working-sheen.section').getBoundingClientRect();
+      const under = document.elementFromPoint(box.left + box.width / 2, box.top + 20);
+      window.scrollTo(0, 0);
+      return under.closest('.working-layer') ? 'the light' : under.closest('.visual-section')?.id;
+    })()`),
+    'section-steps',
+  );
+  for (const frame of ['a', 'b', 'c', 'd']) await shot(`2-turn-${frame}`);
+
+  // A narrower window breaks the lines anew: every light follows its target.
+  await viewport(980, 1000);
+  await until('the lights at their new places', async () => {
+    placed = await inFrame(places);
+    lit = Object.fromEntries((await inFrame(lights)).map((light) => [light.id, light]));
+    return (
+      JSON.stringify(lit[onSection].box) === JSON.stringify(placed.section) &&
+      JSON.stringify(lit[onDiagram].box) === JSON.stringify(placed.block) &&
+      within(placed.strong, lit[onText].box)
+    );
+  });
+  await shot('3-narrow');
+  await viewport(1500, 1000);
+
+  // The turn ends without a patch, here by an error: nothing stays lit.
+  turnEnds('error');
+  await until('no light after the turn', async () => (await inFrame(lights)).length === 0);
+  assert.deepEqual(Object.values(await evaluate(states)), ['Sent', 'Sent', 'Sent', 'Sent']);
+  await shot('4-ended');
+
+  // The next turn holds both messages: four comments in flight, one of them on the whole visual.
+  turn([first, second]);
+  await until('the lights of both messages', async () => (await inFrame(lights)).length === 4);
+  assert.deepEqual(await kinds(), {
+    [onText]: 'text',
+    [onDiagram]: 'block',
+    [onSection]: 'section',
+    [onAll]: 'whole',
+  });
+  placed = await inFrame(places);
+  // The light on the whole visual covers the document, as wide as the light on a section.
+  const whole = (await inFrame(lights)).find((light) => light.id === onAll).box;
+  assert.ok(within(placed.whole, whole) && within(placed.section, whole), JSON.stringify([placed, whole]));
+  assert.deepEqual([whole[0], whole[2]], [placed.section[0], placed.section[2]]);
+  assert.deepEqual([whole[1], whole[3]], [placed.whole[1], placed.whole[3]]);
+  await shot('5-all');
+
+  // A user who asked for less motion gets a tint that stands still, a little stronger than under the light.
+  const moving = (await inFrame(lights)).map((light) => light.tint);
+  await reducedMotion(true);
+  await until('the still tint', async () => (await inFrame(lights)).every((light) => light.band === null));
+  const still = await inFrame(lights);
+  assert.equal(still.length, 4);
+  still.forEach((light, index) => assert.ok(light.tint > moving[index], JSON.stringify([light, moving[index]])));
+  assert.equal(
+    await inFrame(`document.querySelector('.working-sheen').getAnimations({ subtree: true }).length`),
+    0,
+    'nothing moves',
+  );
+  await shot('6-reduced-motion');
+  await reducedMotion(false);
+  await until('the light again', async () => (await inFrame(lights)).every((light) => light.band !== null));
+
+  // The turn writes its version: the lights go, and the change is marked in place by the flash.
+  const patched = await worker('PATCH', path, {
+    source: '## Steps {#steps}\n\n1. Copy the files.\n2. Switch the reads.\n3. Roll back with `mu restore`.\n',
+    resolves: [onSection],
+  });
+  assert.equal(patched.body.version, 2);
+  await until(
+    'version 2',
+    async () => (await evaluate(`document.getElementById('visual-version-label').textContent`)) === 'Version 2 of 2',
+  );
+  await until('the changed section', () =>
+    inFrame(`${drawn} && document.querySelector('#section-steps').textContent.includes('mu restore')`),
+  );
+  assert.deepEqual(await inFrame(lights), []);
+  assert.equal(await inFrame(`document.querySelector('#section-steps').classList.contains('flash')`), true);
+  await shot('7-version');
+  turnEnds('idle');
+
+  // The steps through the versions: icon buttons with a name, a tooltip and a state that shows.
+  const steps = `['previous', 'next'].map((step) => {
+    const button = document.getElementById('visual-version-' + step);
+    const style = getComputedStyle(button);
+    const box = button.getBoundingClientRect();
+    const icon = button.querySelector('svg').getBoundingClientRect();
+    return {
+      name: button.getAttribute('aria-label'),
+      tip: button.title,
+      disabled: button.disabled,
+      size: [box.width, box.height, icon.width, icon.height].map(Math.round),
+      edge: style.borderTopStyle,
+      cursor: style.cursor,
+      opacity: Number(style.opacity),
+    };
+  })`;
+  const [previous, next] = await evaluate(steps);
+  assert.deepEqual(
+    [previous, next].map((step) => [step.name, step.tip, step.disabled]),
+    [
+      ['Previous version', 'Previous version', false],
+      ['Next version', 'Next version', true],
+    ],
+  );
+  // Each is a square large enough to hit, with its icon drawn.
+  for (const { size } of [previous, next]) {
+    assert.deepEqual([size[0], size[2]], [size[1], size[3]], JSON.stringify(size));
+    assert.ok(size[0] >= 32 && size[2] >= 16, JSON.stringify(size));
+  }
+  // The step that leads nowhere shows it: another edge, fainter, and a pointer that says no.
+  assert.notEqual(next.edge, previous.edge);
+  assert.ok(next.opacity < previous.opacity);
+  assert.deepEqual([previous.cursor, next.cursor], ['pointer', 'not-allowed']);
+  await shot('8-newest');
+  // By keyboard: Enter on the focused step goes back, and Tab leads on to the other step.
+  const label = `document.getElementById('visual-version-label').textContent`;
+  await evaluate(`document.getElementById('visual-version-previous').focus()`);
+  await keyboard('Enter');
+  await until('version 1', async () => (await evaluate(label)) === 'Version 1 of 2');
+  assert.deepEqual(
+    (await evaluate(steps)).map((step) => step.disabled),
+    [true, false],
+  );
+  await keyboard('Tab');
+  assert.equal(await evaluate(`document.activeElement.id`), 'visual-version-next');
+  assert.equal(await evaluate(`document.activeElement.matches(':focus-visible')`), true);
+  assert.notEqual(await evaluate(`getComputedStyle(document.activeElement).outlineStyle`), 'none');
+  await shot('9-first');
+  await keyboard(' ');
+  await until('version 2 again', async () => (await evaluate(label)) === 'Version 2 of 2');
+
+  assert.deepEqual(reached, []);
+  assert.deepEqual(
+    logs.filter((line) => !line.includes('violates the following Content Security Policy')),
+    [],
+  );
+  // The lights are placed through the style of their elements, which the frame's policy lets a script of Mu do.
+  assert.deepEqual(
+    logs.filter((line) => /sheen|style-src/.test(line)),
+    [],
+  );
 });

@@ -5,9 +5,11 @@
 import { marked } from '/vendor/marked.js';
 import DOMPurify from '/vendor/purify.js';
 import { COMMENT_LIMITS, FORM_LIMITS, codeLanguage, parseBlocks, parseForm } from '/visual/format.js';
+import { locate } from '/visual/anchor.js';
 import { createForms } from '/visual/form.js';
 import { createMarks } from '/visual/marks.js';
 import { createRenderer, visualMarkdown } from '/visual/render.js';
+import { createSheen } from '/visual/sheen.js';
 
 const root = document.documentElement;
 const container = document.getElementById('document');
@@ -83,6 +85,7 @@ const renderer = createRenderer({
 });
 
 const marks = createMarks({ document, window, container, limits: COMMENT_LIMITS, tell });
+const sheen = createSheen({ document, window, container, locate });
 
 function applyTokens(tokens) {
   for (const [name, value] of Object.entries(tokens))
@@ -136,6 +139,7 @@ window.addEventListener('message', (event) => {
     shown = { sections: message.sections };
     renderer.render(container, { sections: message.sections, flash: message.flash ?? [] });
     marks.apply();
+    sheen.apply();
     if (message.top) window.scrollTo(0, 0);
     reportActive();
   } else if (message?.type === 'theme') {
@@ -147,6 +151,8 @@ window.addEventListener('message', (event) => {
     forms.set(container, message);
   } else if (message?.type === 'comments') {
     marks.set(message.comments, message.active ?? null);
+  } else if (message?.type === 'working') {
+    sheen.set(message.targets);
   } else if (message?.type === 'reveal') {
     marks.reveal(message.id);
   } else if (message?.type === 'scrollTo') {

@@ -213,6 +213,85 @@ test('the drafts of a version reach the author as one chat message from the user
   assert.equal((await user('POST', `${comments}/send`, { version: 1, ids: [kept.id] })).status, 200);
 });
 
+test('a draft that the store holds with an unseen character is not sent', async (t) => {
+  const { app, user, visual, comments, messages } = await written(t);
+  const onCode = (await user('POST', comments, ON_CODE)).body;
+  const onAll = (await user('POST', comments, { version: 1, text: 'Shorter, please' })).body;
+  // What a service wrote before it refused such text: the rows are changed in the store, past the API.
+  const stored = (comment) =>
+    app.store.db.prepare('UPDATE visual_comments SET data=? WHERE id=?').run(JSON.stringify(comment), comment.id);
+  const before = (await messages()).length;
+  const refused = async (body, id, code) => {
+    // The comments alone, and with the answers: a list of IDs goes only with the first.
+    for (const path of [`${comments}/send`, ...(body.ids ? [] : [`/api/visuals/${visual.id}/feedback`])]) {
+      const response = await user('POST', path, path.endsWith('feedback') ? { ...body, answers: {} } : body);
+      assert.deepEqual(
+        [response.status, response.body.error],
+        [400, `Comment ${id} holds a character that is not shown (${code}). Delete the draft and write it again.`],
+        path,
+      );
+    }
+  };
+
+  stored({ ...onCode, quote: { ...ON_CODE.quote, suffix: '.\u{E0049}' } });
+  await refused({ version: 1 }, onCode.id, 'U+E0049');
+  await refused({ version: 1, ids: [onCode.id] }, onCode.id, 'U+E0049');
+  stored(onCode);
+  stored({ ...onAll, text: 'Shorter,​ please' });
+  await refused({ version: 1 }, onAll.id, 'U+200B');
+  assert.equal((await messages()).length, before);
+  assert.deepEqual(
+    (await user('GET', comments)).body.map((comment) => comment.status),
+    ['draft', 'draft'],
+  );
+
+  // The user deletes that draft, and the other one goes.
+  assert.equal((await user('DELETE', `${comments}/${onAll.id}`, {})).status, 200);
+  assert.equal((await user('POST', `${comments}/send`, { version: 1 })).status, 200);
+});
+
+test('the dashboard reads which comments the author works on, until its turn writes a version or ends', async (t) => {
+  const { app, user, worker, lead, startTurn, visual, comments, sendNow } = await written(t);
+  const path = `/api/visuals/${visual.id}`;
+  const working = async (who = user, version = '') =>
+    (await who('GET', `${path}${version ? `?version=${version}` : ''}`)).body.working;
+  const onCode = await sendNow(ON_CODE);
+  const onAll = await sendNow({ version: 1, text: 'Shorter, please' });
+  // Sent, and nobody works: the author of this fixture is stopped.
+  assert.equal(await working(), null);
+
+  // The author's turn starts on the first message only.
+  startTurn('worker', 'work', [onCode.messageId]);
+  assert.deepEqual(await working(), { turn: onCode.messageId, comments: [onCode.id] });
+  // Only the dashboard shows it: the agents read the visual without it.
+  for (const agent of [worker, lead]) assert.equal('working' in (await agent('GET', path)).body, false);
+  // A draft, and a comment that the turn does not hold, are not worked on.
+  await user('POST', comments, { version: 1, sectionId: 'steps', sectionRev: REV.steps, text: 'Later' });
+  assert.deepEqual((await working()).comments, [onCode.id]);
+
+  // The turn writes its version: from here the new version speaks, also when it names no comment.
+  const patched = await worker('PATCH', path, { source: '## Steps {#steps}\n\n1. One\n2. Two\n' });
+  assert.equal(patched.body.version, 2);
+  assert.equal(await working(), null);
+  assert.equal(await working(user, '1'), null);
+  app.runner.active.clear();
+
+  // The next turn holds both messages, in a batch; the comment that got no answer is worked on again.
+  startTurn('worker', 'work', [onCode.messageId, onAll.messageId]);
+  assert.deepEqual(await working(user, '1'), { turn: onAll.messageId, comments: [onCode.id, onAll.id] });
+  // An answer without a change of the visual ends the work on that comment.
+  await worker('PATCH', path, { resolves: [onCode.id] });
+  assert.deepEqual(await working(), { turn: onAll.messageId, comments: [onAll.id] });
+  // The turn ends without a patch, for whatever reason: nothing is stored, so nothing stays.
+  app.runner.active.clear();
+  assert.equal(await working(), null);
+
+  // A turn on other messages, and a turn of another agent, work on no comment of this visual.
+  startTurn('worker', 'work', [onAll.messageId + 1000]);
+  startTurn('lead', 'work', [onAll.messageId]);
+  assert.equal(await working(), null);
+});
+
 test('a comment stays with the content it was written on while the turn still changes the version', async (t) => {
   const { app, user, worker, startTurn } = await team(t);
   const messages = async () => (await user('GET', '/api/conversations/work/messages?limit=50')).body.messages;
