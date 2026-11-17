@@ -107,7 +107,19 @@ Each file under `actions` has one of these actions, which the table lists with t
 | `missing` | `install` | Installs the file. |
 | `unmanaged` (the home's record of installed files is lost) | `keep-unmanaged` | Keeps your file and does not update it. Read the file, then run `init --accept FILE` as in [A conflict](#a-conflict) to record the current shipped version as its base. |
 
-`init` also creates the home when it does not exist, and creates a missing `projects.md`, `memory/lead/MEMORY.md` or `config.json`. It never overwrites them.
+The plan has more entries than role files. The rest concern the other files of the home:
+
+| Dry-run action | Meaning |
+| --- | --- |
+| `seed` | A one-time file is missing (`projects.md`, `memory/lead/MEMORY.md` or `config.json`), and `init` creates it. |
+| `keep-seed` | The one-time file exists. It is yours, and `init` never overwrites it. |
+| `write-manifest` | `init` updates its private record of the installed role files (`.install/manifest.json` in the home): their hashes, the checkout and the texts used as merge bases. |
+| `create-directory` | A directory of the home does not exist yet, and `init` creates it with mode 0700. |
+| `restrict-directory-mode` | A directory of the home is readable by others. `init` sets its mode to 0700, so only your user can read it. |
+| `restrict-file-mode` | A file of the home is readable by others. `init` sets its mode to 0600. |
+| `accept-current-edit` | Only with `--accept FILE`: `init` records the shipped version as the file's merge base and leaves the file as it is. |
+
+The mode entries are routine on an older home: they list each file whose permissions differ and change nothing else. Nothing needs your attention in `seed`, `keep-seed`, `write-manifest` and the mode entries. `init` still never overwrites `projects.md`, `memory/lead/MEMORY.md` or `config.json`.
 
 Run it when the plan looks right:
 
