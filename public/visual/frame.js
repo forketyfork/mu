@@ -53,6 +53,9 @@ function mermaidConfig() {
   return {
     startOnLoad: false,
     securityLevel: 'strict',
+    // For a diagram that it cannot read, Mermaid would draw a picture of the error and leave it at the end of the
+    // page. The renderer shows the reason in the place of the block.
+    suppressErrorRendering: true,
     theme: 'base',
     fontFamily: token('font-body'),
     themeVariables: {

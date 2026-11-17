@@ -471,6 +471,16 @@ test('a visual renders in the sandboxed frame of a real browser', async (t) => {
   await until('the address of the diagram link', async () => (await evaluate(linkShown)) === `${elsewhere}/click`);
   await evaluate(`document.getElementById('visual-link-dismiss').click()`);
   assert.equal(await inFrame(`document.querySelectorAll('.visual-section').length`), 6, 'the frame kept its document');
+  // Mermaid draws a picture of its own for a diagram that it cannot read, and leaves it at the end of the page. The
+  // frame shows the reason in the place of the block, and nothing after the document.
+  assert.deepEqual(
+    await inFrame(`({
+      reason: document.querySelector('#section-broken .visual-rich').innerText.includes('Parse error'),
+      picture: document.body.innerText.includes('Syntax error in text'),
+      left: [...document.body.querySelectorAll('svg')].filter((svg) => !svg.closest('#document')).length,
+    })`),
+    { reason: true, picture: false, left: 0 },
+  );
   await inFrame(`window.scrollTo(0, 0)`);
   assert.deepEqual(
     await evaluate(`({
