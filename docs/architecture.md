@@ -84,11 +84,13 @@ The dashboard has no native `<select>` on screen. `public/picker.js` draws every
 
 ### The shortcut to the lead's chat
 
+The key is the browser's own jump to the address bar, and a page may take it: Chromium sends a key to the page first unless it belongs to a short reserved list (tabs, windows, quitting), and the jump to the address bar is not on it. The neighbouring chords are worse choices: Cmd+Shift+L or Ctrl+Shift+L is the browser's toggle for collapsing vertical tabs. The chat icon in the rail opens the same chat where a browser keeps the key anyway.
+
 Cmd+L (Ctrl+L off a Mac) is the one global key of the dashboard: it opens the lead's private chat and focuses its composer, so that the user can write to the lead in a moment from any view. `isLeadChatShortcut` in `public/model.js` decides what counts. Each platform answers to one modifier: on a Mac Ctrl+L belongs to the text fields (it centers the cursor line), elsewhere the system keeps the Windows or Super key. Shift, Alt, a held key, an input method in progress and a key other than L do not count; a layout without a Latin L, such as Cyrillic, counts by the physical key.
 
 The page takes the key from the browser (`preventDefault`) only when it acts on it. It does not act without a lead chat, and it does not act while a dialog with a form is open: that dialog owns the keyboard, and opening the chat would close it and drop what was typed. A read-only dialog (task card, transcript) gives way, as it does for a reference. Pressed in a text field, in another chat or in the lead's composer, the key never edits or sends anything: drafts live per conversation, so the chat that is left keeps its draft and the lead's composer keeps its text.
 
-A key pressed inside the visual's sandboxed frame never reaches the dashboard, and the frame cannot ask whether the dashboard will act. So `public/visual/frame.js` always takes Cmd+L and Ctrl+L from the browser and sends the key's fields as a `key` message; the dashboard applies the same test as for its own keys and ignores a message from any window but the frame.
+A key pressed inside the visual's sandboxed frame never reaches the dashboard, and the frame cannot ask whether the dashboard will act. So `public/visual/frame.js` applies the same test itself, takes a matching key from the browser and sends the key's fields as a `key` message; the dashboard tests the fields again and ignores a message from any window but the frame. The frame holds a copy of the test, because a new file for it would need a service restart (see `FRAME_ASSETS`); a unit test runs both over every combination of modifiers and keys and fails when they differ.
 
 ## Brag doc
 

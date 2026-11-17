@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { isLeadChatShortcut, leadChatShortcutLabel } from '../public/model.js';
 import { fixture, initialState, settle } from './ui-fixture.mjs';
 import { ID, record, section, versionOf, viewer } from './ui-visuals-fixture.mjs';
@@ -176,4 +177,38 @@ test('a shortcut pressed inside the visual frame, which never reaches the page, 
   await settle();
   assert.equal(ui.$('#team-chat').hidden, false);
   assert.equal(ui.window.document.activeElement, ui.$('#message-input'));
+});
+
+test('the frame applies the same rule as the dashboard to every key it could be given', async () => {
+  const source = await readFile(new URL('../public/visual/frame.js', import.meta.url), 'utf8');
+  const copy = /^function isLeadChatShortcut[\s\S]*?^}$/m.exec(source)?.[0];
+  assert.ok(copy, 'the frame holds its copy of the rule');
+  const framed = new Function(`${copy}\nreturn isLeadChatShortcut;`)();
+  const keys = [
+    { key: 'l', code: 'KeyL' },
+    { key: 'L', code: 'KeyL' },
+    { key: 'д', code: 'KeyL' },
+    { key: 'д', code: 'KeyK' },
+    { key: 'k', code: 'KeyL' },
+    { key: 'k', code: 'KeyK' },
+    { key: 'Dead', code: 'KeyL' },
+  ];
+  let accepted = 0;
+  for (const mac of [true, false])
+    for (const base of keys)
+      for (let bits = 0; bits < 64; bits += 1) {
+        const event = {
+          ...base,
+          metaKey: Boolean(bits & 1),
+          ctrlKey: Boolean(bits & 2),
+          shiftKey: Boolean(bits & 4),
+          altKey: Boolean(bits & 8),
+          repeat: Boolean(bits & 16),
+          isComposing: Boolean(bits & 32),
+        };
+        const expected = isLeadChatShortcut(event, mac);
+        assert.equal(framed(event, mac), expected, JSON.stringify({ mac, ...event }));
+        if (expected) accepted += 1;
+      }
+  assert.ok(accepted > 0);
 });

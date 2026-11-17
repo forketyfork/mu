@@ -186,9 +186,17 @@ function showPlace({ sectionId, field }) {
 
 // A key pressed inside the frame never reaches the dashboard, so the dashboard's shortcut for the lead's chat is
 // passed on. The frame cannot ask the dashboard whether it honors the key, and the browser must be refused the key
-// now, so it is always taken; the dashboard decides what it is worth on this platform.
+// now, so the frame applies the rule itself. The function is a copy of `isLeadChatShortcut` in public/model.js, which
+// the frame cannot load (a new file would need the service to restart); a test keeps the two equal.
+function isLeadChatShortcut(event, mac) {
+  if (event.repeat || event.isComposing || event.shiftKey || event.altKey) return false;
+  if (mac ? !event.metaKey || event.ctrlKey : !event.ctrlKey || event.metaKey) return false;
+  const key = String(event.key);
+  return key.toLowerCase() === 'l' || (!/^[a-z]$/i.test(key) && event.code === 'KeyL');
+}
+const macKeyboard = /^Mac/i.test(navigator.platform);
 window.addEventListener('keydown', (event) => {
-  if (event.key.toLowerCase() !== 'l' || !(event.metaKey || event.ctrlKey)) return;
+  if (!isLeadChatShortcut(event, macKeyboard)) return;
   event.preventDefault();
   const { key, code, metaKey, ctrlKey, shiftKey, altKey, repeat, isComposing } = event;
   tell({ type: 'key', key, code, metaKey, ctrlKey, shiftKey, altKey, repeat, isComposing });

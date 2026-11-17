@@ -4,7 +4,8 @@
 // because it needs Google Chrome; `npm run test:browser` runs it.
 //
 // Whether a browser gives the page this key before its address bar is not decided here: headless Chrome has no address
-// bar, and a key sent over the protocol skips the browser's own shortcuts. docs/dashboard.md names what was checked.
+// bar, and a key sent over the protocol skips the browser's own shortcuts. Chromium offers a key that is not in its
+// reserved list (tabs, windows, quitting) to the page first, and the jump to the address bar is not in it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp, ROOT } from '../../src/server.mjs';
@@ -65,6 +66,18 @@ test('Cmd+L or Ctrl+L takes the user to the composer of the lead chat from every
   const { targetId } = await browser.send('Target.createTarget', { url: 'about:blank' });
   const { sessionId } = await browser.send('Target.attachToTarget', { targetId, flatten: true });
   await browser.send('Page.enable', {}, sessionId);
+  // The sessions of the frames, to look inside the sandboxed frame of a visual.
+  const frames = new Map();
+  browser.on((message) => {
+    if (message.method === 'Target.attachedToTarget' && message.params.targetInfo.type === 'iframe')
+      frames.set(message.params.targetInfo.targetId, message.params.sessionId);
+    else if (message.method === 'Target.detachedFromTarget') frames.delete(message.params.targetId);
+  });
+  await browser.send(
+    'Target.setAutoAttach',
+    { autoAttach: true, waitForDebuggerOnStart: false, flatten: true },
+    sessionId,
+  );
   await browser.send(
     'Emulation.setDeviceMetricsOverride',
     {
@@ -97,10 +110,10 @@ test('Cmd+L or Ctrl+L takes the user to the composer of the lead chat from every
     document.addEventListener('keydown', (event) => {
       if (event.key.toLowerCase() === 'l') window.pressed.push(event.defaultPrevented);
     })`);
-  const press = async (modifiers = chord) => {
-    const key = { key: 'l', code: 'KeyL', windowsVirtualKeyCode: 76, modifiers };
-    await browser.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...key }, sessionId);
-    await browser.send('Input.dispatchKeyEvent', { type: 'keyUp', ...key }, sessionId);
+  const press = async (modifiers = chord, { key = 'l', autoRepeat = false } = {}) => {
+    const pressed = { key, code: 'KeyL', windowsVirtualKeyCode: 76, modifiers };
+    await browser.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...pressed, autoRepeat }, sessionId);
+    await browser.send('Input.dispatchKeyEvent', { type: 'keyUp', ...pressed }, sessionId);
     await sleep(150);
   };
   const where = () =>
@@ -180,29 +193,72 @@ test('Cmd+L or Ctrl+L takes the user to the composer of the lead chat from every
   assert.deepEqual(await where(), { ...lead, draft: 'draft for the lead' });
 
   // From inside the sandboxed frame of a visual, which keeps its keys to itself.
-  await navigate(`#visuals/${visual.body.id}`);
-  const frame = await until('the frame', () =>
-    evaluate(
-      `(() => { const box = document.querySelector('iframe.visual-frame')?.getBoundingClientRect(); return box?.height > 100 && box.toJSON(); })()`,
-    ),
-  );
-  await until('the content in the frame', async () => {
-    await browser.send(
-      'Input.dispatchMouseEvent',
-      { type: 'mousePressed', x: frame.x + 100, y: frame.y + 60, button: 'left', clickCount: 1 },
-      sessionId,
+  const intoFrame = async () => {
+    await navigate('#');
+    await navigate(`#visuals/${visual.body.id}`);
+    const box = await until('the frame', () =>
+      evaluate(
+        `(() => { const box = document.querySelector('iframe.visual-frame')?.getBoundingClientRect(); return box?.height > 100 && box.toJSON(); })()`,
+      ),
     );
-    await browser.send(
-      'Input.dispatchMouseEvent',
-      { type: 'mouseReleased', x: frame.x + 100, y: frame.y + 60, button: 'left', clickCount: 1 },
-      sessionId,
+    await until('the frame', () => frames.size > 0);
+    const session = [...frames.values()].at(-1);
+    const inFrame = async (expression) =>
+      (await browser.send('Runtime.evaluate', { expression, returnByValue: true }, session)).result.value;
+    await until('the visual drawn in the frame', () =>
+      inFrame(`document.querySelectorAll('#document h1, #document p').length > 0`),
     );
-    return (await where()).active === 'visual-frame';
-  });
+    // Added after the frame's own listener, so it sees whether the frame took the key from the browser.
+    await inFrame(`window.taken = [];
+      addEventListener('keydown', (event) => window.taken.push([event.key, event.defaultPrevented]))`);
+    // A click puts the focus in the frame; the frame's own process gets it a moment later than the page, and a plain
+    // key tells when it has.
+    await until('the keyboard in the frame', async () => {
+      for (const type of ['mousePressed', 'mouseReleased'])
+        await browser.send(
+          'Input.dispatchMouseEvent',
+          { type, x: box.x + 100, y: box.y + 60, button: 'left', clickCount: 1 },
+          sessionId,
+        );
+      const probe = { key: 'x', code: 'KeyX', windowsVirtualKeyCode: 88, modifiers: 0 };
+      await browser.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...probe }, sessionId);
+      await browser.send('Input.dispatchKeyEvent', { type: 'keyUp', ...probe }, sessionId);
+      await sleep(100);
+      return (
+        (await where()).active === 'visual-frame' &&
+        JSON.parse(await inFrame('JSON.stringify(window.taken)')).length > 0
+      );
+    });
+    await inFrame('window.taken.length = 0');
+    return () => inFrame('JSON.stringify(window.taken)');
+  };
+  let taken = await intoFrame();
   assert.equal((await where()).view, 'Visuals');
+  // A key the dashboard would not act on stays with the browser, and the dashboard stays where it is.
+  await press(wrong);
+  await press(chord | 8);
+  await press(chord, { autoRepeat: true });
+  assert.equal(await taken(), JSON.stringify(['l', 'l', 'l'].map((key) => [key, false])));
+  assert.deepEqual(await where(), {
+    view: 'Visuals',
+    active: 'visual-frame',
+    hasFocus: true,
+    draft: 'draft for the lead',
+    conversation: 'dm-lead',
+    prevented: lead.prevented,
+  });
   await press();
-  const framed = await where();
-  assert.deepEqual({ ...framed, prevented: true }, { ...lead, draft: 'draft for the lead' });
+  assert.equal(await taken(), JSON.stringify([...['l', 'l', 'l'].map((key) => [key, false]), ['l', true]]));
+  assert.deepEqual(await where(), { ...lead, draft: 'draft for the lead' });
+
+  // On a layout without a Latin L the key is still the L key.
+  taken = await intoFrame();
+  await press(chord, { key: 'д' });
+  // The protocol may deliver the key more than once for a character outside Latin; each time the frame takes it.
+  const cyrillic = JSON.parse(await taken());
+  assert.ok(cyrillic.length > 0);
+  assert.deepEqual([...new Set(cyrillic.map((entry) => JSON.stringify(entry)))], [JSON.stringify(['д', true])]);
+  assert.deepEqual(await where(), { ...lead, draft: 'draft for the lead' });
 
   // A dialog with a form keeps the key and what is typed into it; the browser keeps the key too.
   await navigate('#');
