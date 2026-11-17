@@ -1644,24 +1644,33 @@ test('a patch is drawn as text with line numbers, and a click on a number commen
     'db.exec(SCHEMA_V2);\n  migrate(db);',
   );
   await inFrame(`getSelection().removeAllRanges()`);
+  const scopes = `[...document.querySelectorAll('.visual-scope')].map((option) => option.textContent + (option.getAttribute('aria-pressed') === 'true' ? '*' : ''))`;
+  // The dashboard draws the composer again when the selection ends, and the frame can move with it: the press is
+  // aimed only after that.
+  await until('the end of the selection', async () => !(await evaluate(scopes)).includes('Selected text*'));
 
   // A real press on the number of a line offers a comment on that line.
   const numberAt = async (side, number) => {
-    const inside = await inFrame(`(() => {
+    const inside = await inFrame(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => {
       const row = [...document.querySelectorAll('.visual-patch .patch-line')].find((item) => item.dataset.path === 'src/store.mjs' && item.dataset.${side} === '${number}');
-      const { left, top, width, height } = row.querySelector('.patch-gutter[data-side="${side}"]').getBoundingClientRect();
-      return { x: left + width / 2, y: top + height / 2 };
-    })()`);
+      const gutter = row.querySelector('.patch-gutter[data-side="${side}"]');
+      const { left, top, width, height } = gutter.getBoundingClientRect();
+      const x = left + width / 2, y = top + height / 2;
+      resolve({ x, y, hit: document.elementFromPoint(x, y) === gutter });
+    })))`);
+    assert.equal(inside.hit, true, 'the press is aimed at the number of the line');
     const frame = await evaluate(
       `(() => { const { left, top } = document.querySelector('iframe').getBoundingClientRect(); return { left, top }; })()`,
     );
     return { x: frame.left + inside.x, y: frame.top + inside.y };
   };
-  const scopes = `[...document.querySelectorAll('.visual-scope')].map((option) => option.textContent + (option.getAttribute('aria-pressed') === 'true' ? '*' : ''))`;
   const at = await numberAt('new', 12);
   await mouse('mousePressed', at);
   await mouse('mouseReleased', at);
-  await until('the offer to comment on line 12', async () => (await evaluate(scopes))[0] === 'Line src/store.mjs:12*');
+  await until('the offer to comment on line 12', async () => {
+    const offered = await evaluate(scopes);
+    return offered[0] === 'Line src/store.mjs:12*' || Promise.reject(new Error(JSON.stringify(offered)));
+  });
   await shot('2-line');
   await evaluate(`document.getElementById('visual-comment-bubble').click()`);
   await evaluate(`(() => {
