@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { settle } from './ui-fixture.mjs';
+import { initialState, settle } from './ui-fixture.mjs';
 import { ID, record, section, versionOf, viewer, withVisuals } from './ui-visuals-fixture.mjs';
 import { answerState, answerText, reportedAnswer } from '../public/visual-answers.js';
 
@@ -416,8 +416,8 @@ test('a section that the user answers hide is not drawn, listed or answered, and
     version: 2,
     sectionId: 'plan',
     sectionRev: 'plan1',
-    block: null,
-    quote: null,
+    block: 0,
+    quote: { text: 'SECRET-QUOTE-OF-HIDDEN-SECTION', prefix: '', suffix: '' },
     line: null,
     text: 'Why a server?',
     status: 'draft',
@@ -427,7 +427,9 @@ test('a section that the user answers hide is not drawn, listed or answered, and
     messageId: null,
     answeredIn: null,
   };
-  const latest = versionOf(record({ openQuestions: 1 }), 2, [...SECTIONS, plan], {
+  const sent = { ...comment, id: 'vc-00000002', status: 'sent', sentAt: '2026-11-04T11:30:00Z', messageId: 7 };
+  const visual = record({ openQuestions: 1 });
+  const latest = versionOf(visual, 2, [...SECTIONS, plan], {
     forms: [
       {
         sectionId: 'ask',
@@ -440,10 +442,17 @@ test('a section that the user answers hide is not drawn, listed or answered, and
         fields: [{ ...NOTES, answer: { value: 'Draft words', source: 'user' }, unsent: true, sent: null }],
       },
     ],
-    comments: [comment],
+    comments: [comment, sent],
     hidden: ['plan'],
   });
-  const ui = await answering(t, { versions: { latest } });
+  latest.working = { turn: 7, comments: [sent.id] };
+  const ui = await answering(t, { visual, versions: { latest } });
+  // The author works on the sent comment.
+  ui.update({
+    ...withVisuals(visual),
+    agents: [{ ...initialState().agents[0], status: 'working', activeMessageId: 7 }],
+  });
+  await settle();
   const sectionsOf = (message) => message.sections.map((item) => item.id);
   const render = () => ui.posted.filter((message) => message.type === 'render').at(-1);
   const outline = () =>
@@ -451,6 +460,11 @@ test('a section that the user answers hide is not drawn, listed or answered, and
   // The frame never gets the text of a hidden section, nor the draft of its question.
   assert.deepEqual(sectionsOf(render()), ['a', 'ask']);
   assert.equal(JSON.stringify(ui.posted).includes('Text of plan'), false);
+  // Nor where a comment on it stands: no mark, no quote and no light.
+  const marked = () => ui.marks.at(-1).comments.map((mark) => mark.id);
+  const lit = () => ui.working.at(-1).targets.map((target) => target.id);
+  assert.deepEqual([marked(), lit()], [[], []]);
+  assert.equal(JSON.stringify([ui.marks, ui.working]).includes('SECRET'), false);
   assert.deepEqual(outline(), ['a', 'ask']);
   assert.deepEqual(ui.rows(), [
     ['Which database? <img src=x onerror="window.injected = true">', 'Suggested', 'SQLite'],
@@ -463,7 +477,7 @@ test('a section that the user answers hide is not drawn, listed or answered, and
   assert.deepEqual(ui.calls, []);
   assert.equal(
     ui.window.document.querySelector(`[data-comment="${comment.id}"] .visual-comment-where`).textContent,
-    'Section “Postgres plan” (hidden by your answers)',
+    'Postgres plan (hidden by your answers)',
   );
 
   // The answer that shows the section draws it, and marks it as new on the screen.
@@ -472,9 +486,10 @@ test('a section that the user answers hide is not drawn, listed or answered, and
   assert.deepEqual(sectionsOf(render()), ['a', 'ask', 'plan']);
   assert.deepEqual(render().flash, ['plan']);
   assert.deepEqual(outline(), ['a', 'ask', 'plan']);
+  assert.deepEqual([marked(), lit()], [[comment.id, sent.id], [sent.id]]);
   assert.equal(ui.rows().length, 2);
   assert.equal(
     ui.window.document.querySelector(`[data-comment="${comment.id}"] .visual-comment-where`).textContent,
-    'Section “Postgres plan”',
+    'Postgres plan',
   );
 });

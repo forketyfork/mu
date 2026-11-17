@@ -814,6 +814,25 @@ test('a heading can show its section only for an answer, and the condition is pa
     parseDocument('## Plan when="store=sqlite"').sections.map((section) => [section.id, section.title, section.when]),
     [['plan-when-store-sqlite', 'Plan when="store=sqlite"', undefined]],
   );
+  // A condition written a little wrong is refused, not read as a title that is always shown.
+  for (const heading of [
+    '{#plan when=store=sqlite}',
+    '{#plan  when="store=sqlite"}',
+    '{#plan\twhen="store=sqlite"}',
+    "{#plan when='store=sqlite'}",
+    '{#plan When="store=sqlite"}',
+    '{#plan when="store=sqlite" }',
+  ])
+    assert.throws(
+      () => parseDocument(`intro\n\n## Plan ${heading}`),
+      /^Error: Line 3: a heading with a condition ends with \{#id when="field=option"\}: one space before when/,
+      heading,
+    );
+  // Braces before the end are part of the title.
+  assert.deepEqual(
+    parseDocument('## The {#when} rule {x}').sections.map((section) => section.title),
+    ['The {#when} rule {x}'],
+  );
   for (const condition of ['store', 'store=', '=sqlite', 'Store=sqlite', 'store=sqlite=x', 'store = sqlite', ''])
     assert.throws(
       () => parseDocument(`intro\n\n## Plan {#plan when="${condition}"}`),
@@ -873,6 +892,19 @@ test('a condition names a choice, multi or toggle question of an earlier section
     /Section plan-sqlite is shown when store is sqlite, but no section before it asks store/,
   );
   assert.equal((await user('GET', `/api/visuals/${visual.id}`)).body.version, 1);
+});
+
+test('an answer that the user takes back counts as the suggestion when it decides what is shown', async (t) => {
+  const { answer, shown } = await asked(
+    t,
+    `# Storage plan\n\n## Storage {#storage}\n\n${fence([{ ...STORE, default: 'sqlite' }])}\n\n## SQLite plan {#plan-sqlite when="store=sqlite"}\n\n${fence([FILE])}\n`,
+  );
+  assert.deepEqual((await shown()).hidden, []);
+  assert.equal((await answer({ store: 'postgres' })).status, 200);
+  assert.deepEqual((await shown()).hidden, ['plan-sqlite']);
+  // Taking back the answer brings back the suggestion, SQLite, so its question can be answered in the same change.
+  assert.equal((await answer({ store: null, file: 'data.db' })).status, 200);
+  assert.deepEqual((await shown()).hidden, []);
 });
 
 test('the user answers decide what is shown, and the author learns it only from the answers the user sends', async (t) => {

@@ -136,12 +136,15 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
     $('visual-comment-bubble').hidden = true;
   }
 
+  // The frame gets nothing of a section that the user's answers hide, not even where a comment on it stands.
+  const hiddenSection = (id) => (data?.shown.hidden ?? []).includes(id);
+
   function sendMarks() {
     if (!data) return;
     const state = (comment) =>
       comment.status === 'draft' ? 'draft' : comment.answeredIn === null ? 'sent' : 'answered';
     const marks = data.shown.comments
-      .filter((comment) => comment.sectionId !== null && comment.id !== editing)
+      .filter((comment) => comment.sectionId !== null && comment.id !== editing && !hiddenSection(comment.sectionId))
       .map(({ id, sectionId, sectionRev, block, quote, line, ...comment }) => ({
         id,
         sectionId,
@@ -168,7 +171,7 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
   function sendWorking(always = false) {
     const ids = inWork();
     const targets = (data?.shown.comments ?? [])
-      .filter((comment) => ids.has(comment.id))
+      .filter((comment) => ids.has(comment.id) && !hiddenSection(comment.sectionId))
       .map(({ id, sectionId, sectionRev, block, quote, line }) => ({
         id,
         sectionId,
@@ -182,8 +185,6 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
     workingSent = signature;
     post({ type: 'working', targets });
   }
-
-  const hiddenSection = (id) => (data?.shown.hidden ?? []).includes(id);
 
   function whereOf(comment) {
     if (comment.sectionId === null) return 'Whole visual';

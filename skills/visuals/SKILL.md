@@ -175,7 +175,7 @@ One migration copies the sessions into the new table and keeps the files until i
 `mu backup` writes a copy of the store next to it, every night.
 ````
 
-- The condition names a `choice`, `multi` or `toggle` question of an earlier section, and one answer: an option ID (for `multi`: one of the chosen options), or `yes` or `no`. The command refuses every other condition. It also refuses a change that removes the question that a condition names.
+- The condition names a `choice`, `multi` or `toggle` question of an earlier section, and one answer: an option ID (for `multi`: one of the chosen options), or `yes` or `no`. Write it exactly as `{#id when="question=answer"}`: one space before `when`, double quotes, and `}` right after them. The command refuses a heading that is close to that, and every other condition. It also refuses a change that removes the question that a condition names.
 - The user sees the section while their answer meets the condition, and a kept suggestion counts as an answer. The document changes as the user chooses. A section whose question is in a hidden section is hidden too.
 - A question in a hidden section is not asked: its answer is not sent, and an answer that you got before is listed under `Taken back`. The answers message names the hidden sections (`Hidden by these answers: ...`), and `visual answers` lists them under `hidden`. You learn what the user sees only from the answers the user sends. Before the first send, every section with a condition counts as hidden.
 - A comment on a section that your answers hide says `(hidden by the answers you have)`.

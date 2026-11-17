@@ -410,6 +410,12 @@ export function parseDocument(source) {
       if (heading !== null) {
         seenContent = true;
         const { title: headingTitle, id, when } = headingId(heading);
+        // A condition that is written a little wrong would show its section always, so it is refused instead.
+        const group = heading.lastIndexOf('{#');
+        if (id === null && heading.indexOf('}', group) === heading.length - 1 && /when/i.test(heading.slice(group)))
+          throw new Error(
+            `Line ${index + 1}: a heading with a condition ends with {#id when="field=option"}: one space before when, the condition in double quotes, and } right after them`,
+          );
         if (id !== null && !SECTION_ID.test(id))
           throw new Error(
             `Line ${index + 1}: section ID {#${id}} must start with a lowercase letter and use at most 48 lowercase letters, digits or hyphens`,
