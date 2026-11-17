@@ -46,7 +46,7 @@ A visual can ask you questions: one of several options, several of them, a short
 
 - Click or type your answer. It is stored at once and stays yours: the author does not see it until you send it. Each question shows where it stands: no answer, the author's suggestion, not sent, or sent.
 - The author can suggest an answer. A suggestion that you leave as it is counts as your answer when you send.
-- **Send answers** sends all answers of the visual in one message, together with your draft comments on that version, so the author gets one round of feedback in one turn. While answers wait, a line over the document says how many, and **Review and send** takes you to the list.
+- **Send answers** sends all answers of the visual in one message, together with your draft comments on that version, so the author gets one round of feedback in one turn. While answers wait, a line over the document says how many. Its button **Review answers** takes you to the list, which is marked for a moment, and puts the focus on **Send answers**; it sends nothing.
 - After sending you can change an answer and send again; the message then says which answers changed. **Clear** takes an answer back, and **Back to the suggestion** returns to what the author suggested.
 - You send what the list shows, so read it before you send. When a line of the list changed just before your click, nothing is sent: the line is marked **Changed just now**, and you click **Send answers** again after reading it.
 

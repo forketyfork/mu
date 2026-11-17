@@ -31,10 +31,10 @@ const forms = () => [
   },
 ];
 
-/** @param {any} t @param {{ visual?: any, versions?: Record<string, any> }} [options] */
-async function answering(t, { visual = record({ openQuestions: 3 }), versions } = {}) {
+/** @param {any} t @param {{ visual?: any, versions?: Record<string, any>, timers?: any[] }} [options] */
+async function answering(t, { visual = record({ openQuestions: 3 }), versions, timers = ['Date'] } = {}) {
   // The time of the list, which holds a click on Send back until the user could read what it shows.
-  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-04T12:00:00Z') });
+  t.mock.timers.enable({ apis: timers, now: Date.parse('2026-11-04T12:00:00Z') });
   const ui = await viewer(t, {
     hash: `#visuals/${ID}`,
     visuals: [visual],
@@ -100,6 +100,37 @@ test('the dashboard lists the questions with what would be sent, and tells the f
   // A click on a question shows it in the visual.
   ui.window.document.querySelector('.visual-question').click();
   assert.deepEqual(ui.posted.at(-1), { type: 'scrollTo', sectionId: 'ask', targetOrigin: '*' });
+});
+
+test('the button over the document takes the user to the list of answers and marks the list for a moment', async (t) => {
+  const ui = await answering(t, { timers: ['Date', 'setTimeout'] });
+  const list = ui.$('#visual-questions');
+  const send = ui.$('#visual-questions-send');
+  const focused = [];
+  send.focus = (options) => focused.push(options);
+  assert.equal(ui.$('#visual-questions-review').textContent, 'Review answers');
+  assert.equal(list.classList.contains('revealed'), false);
+
+  ui.click('#visual-questions-review');
+  assert.equal(ui.scrolls.at(-1).element, list);
+  // The list is read from its start: the focus on Send, which is at its end, does not scroll past it.
+  assert.deepEqual(focused, [{ preventScroll: true }]);
+  assert.equal(list.classList.contains('revealed'), true);
+  assert.deepEqual(ui.calls, []);
+  t.mock.timers.tick(2399);
+  assert.equal(list.classList.contains('revealed'), true);
+  // Another click starts the moment again.
+  ui.click('#visual-questions-review');
+  t.mock.timers.tick(2399);
+  assert.equal(list.classList.contains('revealed'), true);
+  t.mock.timers.tick(1);
+  assert.equal(list.classList.contains('revealed'), false);
+
+  // The mark does not wait in a viewer that the user left.
+  ui.click('#visual-questions-review');
+  ui.click('#visual-back');
+  await settle();
+  assert.equal(list.classList.contains('revealed'), false);
 });
 
 test('an answer that the frame reports is stored by its question, and nothing else the frame says is', async (t) => {

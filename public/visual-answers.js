@@ -7,6 +7,8 @@ const TEXT_CHARS = 2000;
 // The user sends what the list shows, so an answer must have stood in the list for this long before a click on Send
 // sends it. The frame can report an answer while the pointer is on its way to the button, or during the click.
 const READ_MS = 1500;
+// How long the list stays marked after the user asked for it with the button over the document.
+const REVEAL_MS = 2400;
 
 /**
  * What the frame reports as the answer to a question, when it has the form of an answer to it; undefined otherwise.
@@ -211,9 +213,19 @@ export function createAnswersPanel({ document, request, post, reload, now = () =
       }),
     );
   });
+  let revealTimer;
+  function reveal(on) {
+    clearTimeout(revealTimer);
+    $('visual-questions').classList.toggle('revealed', on);
+    if (on) revealTimer = setTimeout(() => reveal(false), REVEAL_MS);
+  }
+  // The button sends nothing: the user sends from the list, after reading it. In a wide window the list is in view
+  // already, so nothing scrolls, and a focus that a script gives after a click of the pointer has no ring. The mark
+  // is what shows where the click led.
   $('visual-questions-review').addEventListener('click', () => {
     $('visual-questions').scrollIntoView({ block: 'start' });
-    $('visual-questions-send').focus();
+    $('visual-questions-send').focus({ preventScroll: true });
+    reveal(true);
   });
 
   return {
@@ -251,6 +263,7 @@ export function createAnswersPanel({ document, request, post, reload, now = () =
       // The list is off the screen: what it shows next, the user has not read.
       listed = { scope: '', answers: new Map(), changedAt: new Map() };
       unread = new Set();
+      reveal(false);
       showError('');
       render();
     },

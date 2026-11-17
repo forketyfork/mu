@@ -910,6 +910,49 @@ test('the user answers the questions of a visual, reviews the answers beside the
   );
   await shot('2-answered');
 
+  // On a wide window the list is in view already, so nothing scrolls, and the focus that a script gives after a
+  // press of the pointer has no ring. The button over the document must still show where it leads.
+  const review = `(() => {
+    const list = document.getElementById('visual-questions');
+    const send = document.getElementById('visual-questions-send');
+    const button = document.getElementById('visual-questions-review');
+    const { left, top, width, height } = button.getBoundingClientRect();
+    const at = { x: left + width / 2, y: top + height / 2 };
+    return {
+      at,
+      over: document.elementFromPoint(at.x, at.y) === button,
+      marked: [getComputedStyle(list).outlineStyle, getComputedStyle(list).boxShadow !== 'none'],
+      ring: getComputedStyle(send).outlineStyle,
+      focused: document.activeElement === send,
+      start: Math.round(list.getBoundingClientRect().top - document.getElementById('visual-comments').getBoundingClientRect().top),
+    };
+  })()`;
+  const press = async () => {
+    const { at } = await evaluate(review);
+    await mouse('mousePressed', at);
+    await mouse('mouseReleased', at);
+    await until('the focus on Send', async () => (await evaluate(review)).focused);
+    return evaluate(review);
+  };
+  const idle = await evaluate(review);
+  assert.deepEqual([idle.over, idle.marked, idle.ring, idle.focused], [true, ['none', false], 'none', false]);
+  const led = await press();
+  assert.deepEqual([led.marked, led.ring], [['solid', true], 'solid'], JSON.stringify(led));
+  await shot('2-review');
+  await until('the list without its mark', async () => (await evaluate(review)).marked[0] === 'none');
+  // In a low window the list can be out of view. The press brings its start into view, not its end, where Send is.
+  await viewport(1500, 500);
+  await evaluate(`(() => {
+    document.activeElement.blur();
+    document.getElementById('visual-comments').scrollTop = 100000;
+  })()`);
+  assert.ok((await evaluate(review)).start < -100);
+  const low = await press();
+  assert.ok(low.start >= 0 && low.start <= 40, JSON.stringify(low));
+  assert.deepEqual(low.marked, ['solid', true]);
+  await viewport(1500, 1000);
+  assert.deepEqual((await worker('GET', `/api/visuals/${visual.id}/answers`)).body.answers, {});
+
   // On a narrow screen the questions and the bar stay inside the page.
   await viewport(390, 844);
   const narrow = await evaluate(`(() => {

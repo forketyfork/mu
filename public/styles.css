@@ -4766,6 +4766,21 @@ kbd {
   border-bottom: 1px solid var(--line);
 }
 
+/* The list that the user asked for with the button over the document, for a moment. */
+.visual-questions.revealed {
+  border-radius: var(--border-radius-6px);
+  outline: 2px solid var(--task-card-revealed-glow);
+  outline-offset: var(--space-6px);
+  background: var(--message-revealed-message-main-surface);
+  box-shadow: var(--message-revealed-message-main-box-shadow);
+}
+
+/* That button gives the focus to Send. After a click of the pointer the browser draws no ring for it. */
+.visual-questions.revealed .button:focus {
+  outline: 3px solid var(--button-focus-visible-edge);
+  outline-offset: 4px;
+}
+
 .visual-questions-note {
   color: var(--subtle);
   font-size: var(--font-size-13px);
