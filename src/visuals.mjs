@@ -3,7 +3,7 @@ import { httpError as bad } from './http-error.mjs';
 import { checkForms, createVisualAnswers } from './visual-answers.mjs';
 import { createVisualComments } from './visual-comments.mjs';
 import { feedbackText } from './visual-feedback.mjs';
-import { LIMITS, SECTION_ID, parseDocument, unseen, validateSection } from './visual-format.mjs';
+import { LIMITS, SECTION_ID, checkPatches, parseDocument, unseen, validateSection } from './visual-format.mjs';
 
 // Visuals: documents that agents write for the user, stored as versions of section revisions.
 // See "Visuals" in docs/architecture.md.
@@ -165,6 +165,11 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
         `A visual holds at most ${LIMITS.documentBytes / 1024} KiB of text in all its sections; this one would hold ${Math.ceil(size / 1024)} KiB`,
       );
     checkForms(sections);
+    try {
+      checkPatches(sections);
+    } catch (error) {
+      throw bad(error.message);
+    }
   };
   // The task a visual is listed under: the one given, else the author's assigned task when it belongs to the
   // conversation, else the only unverified task of that conversation.

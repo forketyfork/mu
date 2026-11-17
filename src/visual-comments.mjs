@@ -247,12 +247,16 @@ export function createVisualComments({ store, visuals, sendAsUser }) {
       const block = parseBlocks(body)[comment.block];
       if (comment.line) {
         const { path, side, number } = comment.line;
-        const { text } = patchLine(parsePatch(block.text), comment.line);
+        const patch = parsePatch(block.text);
+        const { text } = patchLine(patch, comment.line);
+        // An old line of a renamed or copied file is a line of the file it came from.
+        const { oldPath } = patch.files.find((file) => file.path === path);
+        const from = side === 'old' && oldPath !== path ? ` (from ${locator(oldPath, MESSAGE_QUOTE_CHARS)})` : '';
         // The line as the reader saw it: a character that is not shown is written as its code point.
         const shown = visibleParts(text)
           .map((part) => part.text)
           .join('');
-        return `${section}, ${locator(path, MESSAGE_QUOTE_CHARS)} ${side === 'old' ? 'old line' : 'line'} ${number}${shown.trim() ? ` ${locator(shown, MESSAGE_QUOTE_CHARS)}` : ''}`;
+        return `${section}, ${locator(path, MESSAGE_QUOTE_CHARS)}${from} ${side === 'old' ? 'old line' : 'line'} ${number}${shown.trim() ? ` ${locator(shown, MESSAGE_QUOTE_CHARS)}` : ''}`;
       }
       return `${section}, block ${comment.block + 1} (${block.type})`;
     };

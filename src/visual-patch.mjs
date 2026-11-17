@@ -8,6 +8,9 @@ export const PATCH_LIMITS = Object.freeze({
   files: 100,
   // The lines of all hunks of one block: what the frame draws as rows.
   lines: 5000,
+  // The lines of all patch blocks of one version. Headless Chrome draws and lays out about 45 000 rows a second,
+  // so the frame draws a version of patches in less than half a second.
+  visualLines: 20_000,
   pathChars: 400,
   headingChars: 200,
   lineNumber: 1_000_000_000,
@@ -23,6 +26,10 @@ export const PATCH_LIMITS = Object.freeze({
  * }} PatchFile
  * @typedef {{ files: PatchFile[] }} Patch
  */
+
+// A file mode as git writes it, like `100644`. The frame shows it in the head of the file.
+const MODE = /^[0-7]{6}$/;
+const MODE_LINES = ['old mode ', 'new mode ', 'new file mode ', 'deleted file mode '];
 
 // The lines git writes between `diff --git` and the first hunk, and what each one says.
 const EXTENDED = [
@@ -181,6 +188,8 @@ export function parsePatch(text) {
       file?.git && !file.hunks.length && file.minus === undefined && EXTENDED.find((head) => row.startsWith(head));
     if (extended) {
       const value = row.slice(extended.length);
+      if (MODE_LINES.includes(extended) && !MODE.test(value))
+        fail(at, `\`${extended.trim()}\` is followed by a mode of six octal digits, like 100644`);
       if (extended === 'old mode ') file.oldMode = value;
       else if (extended === 'new mode ') file.changedMode = value;
       else if (extended === 'new file mode ') file.newMode = value;

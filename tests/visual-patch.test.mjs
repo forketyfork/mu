@@ -2,7 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { PATCH_LIMITS, parsePatch, patchLine } from '../src/visual-patch.mjs';
-import { RICH_BLOCKS, codeLanguage, parseBlocks, validateSection, visibleParts } from '../src/visual-format.mjs';
+import {
+  RICH_BLOCKS,
+  checkPatches,
+  codeLanguage,
+  parseBlocks,
+  validateSection,
+  visibleParts,
+} from '../src/visual-format.mjs';
 import { lineRow, quoteOf, textIndex } from '../public/visual/anchor.js';
 import { createPatches } from '../public/visual/patch.js';
 import { createRenderer } from '../public/visual/render.js';
@@ -199,6 +206,44 @@ test('a patch that is not git diff output is refused with the line that does not
   refused(lines(`--- ${'p'.repeat(401)}`, '+++ /dev/null', '@@ -1 +0,0 @@', '-x'), /longer than 400 characters/);
   refused(lines('--- a', '+++ a', `@@ -1 +1 @@ ${'h'.repeat(201)}`, '-x', '+y'), /longer than 200 characters/);
   refused(lines('--- a', '+++ a', '@@ -1000000001 +1 @@', '-x', '+y'), /at most 1000000000/);
+  // Hunks that overlap on the new side only.
+  refused(
+    lines('--- a', '+++ a', '@@ -1,1 +1,1 @@', '-a', '+first', '@@ -5,1 +1,1 @@', '-b', '+second'),
+    /Patch line 6: the hunk starts before/,
+  );
+  // The old path of a rename or a copy names a file in the head, so it is checked like the new one.
+  for (const kind of ['rename', 'copy'])
+    refused(
+      lines('diff --git a/a b/b', 'similarity index 90%', `${kind} from a‮`, `${kind} to b`),
+      /Patch line 1: the old path holds a character that is not shown \(U\+202E\)/,
+    );
+});
+
+test('a mode line holds a git file mode and nothing else, since the head of the file shows it', () => {
+  const modes = (...heads) =>
+    parsePatch(
+      lines('diff --git a/run.sh b/run.sh', ...heads, '--- a/run.sh', '+++ b/run.sh', '@@ -1 +1 @@', '-x', '+y'),
+    ).files[0];
+  const { oldMode, newMode } = modes('old mode 100644', 'new mode 100755');
+  assert.deepEqual([oldMode, newMode], ['100644', '100755']);
+  assert.equal(
+    parsePatch(lines('diff --git a/a b/a', 'new file mode 120000', '--- /dev/null', '+++ b/a', '@@ -0,0 +1 @@', '+x'))
+      .files[0].status,
+    'added',
+  );
+  assert.equal(
+    parsePatch(
+      lines('diff --git a/a b/a', 'deleted file mode 160000', '--- a/a', '+++ /dev/null', '@@ -1 +0,0 @@', '-x'),
+    ).files[0].status,
+    'deleted',
+  );
+  for (const line of ['old mode', 'new mode', 'new file mode', 'deleted file mode'])
+    for (const value of ['100644‮', '100644 and the file is now run by hand', '10064', '100648', ' 100644'])
+      assert.throws(
+        () => parsePatch(lines('diff --git a/a b/a', `${line} ${value}`)),
+        new RegExp(`^Error: Patch line 2: \`${line}\` is followed by a mode of six octal digits, like 100644$`),
+        `${line} ${value}`,
+      );
 });
 
 test('a patch takes exactly as many files and lines as its limits say', () => {
@@ -225,6 +270,22 @@ test('a patch takes exactly as many files and lines as its limits say', () => {
   assert.equal(
     parsePatch(lines('--- a', '+++ a', `@@ -1 +1 @@ ${heading}`, '-x', '+y')).files[0].hunks[0].heading,
     heading,
+  );
+});
+
+test('the patch blocks of one version take exactly as many lines together as the frame draws in a moment', () => {
+  const section = (id, rows) => ({
+    id,
+    title: id,
+    body: lines('Text.', '```patch', '--- a', '+++ a', `@@ -1,${rows} +1,${rows} @@`, ...Array(rows).fill(' x'), '```'),
+  });
+  const full = Array.from({ length: PATCH_LIMITS.visualLines / PATCH_LIMITS.lines }, (_, index) =>
+    section(`s${index}`, PATCH_LIMITS.lines),
+  );
+  checkPatches([...full, { id: 'prose', title: 'Prose', body: 'No patch here.' }]);
+  assert.throws(
+    () => checkPatches([...full, section('more', 1)]),
+    /^Error: A visual shows at most 20000 lines of code changes in all its patch blocks; section more goes past that/,
   );
 });
 

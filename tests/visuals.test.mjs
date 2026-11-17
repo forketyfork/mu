@@ -240,6 +240,33 @@ test('a new visual never takes the ID of another one', async (t) => {
   assert.equal(read.shown.sections[0].body, 'Why we move.');
 });
 
+test('all patch blocks of a version together have a line limit', async (t) => {
+  const { worker } = await team(t);
+  const section = (id, rows) =>
+    [
+      `## ${id} {#${id}}`,
+      '',
+      '```patch',
+      '--- a',
+      '+++ a',
+      `@@ -1,${rows} +1,${rows} @@`,
+      ...Array(rows).fill(' x'),
+      '```',
+    ].join('\n');
+  const full = ['a', 'b', 'c', 'd'].map((id) => section(id, 5000)).join('\n\n');
+  const { body: visual } = await worker('POST', '/api/visuals', { source: `# Review\n\n${full}` });
+  assert.equal(visual.version, 1);
+  const over = await worker('PATCH', `/api/visuals/${visual.id}`, { source: section('e', 1) });
+  assert.equal(over.status, 400);
+  assert.match(
+    over.body.error,
+    /^A visual shows at most 20000 lines of code changes in all its patch blocks; section e/,
+  );
+  // Replacing a block with a smaller one makes room.
+  assert.equal((await worker('PATCH', `/api/visuals/${visual.id}`, { source: section('a', 4999) })).status, 200);
+  assert.equal((await worker('PATCH', `/api/visuals/${visual.id}`, { source: section('e', 1) })).status, 200);
+});
+
 test('all sections of a version together have a size limit', async (t) => {
   const { worker } = await team(t);
   const big = (ids) => ids.map((id) => `## ${id} {#${id}}\n\n${'x'.repeat(120 * 1024)}`).join('\n\n');

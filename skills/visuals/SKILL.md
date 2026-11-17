@@ -177,7 +177,7 @@ index 3b18e51..a9c4d2f 100644
 
 - Take the text from `git diff`, `git diff --cached` or `git show --format= COMMIT`, with `-M` to show renames. New, deleted, renamed and binary files and mode changes are shown; a binary patch (`--binary`) and the combined diff of a merge are not.
 - Split a large change by concern: one section per idea, with a sentence above each patch that says why the change is so. Several files can share a block; a path appears once in a block.
-- A block holds at most 100 files and 5000 lines of hunks, and the section at most 128 KiB.
+- A block holds at most 100 files and 5000 lines of hunks, and the section at most 128 KiB. All patch blocks of a visual together hold at most 20 000 lines; show a larger change in more than one visual.
 - The command checks the file headers, the hunk headers and the line counts of a patch. A patch that you cut or edited by hand is refused with the line that does not fit. For a few lines without headers, such as a sketch with `...` for left-out code, use a `diff` block: that is highlighted code, and the user comments on it by selecting text.
 - A character that a reader would not see, such as a direction override or a zero-width space, is shown in the patch as its code point (`U+202E`), so the reviewer sees it.
 
@@ -188,7 +188,7 @@ A comment on a line names the file, the line and its text:
 > Why here and not in the caller?
 ```
 
-`old line` means a line that the change removes, numbered as in the old file; `line` is numbered as in the new file. In `visual comments`, `line` is `{"path", "side": "old" | "new", "number"}`.
+`old line` means a line that the change removes, numbered as in the old file; `line` is numbered as in the new file. For a renamed or copied file, an old line names the old path too: `` `src/b.mjs` (from `src/a.mjs`) old line 3 ``. In `visual comments`, `line` is `{"path", "side": "old" | "new", "number"}`.
 
 ## Explain with motion
 

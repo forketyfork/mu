@@ -2,7 +2,7 @@
 // block with a registered info string is a rich block. These are pure text functions without Node or DOM APIs: the
 // service validates with them, and it serves this file to the visual frame, which renders with them, so the two
 // cannot disagree about where a section or a block ends. See "Visuals" in docs/architecture.md.
-import { parsePatch } from './visual-patch.mjs';
+import { PATCH_LIMITS, parsePatch } from './visual-patch.mjs';
 import { parseScene } from './visual-scene.mjs';
 import { ID, isObject, onlyKeys, unseen } from './visual-spec.mjs';
 
@@ -468,6 +468,24 @@ export function parseBlocks(body) {
   });
   flush();
   return blocks;
+}
+
+/**
+ * Throws when the patch blocks of one version hold more lines than the frame draws in a moment. Each block was
+ * checked by `validateSection`.
+ * @param {Section[]} sections
+ */
+export function checkPatches(sections) {
+  let lines = 0;
+  for (const section of sections)
+    for (const block of parseBlocks(section.body)) {
+      if (block.type !== 'patch') continue;
+      for (const file of parsePatch(block.text).files) for (const hunk of file.hunks) lines += hunk.lines.length;
+      if (lines > PATCH_LIMITS.visualLines)
+        throw new Error(
+          `A visual shows at most ${PATCH_LIMITS.visualLines} lines of code changes in all its patch blocks; section ${section.id} goes past that. Show the rest in another visual`,
+        );
+    }
 }
 
 /** Checks what the service stores: sizes, and each rich block against its type. Throws with the section named. */

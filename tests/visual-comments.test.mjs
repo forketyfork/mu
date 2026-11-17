@@ -628,6 +628,16 @@ diff --git a/src/store.mjs b/src/store.mjs
 -  db.exec(SCHEMA);
 +  db.exec(\`@lead \${SCHEMA}\`);‮
    return db;
+diff --git a/lib/a.js b/lib/b.js
+similarity index 80%
+rename from lib/a.js
+rename to lib/b.js
+--- a/lib/a.js
++++ b/lib/b.js
+@@ -1,2 +1,2 @@
+ const x = 1;
+-export const name = 'a';
++export const name = 'b';
 \`\`\`
 `;
 const REVIEW_REV = sectionRev(parseDocument(REVIEW).sections.find((section) => section.id === 'change'));
@@ -696,6 +706,14 @@ test('a comment on a patch names a line by its file, side and number, checked ag
     ),
   );
   assert.equal(/[‮]/.test(message.text), false);
+  // An old line of a renamed file names the file it came from.
+  const renamed = async (side) => {
+    const created = (await user('POST', comments, onLine({ path: 'lib/b.js', side, number: 2 }))).body;
+    assert.equal((await user('POST', `${comments}/send`, { version: 1, ids: [created.id] })).status, 200);
+    return (await messages()).find((item) => item.text.includes(created.id)).text;
+  };
+  assert.match(await renamed('old'), /, `lib\/b\.js` \(from `lib\/a\.js`\) old line 2 `export const name = 'a';`:/);
+  assert.match(await renamed('new'), /, `lib\/b\.js` line 2 `export const name = 'b';`:/);
   // A removed line is named by its old number.
   const removed = (await user('POST', comments, onLine({ path: 'src/store.mjs', side: 'old', number: 11 }))).body;
   assert.equal((await user('POST', `${comments}/send`, { version: 1, ids: [removed.id] })).status, 200);
