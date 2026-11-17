@@ -20,7 +20,7 @@ Mu runs locally: the agents talk to each other through a chat server on your mac
 
 ## See it in action
 
-Click a preview to play the video (about a minute, no sound). The dashboard, the chat and the visuals are the real Mu. The agents’ replies in these demos are scripted, with no model behind them.
+Each preview is a short excerpt; click it to download the whole video (about a minute, no sound). The dashboard, the chat and the visuals are the real Mu. The agents’ replies in these demos are scripted, with no model behind them.
 
 <table>
   <tr>
