@@ -328,10 +328,15 @@ async function opened(t, shots) {
     browser.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 }, sessionId);
   // A key of a real keyboard, pressed and let go in the dashboard.
   const KEYS = { Enter: [13, '\r'], Tab: [9, undefined], ' ': [32, ' '] };
-  const keyboard = async (key) => {
+  // A key that is held comes again, `repeats` times, as the system repeats it.
+  const keyboard = async (key, repeats = 0) => {
     const [windowsVirtualKeyCode, text] = KEYS[key];
     const pressed = { key, code: key === ' ' ? 'Space' : key, windowsVirtualKeyCode };
     await browser.send('Input.dispatchKeyEvent', { type: 'keyDown', ...pressed, text }, sessionId);
+    for (let count = 0; count < repeats; count += 1) {
+      await sleep(40);
+      await browser.send('Input.dispatchKeyEvent', { type: 'keyDown', ...pressed, text, autoRepeat: true }, sessionId);
+    }
     await browser.send('Input.dispatchKeyEvent', { type: 'keyUp', ...pressed }, sessionId);
   };
   // What the user asked of the system about motion, for the dashboard and for the frame, which is a page of its own.
@@ -819,10 +824,8 @@ test('the user comments on selected text, a diagram and code, and the author ans
 });
 
 test('the user answers the questions of a visual, reviews the answers beside the frame and sends them', async (t) => {
-  const { app, user, worker, visual, elsewhere, reached, evaluate, inFrame, shot, viewport, mouse } = await opened(
-    t,
-    'forms-',
-  );
+  const { app, user, worker, visual, elsewhere, reached, evaluate, inFrame, shot, viewport, mouse, keyboard } =
+    await opened(t, 'forms-');
   // The author asks in its next turn; the labels are its text, and try what a label can.
   const form = {
     fields: [
@@ -914,30 +917,33 @@ test('the user answers the questions of a visual, reviews the answers beside the
   // press of the pointer has no ring. The button over the document must still show where it leads.
   const review = `(() => {
     const list = document.getElementById('visual-questions');
-    const send = document.getElementById('visual-questions-send');
     const button = document.getElementById('visual-questions-review');
     const { left, top, width, height } = button.getBoundingClientRect();
-    const at = { x: left + width / 2, y: top + height / 2 };
     return {
-      at,
-      over: document.elementFromPoint(at.x, at.y) === button,
+      over: document.elementFromPoint(left + width / 2, top + height / 2) === button,
       marked: [getComputedStyle(list).outlineStyle, getComputedStyle(list).boxShadow !== 'none'],
-      ring: getComputedStyle(send).outlineStyle,
-      focused: document.activeElement === send,
+      focused: document.activeElement === list,
       start: Math.round(list.getBoundingClientRect().top - document.getElementById('visual-comments').getBoundingClientRect().top),
     };
   })()`;
-  const press = async () => {
-    const { at } = await evaluate(review);
+  // A real press of the pointer in the middle of an element of the dashboard.
+  const pressOn = async (element) => {
+    const at = await evaluate(`(() => {
+      const { left, top, width, height } = ${element}.getBoundingClientRect();
+      return { x: left + width / 2, y: top + height / 2 };
+    })()`);
     await mouse('mousePressed', at);
     await mouse('mouseReleased', at);
-    await until('the focus on Send', async () => (await evaluate(review)).focused);
+  };
+  const press = async () => {
+    await pressOn(`document.getElementById('visual-questions-review')`);
+    await until('the focus on the list', async () => (await evaluate(review)).focused);
     return evaluate(review);
   };
   const idle = await evaluate(review);
-  assert.deepEqual([idle.over, idle.marked, idle.ring, idle.focused], [true, ['none', false], 'none', false]);
+  assert.deepEqual([idle.over, idle.marked, idle.focused], [true, ['none', false], false]);
   const led = await press();
-  assert.deepEqual([led.marked, led.ring], [['solid', true], 'solid'], JSON.stringify(led));
+  assert.deepEqual(led.marked, ['solid', true], JSON.stringify(led));
   await shot('2-review');
   await until('the list without its mark', async () => (await evaluate(review)).marked[0] === 'none');
   // In a low window the list can be out of view. The press brings its start into view, not its end, where Send is.
@@ -952,6 +958,46 @@ test('the user answers the questions of a visual, reviews the answers beside the
   assert.deepEqual(low.marked, ['solid', true]);
   await viewport(1500, 1000);
   assert.deepEqual((await worker('GET', `/api/visuals/${visual.id}/answers`)).body.answers, {});
+  // A key that is held on the button comes again when the button has moved the focus. The focus is on the list and
+  // not on Send, so the keys that follow send nothing. The answers stand in the list for longer than it asks for.
+  await evaluate(`document.getElementById('visual-questions-review').focus()`);
+  await keyboard('Enter', 3);
+  await sleep(400);
+  assert.equal(await evaluate(`document.activeElement.id`), 'visual-questions');
+  assert.deepEqual(await chat(), []);
+  assert.deepEqual((await worker('GET', `/api/visuals/${visual.id}/answers`)).body.answers, {});
+
+  // A click on a line of the list shows its question in the visual, and a click in the list of sections shows the
+  // section. Both are in view here, so no scroll shows them: the place flashes.
+  const flashes = (place) =>
+    inFrame(
+      `${place}.getAnimations().some((animation) => animation.animationName === 'section-flash' && animation.playState === 'running')`,
+    );
+  const fieldOf = (id) => `document.querySelector('.form-field[data-field="${id}"]')`;
+  const decide = `document.getElementById('section-decide')`;
+  await until('the section at rest', async () => !(await flashes(decide)));
+  assert.equal(await flashes(fieldOf('database')), false);
+  await pressOn(`document.querySelector('#visual-questions-list .visual-question')`);
+  await until('the question that flashes', () => flashes(fieldOf('database')), 3000);
+  assert.equal(await flashes(decide), false);
+  await shot('2-question');
+  await pressOn(
+    `[...document.querySelectorAll('#visual-outline button')].find((item) => item.textContent.includes('Decide'))`,
+  );
+  await until('the section that flashes', () => flashes(decide), 3000);
+  // A question that is out of view comes into view, not only the start of its section.
+  await viewport(1500, 500);
+  await inFrame(`window.scrollTo(0, 0)`);
+  const inView = `(() => {
+    const { top, bottom } = ${fieldOf('dry-run')}.getBoundingClientRect();
+    return top >= 0 && bottom <= innerHeight;
+  })()`;
+  await until('the question out of view', async () => !(await inFrame(inView)));
+  await evaluate(`document.querySelectorAll('#visual-questions-list .visual-question')[2].scrollIntoView()`);
+  await pressOn(`document.querySelectorAll('#visual-questions-list .visual-question')[2]`);
+  await until('the question in view', () => inFrame(inView), 5000);
+  assert.equal(await flashes(fieldOf('dry-run')), true);
+  await viewport(1500, 1000);
 
   // On a narrow screen the questions and the bar stay inside the page.
   await viewport(390, 844);

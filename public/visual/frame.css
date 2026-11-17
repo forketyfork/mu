@@ -35,7 +35,9 @@ body {
   border-radius: var(--border-radius-12px);
 }
 
-.visual-section.flash {
+/* A section that just changed, or a place that the reader asked for in the dashboard. */
+.visual-section.flash,
+.form-field.flash {
   animation: section-flash var(--duration-1-5s) var(--motion-easing);
 }
 
@@ -52,7 +54,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .visual-section.flash {
+  .visual-section.flash,
+  .form-field.flash {
     animation-duration: var(--duration-0-2s);
   }
 }

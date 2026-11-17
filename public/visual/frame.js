@@ -162,6 +162,23 @@ container.addEventListener('click', (event) => {
   else tell({ type: 'link', href });
 });
 
+// The dashboard asks for a place when the user clicks a section in its list, or a question in the list of answers.
+// The place can be in view already, where no scroll shows it, so it also flashes.
+function showPlace({ sectionId, field }) {
+  const section = document.getElementById(`section-${sectionId}`);
+  if (!section) return;
+  const question =
+    typeof field === 'string'
+      ? [...section.querySelectorAll('.form-field')].find((item) => item.getAttribute('data-field') === field)
+      : undefined;
+  const place = /** @type {HTMLElement} */ (question ?? section);
+  place.scrollIntoView({ behavior: 'smooth', block: question ? 'center' : 'start' });
+  place.classList.remove('flash');
+  // Reading the box starts the animation again when the same place is asked for twice in a row.
+  void place.offsetWidth;
+  place.classList.add('flash');
+}
+
 window.addEventListener('message', (event) => {
   if (event.source !== window.parent || event.origin !== dashboardOrigin) return;
   const message = event.data;
@@ -187,7 +204,7 @@ window.addEventListener('message', (event) => {
   } else if (message?.type === 'reveal') {
     marks.reveal(message.id);
   } else if (message?.type === 'scrollTo') {
-    document.getElementById(`section-${message.sectionId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    showPlace(message);
   }
 });
 

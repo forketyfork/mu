@@ -99,22 +99,25 @@ test('the dashboard lists the questions with what would be sent, and tells the f
   assert.deepEqual(marks, [null, '3 questions wait for your answer']);
   // A click on a question shows it in the visual.
   ui.window.document.querySelector('.visual-question').click();
-  assert.deepEqual(ui.posted.at(-1), { type: 'scrollTo', sectionId: 'ask', targetOrigin: '*' });
+  assert.deepEqual(ui.posted.at(-1), { type: 'scrollTo', sectionId: 'ask', field: 'database', targetOrigin: '*' });
 });
 
 test('the button over the document takes the user to the list of answers and marks the list for a moment', async (t) => {
   const ui = await answering(t, { timers: ['Date', 'setTimeout'] });
   const list = ui.$('#visual-questions');
-  const send = ui.$('#visual-questions-send');
   const focused = [];
-  send.focus = (options) => focused.push(options);
+  list.focus = (options) => focused.push(['list', options]);
+  ui.$('#visual-questions-send').focus = (options) => focused.push(['send', options]);
   assert.equal(ui.$('#visual-questions-review').textContent, 'Review answers');
   assert.equal(list.classList.contains('revealed'), false);
+  // The list can hold the focus, and no key reaches it on the way through the page.
+  assert.equal(list.getAttribute('tabindex'), '-1');
 
   ui.click('#visual-questions-review');
   assert.equal(ui.scrolls.at(-1).element, list);
-  // The list is read from its start: the focus on Send, which is at its end, does not scroll past it.
-  assert.deepEqual(focused, [{ preventScroll: true }]);
+  // The focus goes to the list, which is read from its start, and not to Send: a key that is held on the button, or
+  // pressed twice, must not send.
+  assert.deepEqual(focused, [['list', { preventScroll: true }]]);
   assert.equal(list.classList.contains('revealed'), true);
   assert.deepEqual(ui.calls, []);
   t.mock.timers.tick(2399);

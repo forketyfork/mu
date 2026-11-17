@@ -12,7 +12,7 @@ Visuals appear in three places:
 - A **task card** shows a chip for each visual of that task.
 - In **chat**, an agent names a visual by its ID, such as `vis-1a2b3c4d`, and the dashboard shows it as a link with the visual's title.
 
-The viewer shows the title, the author and the task above the document, and the list of sections on the left. Click a section to scroll to it; the section you are reading is marked. The document follows the theme and the text size of the [reading settings](dashboard.md#reading-settings).
+The viewer shows the title, the author and the task above the document, and the list of sections on the left. Click a section to scroll to it; it flashes, so you find it also when it was in view already. The section you are reading is marked. The document follows the theme and the text size of the [reading settings](dashboard.md#reading-settings).
 
 ## Versions
 
@@ -44,9 +44,9 @@ When the author changes a section in the same turn after you commented on it, th
 
 A visual can ask you questions: one of several options, several of them, a short text, a number, or yes or no. The controls are in the document, at the place where the question comes up, and your answers are listed on the right under **Your answers**.
 
-- Click or type your answer. It is stored at once and stays yours: the author does not see it until you send it. Each question shows where it stands: no answer, the author's suggestion, not sent, or sent.
+- Click or type your answer. It is stored at once and stays yours: the author does not see it until you send it. Each question shows where it stands: no answer, the author's suggestion, not sent, or sent. Click a line of the list to see its question in the document, where it flashes.
 - The author can suggest an answer. A suggestion that you leave as it is counts as your answer when you send.
-- **Send answers** sends all answers of the visual in one message, together with your draft comments on that version, so the author gets one round of feedback in one turn. While answers wait, a line over the document says how many. Its button **Review answers** takes you to the list, which is marked for a moment, and puts the focus on **Send answers**; it sends nothing.
+- **Send answers** sends all answers of the visual in one message, together with your draft comments on that version, so the author gets one round of feedback in one turn. While answers wait, a line over the document says how many. Its button **Review answers** takes you to the list, which is marked for a moment. It sends nothing, also when you hold its key: you send from the list.
 - After sending you can change an answer and send again; the message then says which answers changed. **Clear** takes an answer back, and **Back to the suggestion** returns to what the author suggested.
 - You send what the list shows, so read it before you send. When a line of the list changed just before your click, nothing is sent: the line is marked **Changed just now**, and you click **Send answers** again after reading it.
 

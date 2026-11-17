@@ -149,7 +149,7 @@ export function createAnswersPanel({ document, request, post, reload, now = () =
                 : '—',
           ),
         );
-        row.addEventListener('click', () => post({ type: 'scrollTo', sectionId: field.sectionId }));
+        row.addEventListener('click', () => post({ type: 'scrollTo', sectionId: field.sectionId, field: field.id }));
         return row;
       }),
     );
@@ -219,12 +219,14 @@ export function createAnswersPanel({ document, request, post, reload, now = () =
     $('visual-questions').classList.toggle('revealed', on);
     if (on) revealTimer = setTimeout(() => reveal(false), REVEAL_MS);
   }
-  // The button sends nothing: the user sends from the list, after reading it. In a wide window the list is in view
-  // already, so nothing scrolls, and a focus that a script gives after a click of the pointer has no ring. The mark
-  // is what shows where the click led.
+  // The button sends nothing: the user sends from the list, after reading it. The focus therefore goes to the list
+  // and not to Send, where a key that is held on this button, or pressed twice, would send. In a wide window the list
+  // is in view already, so nothing scrolls, and a focus that a script gives after a click of the pointer has no ring.
+  // The mark is what shows where the click led.
   $('visual-questions-review').addEventListener('click', () => {
-    $('visual-questions').scrollIntoView({ block: 'start' });
-    $('visual-questions-send').focus({ preventScroll: true });
+    const list = $('visual-questions');
+    list.scrollIntoView({ block: 'start' });
+    list.focus({ preventScroll: true });
     reveal(true);
   });
 
