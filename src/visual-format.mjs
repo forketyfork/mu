@@ -5,7 +5,7 @@
 import { parseScene } from './visual-scene.mjs';
 import { ID, isObject, onlyKeys, unseen } from './visual-spec.mjs';
 
-export { SCENE_LIMITS, parseScene, sceneStates, sceneVisible } from './visual-scene.mjs';
+export { SCENE_LIMITS, parseScene, sceneMoments, sceneState, sceneVisible } from './visual-scene.mjs';
 export { unseen } from './visual-spec.mjs';
 
 export const LIMITS = Object.freeze({

@@ -1,7 +1,9 @@
 // Draws a `scene` block and plays its steps. The picture is built from the checked scene with shapes that are
 // defined here; every label is text written by an agent and is set as text. What the scene shows after a step is
 // the state that the format computes: a motion only leads to it, and when a step ends, is skipped or is jumped to,
-// the state is drawn anew. The animation library keeps time; it never sees a word of the author. See "Visuals" in
+// the state is drawn anew. The renderer keeps the scene and its picture and no state: it asks the format for the
+// state it draws, and for the moments of a step while that step plays, so an idle scene holds no more than its
+// text describes. The animation library keeps time; it never sees a word of the author. See "Visuals" in
 // docs/architecture.md.
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -223,7 +225,8 @@ export function createMotion({ createTimeline }) {
  * @param {object} options
  * @param {Document} options.document
  * @param {(text: string) => Scene} options.parseScene
- * @param {(scene: Scene) => { start: SceneState, steps: SceneState[][] }} options.sceneStates
+ * @param {(scene: Scene, steps: number) => SceneState} options.sceneState
+ * @param {(scene: Scene, step: number) => SceneState[]} options.sceneMoments
  * @param {(scene: Scene, state: SceneState, id: string) => boolean} options.sceneVisible
  * @param {Motion} options.motion
  * @param {() => boolean} [options.reducedMotion] Whether the reader asked for less motion: a step then shows its
@@ -233,7 +236,8 @@ export function createMotion({ createTimeline }) {
 export function createScenes({
   document,
   parseScene,
-  sceneStates,
+  sceneState,
+  sceneMoments,
   sceneVisible,
   motion,
   reducedMotion = () => false,
@@ -320,10 +324,9 @@ export function createScenes({
   /** The renderer of `scene` blocks. */
   function render(figure, block) {
     const scene = parseScene(block.text);
-    const states = sceneStates(scene);
     const layout = sceneLayout(scene);
     const count = scene.steps.length;
-    const stateAt = (position) => (position === 0 ? states.start : states.steps[position - 1].at(-1));
+    const stateAt = (position) => sceneState(scene, position);
     const placeOf = (/** @type {SceneState} */ state, id) => {
       const { at } = state.parts.get(id);
       if (typeof at !== 'string') return cellPoint(at);
@@ -610,7 +613,7 @@ export function createScenes({
     /** Plays one step from the state before it. */
     function run(step) {
       waiting = null;
-      const moments = states.steps[step];
+      const moments = sceneMoments(scene, step);
       show(moments[0]);
       let cursor = 0;
       let lastStart = 0;
@@ -672,7 +675,7 @@ export function createScenes({
     );
 
     figure.replaceChildren(...title, stage, controls, list);
-    show(states.start);
+    show(stateAt(0));
     refresh();
   }
 

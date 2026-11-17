@@ -182,7 +182,7 @@ When the point is what happens in which order, such as a request that passes thr
 ```
 ````
 
-- `nodes` are the parts. Each has an `id` and a place `at: [column, row]` on a grid, counted from 0; a half such as `1.5` is fine. `shape` is `box` (when you name none), `pill`, `disk` for a store, `circle`, `diamond` for a decision, `person`, `note` for text without an outline, or `token`. `tone` is `plain`, `accent`, `good`, `warn`, `bad` or `muted`. `"hidden": true` keeps a part out of the picture until a step shows it.
+- `nodes` are the parts. Each has an `id` and a place `at: [column, row]` on a grid, counted from 0; a half such as `1.5` is fine. Two nodes stand a whole column or a whole row apart. `shape` is `box` (when you name none), `pill`, `disk` for a store, `circle`, `diamond` for a decision, `person`, `note` for text without an outline, or `token`. `tone` is `plain`, `accent`, `good`, `warn`, `bad` or `muted`. `"hidden": true` keeps a part out of the picture until a step shows it.
 - A `label` is one line. Mu breaks it into the lines of the shape and cuts what does not fit, so write two or three words: a box holds about three lines of 16 characters.
 - A `token` is a small mark that moves, such as a job, a lock or a file. Its `at` is a cell or the ID of the node it stands on.
 - `links` join two nodes with `from` and `to`. A link may have a `label`, a `tone`, `"dashed": true`, `arrow` (`end`, `both` or `none`), `"hidden": true`, and `bend` from -2 to 2, which bows it around a node in its way. Its ID is `from-to`, such as `author-mu`; give a second link in the same direction an `id` of its own. A link is drawn only while both its nodes are.

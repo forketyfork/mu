@@ -3,7 +3,8 @@
 // style, so an author cannot make the reader's browser do anything but draw the shapes Mu knows.
 //
 // What a scene shows after each step is computed here, from the text alone. The service checks every step with it
-// when a scene is written, and the frame draws exactly these states, so a scene that was stored always plays.
+// when a scene is written, and the frame draws exactly these states, so a scene that was stored always plays. A
+// state is computed when it is asked for and never kept: a scene that is cheap to write must be cheap to hold.
 // See "Visuals" in docs/architecture.md.
 import { ID, isObject, onlyKeys, unseen } from './visual-spec.mjs';
 
@@ -27,8 +28,9 @@ export const SCENE_LIMITS = Object.freeze({
 export const SCENE_SHAPES = Object.freeze(['box', 'pill', 'disk', 'circle', 'diamond', 'person', 'note', 'token']);
 export const SCENE_TONES = Object.freeze(['plain', 'accent', 'good', 'warn', 'bad', 'muted']);
 const ARROWS = Object.freeze(['end', 'both', 'none']);
-// Two standing nodes nearer than this, in cells, are drawn over each other.
-const OVERLAP = Object.freeze([0.75, 0.5]);
+// Two standing nodes stand at least this far apart, in cells, in one direction. No shape is larger than a cell, so
+// no two are drawn over each other.
+const APART = Object.freeze([1, 1]);
 
 /**
  * @typedef {[number, number]} Cell A place on the grid: column and row, counted from 0. Halves are fine.
@@ -87,7 +89,7 @@ function needVisible(state, links, ids) {
 }
 
 // Every verb of an action: the options it takes, how it reads its value, and what it changes in the scene. `apply`
-// gets a state of its own to change. A new verb is one more entry here and its motion in public/visual/scene.js.
+// changes the state it gets. A new verb is one more entry here and its motion in public/visual/scene.js.
 /**
  * @type {Record<string, {
  *   options: string[],
@@ -267,7 +269,7 @@ export function parseScene(source) {
     if (typeof raw.id !== 'string' || !ID.test(raw.id))
       fail('"id" must start with a lowercase letter and use at most 48 lowercase letters, digits or hyphens');
     if (kinds.has(raw.id)) fail('this ID is used twice in the scene');
-    const shape = raw.shape ?? 'box';
+    const shape = raw.shape === undefined ? 'box' : raw.shape;
     if (!SCENE_SHAPES.includes(shape)) fail(`"shape" is one of ${SCENE_SHAPES.join(', ')}`);
     kinds.set(raw.id, shape === 'token' ? 'token' : 'node');
     /** @type {SceneNode} */
@@ -293,12 +295,12 @@ export function parseScene(source) {
     .map((node) => ({ id: node.id, at: /** @type {Cell} */ (node.at) }));
   for (const [index, node] of standing.entries())
     for (const other of standing.slice(0, index))
-      if (Math.abs(node.at[0] - other.at[0]) < OVERLAP[0] && Math.abs(node.at[1] - other.at[1]) < OVERLAP[1])
+      if (Math.abs(node.at[0] - other.at[0]) < APART[0] && Math.abs(node.at[1] - other.at[1]) < APART[1])
         throw new Error(
-          `Scene nodes ${other.id} and ${node.id} would be drawn over each other; move one to another cell`,
+          `Scene nodes ${other.id} and ${node.id} would be drawn over each other; put them a whole column or a whole row apart`,
         );
 
-  const links = within(spec.links ?? [], 'links', SCENE_LIMITS.links, 0).map((raw, index) => {
+  const links = within(spec.links === undefined ? [] : spec.links, 'links', SCENE_LIMITS.links, 0).map((raw, index) => {
     const where = `Scene link ${index + 1}${named(raw)}`;
     const { fail, text, tone } = reader(where);
     if (!isObject(raw)) fail('a link is an object');
@@ -307,7 +309,7 @@ export function parseScene(source) {
       if (typeof raw[end] !== 'string' || kinds.get(raw[end]) !== 'node')
         fail(`"${end}" is the ID of a node that is not a token`);
     if (raw.from === raw.to) fail('a link joins two different nodes');
-    const id = raw.id ?? `${raw.from}-${raw.to}`;
+    const id = raw.id === undefined ? `${raw.from}-${raw.to}` : raw.id;
     if (typeof id !== 'string' || !ID.test(id))
       fail(
         raw.id === undefined
@@ -321,7 +323,7 @@ export function parseScene(source) {
           : 'this ID is used twice in the scene',
       );
     kinds.set(id, 'link');
-    const arrow = raw.arrow ?? 'end';
+    const arrow = raw.arrow === undefined ? 'end' : raw.arrow;
     if (!ARROWS.includes(arrow)) fail(`"arrow" is one of ${ARROWS.join(', ')}`);
     if (raw.bend !== undefined && (typeof raw.bend !== 'number' || !(Math.abs(raw.bend) <= SCENE_LIMITS.bend)))
       fail(`"bend" is a number from −${SCENE_LIMITS.bend} to ${SCENE_LIMITS.bend}`);
@@ -350,7 +352,7 @@ export function parseScene(source) {
       fail(`"caption" must be text of 1–${SCENE_LIMITS.captionChars} characters on one line`);
     const hidden = unseen(caption);
     if (hidden) fail(`"caption" holds a character that is not shown (${hidden})`);
-    const list = raw.do ?? [];
+    const list = raw.do === undefined ? [] : raw.do;
     if (!Array.isArray(list) || list.length > SCENE_LIMITS.actions)
       fail(`"do" is a list of at most ${SCENE_LIMITS.actions} actions`);
     const actions = list.map((action, at) => {
@@ -359,9 +361,11 @@ export function parseScene(source) {
       if (verbs.length !== 1) reading.fail(`an action is an object with one of ${SCENE_VERBS.join(', ')}`);
       const [verb] = verbs;
       onlyKeys(action, [verb, ...VERBS[verb].options, 'together'], `${where}, action ${at + 1}: a ${verb} action`);
+      const together = flag(action, 'together', reading.fail);
       return /** @type {SceneAction} */ ({
         verb,
-        together: at > 0 && flag(action, 'together', reading.fail),
+        // The first action of a step has none before it to start with.
+        together: at > 0 && together,
         ...VERBS[verb].read(action[verb], action, { ...reading, kinds }),
       });
     });
@@ -370,21 +374,35 @@ export function parseScene(source) {
 
   const title = reader('A scene').text(spec.title, 'title', SCENE_LIMITS.titleChars) ?? '';
   const scene = { title, nodes, links, steps };
-  sceneStates(scene);
+  // Every action plays, or the scene is refused.
+  sceneState(scene, steps.length);
   return scene;
 }
 
+/** @param {SceneState} state @param {SceneAction} action @param {Map<string, SceneLink>} links */
+function play(state, action, links, step, at) {
+  try {
+    VERBS[action.verb].apply(state, action, links);
+  } catch (error) {
+    throw new Error(`Scene step ${step + 1}, action ${at + 1} (${action.verb}): ${error.message}`, { cause: error });
+  }
+}
+
+const linksOf = (/** @type {Scene} */ scene) => new Map(scene.links.map((link) => [link.id, link]));
+
 /**
- * What the scene shows at every moment that the player can stop at: at the start, and for each step the state it
- * begins with and the state after each of its actions. The last state of a step is what stays when it has played.
- * Throws when an action cannot be played, with the step and the action named.
+ * What the scene shows when its first `steps` steps have played; with 0, before the first. What the last of them
+ * points at is in `lit` and `focus`. The steps play on one state, so the work and the memory are those of one
+ * state, however many actions the scene has. Throws when an action cannot be played, with the step and the action
+ * named.
  * @param {Scene} scene
- * @returns {{ start: SceneState, steps: SceneState[][] }}
+ * @param {number} steps
+ * @returns {SceneState}
  */
-export function sceneStates(scene) {
-  const links = new Map(scene.links.map((link) => [link.id, link]));
+export function sceneState(scene, steps) {
+  const links = linksOf(scene);
   /** @type {SceneState} */
-  const start = {
+  const state = {
     parts: new Map([
       ...scene.nodes.map(
         (node) =>
@@ -401,30 +419,40 @@ export function sceneStates(scene) {
     lit: new Set(),
     focus: null,
   };
-  let last = start;
-  const steps = scene.steps.map((step, index) => {
-    const moments = [{ parts: last.parts, lit: new Set(), focus: null }];
-    step.actions.forEach((action, at) => {
-      const before = moments.at(-1);
-      /** @type {SceneState} */
-      const state = {
-        parts: new Map([...before.parts].map(([id, part]) => [id, { ...part }])),
-        lit: new Set(before.lit),
-        focus: before.focus && new Set(before.focus),
-      };
-      try {
-        VERBS[action.verb].apply(state, action, links);
-      } catch (error) {
-        throw new Error(`Scene step ${index + 1}, action ${at + 1} (${action.verb}): ${error.message}`, {
-          cause: error,
-        });
-      }
-      moments.push(state);
-    });
-    last = moments.at(-1);
-    return moments;
+  scene.steps.slice(0, steps).forEach((step, index) => {
+    state.lit = new Set();
+    state.focus = null;
+    step.actions.forEach((action, at) => play(state, action, links, index, at));
   });
-  return { start, steps };
+  return state;
+}
+
+/**
+ * The moments of one step that the player can stop at: the state that the step begins with, and the state after
+ * each of its actions. The last is what stays when the step has played. These are states of their own, one per
+ * action, so the player asks for them when a step plays and lets them go when it ends.
+ * @param {Scene} scene
+ * @param {number} step The step, counted from 0.
+ * @returns {SceneState[]}
+ */
+export function sceneMoments(scene, step) {
+  const links = linksOf(scene);
+  const begin = sceneState(scene, step);
+  begin.lit = new Set();
+  begin.focus = null;
+  const moments = [begin];
+  scene.steps[step].actions.forEach((action, at) => {
+    const before = moments.at(-1);
+    /** @type {SceneState} */
+    const state = {
+      parts: new Map([...before.parts].map(([id, part]) => [id, { ...part }])),
+      lit: new Set(before.lit),
+      focus: before.focus && new Set(before.focus),
+    };
+    play(state, action, links, step, at);
+    moments.push(state);
+  });
+  return moments;
 }
 
 /**

@@ -11,7 +11,8 @@ import {
   parseBlocks,
   parseForm,
   parseScene,
-  sceneStates,
+  sceneMoments,
+  sceneState,
   sceneVisible,
 } from '/visual/format.js';
 import { locate } from '/visual/anchor.js';
@@ -95,7 +96,8 @@ async function scene(figure, block) {
     createScenes({
       document,
       parseScene,
-      sceneStates,
+      sceneState,
+      sceneMoments,
       sceneVisible,
       motion: createMotion({ createTimeline }),
       reducedMotion: () => lessMotion.matches,
