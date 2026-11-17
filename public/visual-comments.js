@@ -99,8 +99,9 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
   // What the reader selected last, and the selection the comment field is about. The field follows the selection
   // until it holds text; after that, only the user moves it.
   let selection = null;
-  // The quote that a saved comment used up. The frame tells about a selected text again whenever it moves on the
-  // screen, so the same text is not offered again until the selection ends or changes.
+  // The selected text that a saved comment used up, a heading included. The frame tells about a selected text again
+  // whenever it moves on the screen, so the same text is not offered again until the selection ends or changes. A click
+  // on a line or a diagram is no text: it is told once, and a second click is a new offer.
   let used = null;
   let base = null;
   let offered = null;
@@ -437,7 +438,7 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
       // A new comment uses up the selection it was written on: the frame cannot say that a click on a line or a diagram
       // ended, so nothing else would. A change to a draft leaves the selection that is shown as it is.
       if (!edited) {
-        used = selection?.quote ? JSON.stringify(selection) : null;
+        used = selection && (selection.quote || selection.block === null) ? JSON.stringify(selection) : null;
         selection = null;
         hideBubble();
       }

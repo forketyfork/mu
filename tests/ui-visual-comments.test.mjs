@@ -187,6 +187,23 @@ test('a comment that is saved uses up the selection it was written on, as a draf
   assert.deepEqual(ui.scopes(), ['Selected text*', 'Section “a”', 'Whole visual']);
   assert.equal(ui.$('#visual-comment-bubble').hidden, false);
   ui.fromFrame({ type: 'selection', target: null });
+  // The same holds for text of a heading, which is about the section; a click on a line is told once and offered anew.
+  const heading = { sectionId: 'a', sectionRev: 'a1', block: null, quote: null };
+  ui.fromFrame({ type: 'selection', target: heading, rect: RECT });
+  ui.click('#visual-comment-bubble');
+  ui.write('Why this name?');
+  await ui.press('#visual-composer-draft');
+  ui.fromFrame({ type: 'selection', target: heading, rect: { ...RECT, top: -40, bottom: -20 } });
+  assert.deepEqual(ui.scopes(), ['Section “a”', 'Whole visual*']);
+  assert.equal(ui.$('#visual-comment-bubble').hidden, true);
+  ui.fromFrame({ type: 'selection', target: null });
+  ui.fromFrame({ type: 'selection', target: ON_LINE, rect: RECT });
+  ui.click('#visual-comment-bubble');
+  ui.write('Why here?');
+  await ui.press('#visual-composer-draft');
+  ui.fromFrame({ type: 'selection', target: ON_LINE, rect: RECT });
+  assert.deepEqual(ui.scopes(), ['Line src/a.js:12*', 'Section “a”', 'Whole visual']);
+  ui.fromFrame({ type: 'selection', target: null });
   // A change to a draft is not a new comment: the selection that is shown stays.
   ui.fromFrame({ type: 'selection', target: ON_TEXT, rect: RECT });
   ui.click('.visual-comment.draft button:nth-child(2)');
