@@ -1598,6 +1598,8 @@ test('a patch is drawn as text with line numbers, and a click on a number commen
     'solid',
   );
   await shot('3-commented');
+  // The comment is sent; the field is about nothing now, and is not about the line when the author's answer arrives.
+  assert.deepEqual(await evaluate(scopes), ['Section “Review”', 'Whole visual*']);
 
   const [comment] = (await worker('GET', `/api/visuals/${visual.id}/comments`)).body;
   assert.deepEqual(comment.line, { path: 'src/store.mjs', side: 'new', number: 12 });
@@ -1611,6 +1613,17 @@ test('a patch is drawn as text with line numbers, and a click on a number commen
     ),
   );
 
+  app.runner.active.set('worker', { conversationId: 'work' });
+  const answered = await worker('PATCH', `/api/visuals/${visual.id}`, {
+    source: `## Review {#review}\n\nThe store migrates on open.\n\n\`\`\`patch\n${patch}\n\`\`\`\n\nIt migrates in the caller now.\n`,
+    resolves: [comment.id],
+  });
+  assert.equal(answered.body.version, 3, JSON.stringify(answered.body));
+  await until('version 3', async () =>
+    (await evaluate(`document.getElementById('visual-version-label').textContent`)).startsWith('Version 3'),
+  );
+  assert.deepEqual(await evaluate(scopes), ['Section “Review”', 'Whole visual*']);
+
   assert.equal(await inFrame(`window.pwned ?? null`), null);
   assert.equal(await evaluate(`window.pwned ?? null`), null);
   assert.deepEqual(reached, []);
@@ -1618,4 +1631,61 @@ test('a patch is drawn as text with line numbers, and a click on a number commen
     logs.filter((line) => /patch\.js|visual-patch|\[exception\]/.test(line)),
     [],
   );
+});
+
+test('the comment field is about the section that is read, also for the last one, and not about a comment that was saved', async (t) => {
+  const { app, evaluate, inFrame, shot } = await opened(t, 'target-');
+  app.runner.active.clear();
+  const scopes = `[...document.querySelectorAll('.visual-scope')].map((option) => option.textContent + (option.getAttribute('aria-pressed') === 'true' ? '*' : ''))`;
+  const outline = (index) =>
+    evaluate(`document.querySelectorAll('#visual-outline .visual-outline-item')[${index}].click()`);
+  const sections = await evaluate(`document.querySelectorAll('#visual-outline .visual-outline-item').length`);
+
+  // The last section is too short to reach the top of the frame; it is the one that is read all the same.
+  await outline(sections - 1);
+  await until('the last section as the section of the comment', async () =>
+    (await evaluate(scopes)).includes('Section “Broken”'),
+  );
+  assert.equal(
+    await evaluate(`document.querySelector('#visual-outline [aria-current]').textContent`),
+    'Broken',
+    'the outline marks it',
+  );
+  await shot('1-last');
+  // A scroll by the user is the user's own, and moves the section again, once the scroll to the section has ended.
+  await until('the end of the scroll', () =>
+    inFrame(`document.getElementById('section-broken').getBoundingClientRect().bottom <= innerHeight + 1`),
+  );
+  await inFrame(`window.scrollTo(0, 0)`);
+  await until('the section at the top after the user scrolls up', async () =>
+    (await evaluate(scopes)).includes('Section “Overview”'),
+  );
+
+  // A comment on selected text is saved as a draft. What it was about is done: the field is about the next section.
+  await inFrame(`(() => {
+    const paragraph = document.querySelector('#section-intro p');
+    const range = document.createRange();
+    range.setStart(paragraph.querySelector('strong').firstChild, 0);
+    range.setEnd(paragraph.querySelector('strong').nextSibling, 11);
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+  })()`);
+  await until('the offer to comment on the selection', async () => (await evaluate(scopes))[0] === 'Selected text*');
+  await evaluate(`document.getElementById('visual-comment-bubble').click()`);
+  await evaluate(`(() => {
+    const field = document.getElementById('visual-composer-text');
+    field.focus();
+    field.value = 'Which files? Name them.';
+    field.dispatchEvent(new Event('input'));
+  })()`);
+  await evaluate(
+    `(() => { const button = document.getElementById('visual-composer-draft'); button.focus(); button.click(); })()`,
+  );
+  await until('the draft', () =>
+    evaluate(`document.querySelectorAll('#visual-comments-list .visual-comment').length === 1`),
+  );
+  await outline(2);
+  await until('the section that was opened', async () => (await evaluate(scopes)).includes('Section “Flow”'));
+  assert.deepEqual(await evaluate(scopes), ['Section “Flow”', 'Whole visual*']);
+  await shot('2-next-section');
 });

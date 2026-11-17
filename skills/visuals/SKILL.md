@@ -136,6 +136,7 @@ Answers:
 - `store` `Which store?` (your suggestion, kept): `sqlite` `SQLite`
 - `extras` `What else belongs in the first step?`: `tests` `Migration tests`
 - `dry-run` `Start with a dry run?`: yes
+
 Not answered: `notes`
 
 Read the answers with `visual answers --id vis-1a2b3c4d`.

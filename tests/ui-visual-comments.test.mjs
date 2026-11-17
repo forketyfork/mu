@@ -149,14 +149,36 @@ test('a click on a line number of a patch makes a comment on that line', async (
   await ui.submit();
   assert.deepEqual(ui.calls.slice(0, 1), [['POST', '/comments', { version: 2, ...ON_LINE, text: 'Why here?' }]]);
   assert.deepEqual(ui.cards(), [['a, src/a.js:12', 'Sent', 'Why here?']]);
-  // As after a click on a diagram, the field stays on the line, and marks it while it has the focus.
-  assert.deepEqual(ui.marks.at(-1).comments, [
-    { id: 'vc-00000001', ...ON_LINE, state: 'sent' },
-    { id: 'pending', ...ON_LINE, state: 'draft' },
-  ]);
+  // The comment used up the line; no click or selection ends it in the frame, so the field must not keep it.
+  assert.deepEqual(ui.marks.at(-1).comments, [{ id: 'vc-00000001', ...ON_LINE, state: 'sent' }]);
+  assert.deepEqual(ui.scopes(), ['Whole visual*']);
   // A removed line is named by its old number.
   ui.fromFrame({ type: 'selection', target: { ...ON_LINE, line: { ...LINE, side: 'old' } }, rect: RECT });
   assert.deepEqual(ui.scopes(), ['Line src/a.js:12 (old)*', 'Section “a”', 'Whole visual']);
+});
+
+test('a comment that is saved uses up the selection it was written on, as a draft and as a message', async (t) => {
+  const ui = await commenting(t);
+  ui.fromFrame({ type: 'active', sectionId: 'a' });
+  for (const andSend of [false, true]) {
+    ui.fromFrame({ type: 'selection', target: ON_LINE, rect: RECT });
+    ui.click('#visual-comment-bubble');
+    ui.write('Why here?');
+    if (andSend) await ui.submit();
+    else await ui.press('#visual-composer-draft');
+    assert.equal(ui.field.value, '');
+    // The Section button names the section that is read, not the one of the comment that was saved.
+    ui.fromFrame({ type: 'active', sectionId: 'b' });
+    assert.deepEqual(ui.scopes(), ['Section “b”', 'Whole visual*']);
+    assert.equal(ui.$('#visual-comment-bubble').hidden, true);
+    ui.fromFrame({ type: 'active', sectionId: 'a' });
+  }
+  // A change to a draft is not a new comment: the selection that is shown stays.
+  ui.fromFrame({ type: 'selection', target: ON_TEXT, rect: RECT });
+  ui.click('.visual-comment.draft button:nth-child(2)');
+  ui.write('Why this line?');
+  await ui.press('#visual-composer-draft');
+  assert.deepEqual(ui.scopes(), ['Selected text*', 'Section “a”', 'Whole visual']);
 });
 
 test('selected text is offered for a comment, and Send now makes it one message to the author', async (t) => {

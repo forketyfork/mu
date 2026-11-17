@@ -416,6 +416,7 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
     if (!text) return;
     return act(async () => {
       const current = target();
+      const edited = editing !== null;
       const saved = editing
         ? await request(`${commentsPath()}/${editing}`, { method: 'PATCH', body: JSON.stringify({ text }) })
         : await request(commentsPath(), {
@@ -430,6 +431,12 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
               text,
             }),
           });
+      // A new comment uses up the selection it was written on: the frame cannot say that a click on a line or a diagram
+      // ended, so nothing else would. A change to a draft leaves the selection that is shown as it is.
+      if (!edited) {
+        selection = null;
+        hideBubble();
+      }
       reset();
       active = saved.id;
       if (!andSend) return;

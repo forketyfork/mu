@@ -353,6 +353,11 @@ export function createVisualAnswers({ store, visuals }) {
     const named = (list) => list.map((state) => `\`${state.field.id}\``).join(', ');
     const withdrawn = all.filter((state) => state.sent && (state.hidden || state.value === undefined));
     const unanswered = states.filter((state) => state.value === undefined && !state.sent);
+    const notes = [
+      ...(hide.length ? [`Hidden by these answers: ${hide.map((id) => `\`${id}\``).join(', ')}`] : []),
+      ...(withdrawn.length ? [`Taken back: ${named(withdrawn)}`] : []),
+      ...(unanswered.length ? [`Not answered: ${named(unanswered)}`] : []),
+    ];
     const lines = [
       'Answers:',
       ...current.map(({ field, value, source, sent }) => {
@@ -362,9 +367,8 @@ export function createVisualAnswers({ store, visuals }) {
         const head = `- \`${field.id}\` ${locator(field.label, MESSAGE_TITLE_CHARS)}${note}:`;
         return answer.startsWith('\n') ? `${head}${answer}` : `${head} ${answer}`;
       }),
-      ...(hide.length ? [`Hidden by these answers: ${hide.map((id) => `\`${id}\``).join(', ')}`] : []),
-      ...(withdrawn.length ? [`Taken back: ${named(withdrawn)}`] : []),
-      ...(unanswered.length ? [`Not answered: ${named(unanswered)}`] : []),
+      // A line right after a quoted answer would read as more of the quote.
+      ...(notes.length ? ['', ...notes] : []),
     ];
     return {
       lines,

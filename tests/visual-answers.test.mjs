@@ -429,13 +429,14 @@ test('the user sends the reviewed answers as one chat message to the author, whi
   const second = await send();
   assert.equal(second.status, 200);
   assert.equal(
-    (await sentText(second)).split('\n\n')[1],
+    (await sentText(second)).split('\n\n').slice(1, -1).join('\n\n'),
     [
       'Answers:',
       '- `database` `Which database?` (changed): `postgres` `PostgreSQL`',
       '- `extras` `What else belongs in the first step?` (changed): none of the options',
       '- `workers` `How many workers?` (your suggestion, kept): 4',
       '- `dry-run` `Start with a dry run?`: yes',
+      '',
       'Taken back: `notes`',
     ].join('\n'),
   );
@@ -690,8 +691,8 @@ test('a suggestion that the author takes away opens the question again; the user
   await answer({ 'dry-run': true }, 2);
   const sent = await send(2);
   assert.equal(
-    (await sentText(sent)).split('\n\n')[1],
-    ['Answers:', '- `dry-run` `Start with a dry run?`: yes', 'Not answered: `pick`'].join('\n'),
+    (await sentText(sent)).split('\n\n').slice(1, -1).join('\n\n'),
+    ['Answers:', '- `dry-run` `Start with a dry run?`: yes', '', 'Not answered: `pick`'].join('\n'),
   );
   // An answer of the user's own stays, whatever the author suggests.
   await answer({ pick: 'b' }, 2);
@@ -942,7 +943,8 @@ test('the user answers decide what is shown, and the author learns it only from 
   const first = await sentText(await send());
   assert.match(first, /^- `store` .*: `sqlite` `SQLite`$/m);
   assert.match(first, /^- `file` `Which file\?`:\n> data\.db$/m);
-  assert.match(first, /^Hidden by these answers: `plan-pg`, `replicas`$/m);
+  // The note stands apart from the last answer; right after the quoted text it would read as part of the quote.
+  assert.match(first, /^> data\.db\n\nHidden by these answers: `plan-pg`, `replicas`$/m);
   assert.equal(/replicas`? `Run/.test(first), false);
   assert.equal(/Not answered/.test(first), false);
   const report = await read();
