@@ -76,7 +76,7 @@ Use it like a board:
 
 - **＋** in a lane adds a card. Enter saves it; Escape or an empty text drops it.
 - Double-click a card's text to edit it.
-- Drag a card to reorder it or to move it to the other lane.
+- Drag a card to reorder it or to move it to the other lane. Drop it anywhere in the lane's box, also under its cards or on its header; the two lanes are always equally tall, so a short lane has room below its cards.
 - The circle checks a card off. Checked-off cards wait in the **Archive** (top right of the section); **Restore** brings one back.
 - The **×** deletes a card after a confirmation. Mu keeps a record of deleted cards.
 - To link a task to a card, click the link icon in the task card's top right corner and pick the card. A task belongs to at most one card. A card shows one small square per linked task, colored by the task's status; click a square to open the task.

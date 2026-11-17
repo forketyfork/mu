@@ -1337,9 +1337,12 @@ function dropTarget(container, clientX, clientY) {
   return { index, line: { top: line.top, left: line.box.left - area.left, width: line.box.width } };
 }
 
-function enableLaneDrop(container) {
+// The whole lane box takes the drop, not only its card container: a lane is as tall as its neighbour, so the box has
+// room below, above and around its cards, and a card dropped there would otherwise snap back without a word.
+function enableLaneDrop(box) {
+  const container = box.querySelector('[data-lane-cards]');
   const lane = container.dataset.laneCards;
-  container.addEventListener('dragover', (event) => {
+  box.addEventListener('dragover', (event) => {
     if (!activityDrag) return;
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
@@ -1350,10 +1353,10 @@ function enableLaneDrop(container) {
     Object.assign(mark.style, { top: `${line.top}px`, left: `${line.left}px`, width: `${line.width}px` });
     container.append(mark);
   });
-  container.addEventListener('dragleave', (event) => {
-    if (!container.contains(event.relatedTarget)) clearDropMarks();
+  box.addEventListener('dragleave', (event) => {
+    if (!box.contains(event.relatedTarget)) clearDropMarks();
   });
-  container.addEventListener('drop', (event) => {
+  box.addEventListener('drop', (event) => {
     if (!activityDrag) return;
     event.preventDefault();
     const id = activityDrag;
@@ -1424,7 +1427,7 @@ for (const button of $$('[data-add-activity]')) {
     /** @type {HTMLElement | null} */ (document.querySelector('.activity-card.editing .activity-input'))?.focus();
   });
 }
-for (const container of $$('[data-lane-cards]')) enableLaneDrop(container);
+for (const box of $$('.activity-lane')) enableLaneDrop(box);
 $('activity-archive-toggle').addEventListener('click', () => {
   showActivityArchive = !showActivityArchive;
   renderActivities();

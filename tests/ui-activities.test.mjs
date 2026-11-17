@@ -245,6 +245,20 @@ test('a dropped card moves on the page at once, before the server answers, and t
   await settle();
 });
 
+test('a card dropped on the lane box outside its card container, such as its header, moves to that lane', async (t) => {
+  const ui = await fixture(t, { initial: sample() });
+  const lane = ui.$('.activity-lane[data-lane="control"]');
+  mouse(ui, ui.$('[data-activity="act-00000002"]'), 'dragstart');
+  mouse(ui, lane.querySelector('.lane-header'), 'dragover', 0);
+  assert.ok(ui.$('[data-lane-cards="control"]').classList.contains('drop-target'));
+  mouse(ui, lane, 'drop', 1000);
+  assert.deepEqual(texts(ui, 'control'), ['Audit report', 'Reply to the auditor']);
+  assert.deepEqual(apiCalls(ui), [
+    { method: 'PATCH', path: '/api/activities/act-00000002', body: { lane: 'control', position: 2 } },
+  ]);
+  await settle();
+});
+
 test('a drop where the card already is saves nothing and a drop at the end saves the last position', async (t) => {
   const ui = await fixture(t, { initial: sample() });
   const focus = ui.$('[data-lane-cards="focus"]');

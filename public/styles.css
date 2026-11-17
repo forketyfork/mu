@@ -1492,6 +1492,8 @@ h1 {
 }
 
 .activity-lane {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   padding: var(--space-14px);
   border: 1px solid var(--activity-lane-edge);
@@ -1543,6 +1545,7 @@ h1 {
 /* Columns flow like the task and agent lists: cards run down the first column, then the second, and grow as needed. */
 .lane-cards {
   position: relative;
+  flex: 1;
   column-count: 2;
   column-gap: var(--space-12px);
   min-height: 72px;
