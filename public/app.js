@@ -42,6 +42,7 @@ import {
   visualHash,
   isLeadChatShortcut,
   leadChatShortcutLabel,
+  mentionEntries,
 } from './model.js';
 import { markdownElement } from './markdown.js';
 import { emptyMessages, groupBrag } from './brag.js';
@@ -50,6 +51,7 @@ import { createMotion, stateChanges, themeValue } from './motion.js';
 import { rawInput, toolView } from './tools.js';
 import { createPicker, enhanceSelects } from './picker.js';
 import { createVisualsView } from './visuals-view.js';
+import { createMentionAutocomplete } from './mention-autocomplete.js';
 
 // An ID names an input, a dialog, a form or another element; the checker cannot tell which from the string.
 /** @type {(id: string) => any} */
@@ -102,6 +104,23 @@ const listedConversations = () =>
     (conversation) => conversation.id === conversationId || visible('conversations', conversation),
   );
 const motion = createMotion();
+// Typing `@` in the message box offers the agents of the conversation. The list and the `@` button's menu never show
+// at once.
+const mentionSuggestions = createMentionAutocomplete({
+  input: elements.input,
+  list: $('mention-suggestions'),
+  entries: () => {
+    const conversation = currentConversation();
+    return conversation ? mentionEntries(conversation, state.agents) : [];
+  },
+  name: (id) => (id === 'all' ? node('strong', '', '@all') : agentName('strong', '', id, `@${id}`)),
+  accept: (value) => {
+    if (messageBytes(value) <= 65536) return true;
+    showError('chat-error', 'This message is too long to add another mention.');
+    return false;
+  },
+  onOpen: closeMentionMenu,
+});
 document.addEventListener('mu-theme-change', () => {
   motion.cancelAll();
   for (const element of $$('[data-agent-name].agent-live')) setAgentLive(element, true);
@@ -719,8 +738,8 @@ function selectConversation(id) {
   elements.input.value = drafts.get(id) ?? '';
   forceScroll = true;
   lastMessageSignature = '';
-  $('mention-menu').hidden = true;
-  $('mention-toggle').setAttribute('aria-expanded', 'false');
+  closeMentionMenu();
+  mentionSuggestions.close();
   showError('chat-error', '');
   void loadHistory(id);
   markConversationRead();
@@ -2032,6 +2051,7 @@ function render(touched, changes = { messages: new Set(), agents: new Set(), tas
   if (has('agents', 'tasks', 'visuals')) visualsView.update();
   if (has('transport')) renderConnection();
   if (has('agents')) refreshBusyAgents();
+  if (has('agents', 'conversations')) mentionSuggestions.refresh();
   $('last-updated').textContent =
     `Updated ${new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date())}`;
   if (pageErrorFromState) showError('page-error', '');
@@ -2129,8 +2149,14 @@ function insertMention(id) {
   updateInput();
 }
 
+function closeMentionMenu() {
+  $('mention-menu').hidden = true;
+  $('mention-toggle').setAttribute('aria-expanded', 'false');
+}
+
 function openMentionMenu() {
   const menu = $('mention-menu');
+  mentionSuggestions.close();
   menu.hidden = !menu.hidden;
   $('mention-toggle').setAttribute('aria-expanded', String(!menu.hidden));
   if (menu.hidden) return;
@@ -2354,6 +2380,7 @@ elements.messages.addEventListener('scroll', () => {
 });
 elements.input.addEventListener('input', updateInput);
 elements.input.addEventListener('keydown', (event) => {
+  if (event.defaultPrevented) return;
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
     if (!$('send-message').disabled) $('message-form').requestSubmit();
@@ -2367,8 +2394,8 @@ function focusLeadChat() {
   if (!state?.conversations.some((conversation) => conversation.id === 'dm-lead')) return false;
   if (document.querySelector('dialog[open]:has(form)')) return false;
   $('reader-settings').hidePopover();
-  $('mention-menu').hidden = true;
-  $('mention-toggle').setAttribute('aria-expanded', 'false');
+  closeMentionMenu();
+  mentionSuggestions.close();
   openConversation('dm-lead');
   return true;
 }
@@ -2429,6 +2456,7 @@ $('message-form').addEventListener('submit', async (event) => {
   if (!text.trim() || sending || !conversationId || messageBytes(text) > 65536) return;
   const sentConversationId = conversationId;
   sending = true;
+  mentionSuggestions.close();
   renderConnection();
   showError('chat-error', '');
   try {

@@ -649,3 +649,63 @@ export function isLeadChatShortcut(event, mac) {
 export function leadChatShortcutLabel(mac) {
   return mac ? '⌘L' : 'Ctrl+L';
 }
+
+// Code spans and fences become spaces of the same length, so that an offset in the result is an offset in the text.
+// It reads code as `mentions` in src/store.mjs does, which the dashboard cannot import; a test holds the two together.
+// One difference is deliberate: a backtick that nothing closes yet opens a span that runs to the end, because the
+// user who has just typed one is writing code, and a list of agents there would only be in the way.
+function withoutCode(text) {
+  const blank = (match) => ' '.repeat(match.length);
+  const closed = text.replace(/(```|~~~)[\s\S]*?(?:\1|$)/g, blank).replace(/(`+)[\s\S]*?\1/g, blank);
+  const open = closed.indexOf('`');
+  return open === -1 ? closed : closed.slice(0, open) + blank(closed.slice(open));
+}
+
+// The `@name` being typed at the caret, or null where Mu would not count a mention: inside a word (an e-mail
+// address), after another `@` or a slash, in code, or with anything but the start of an agent ID after the `@`.
+// `end` reaches over the rest of the name that the caret stands in, so a pick replaces all of it.
+/**
+ * @param {string} text
+ * @param {number} caret
+ * @returns {{ start: number, end: number, query: string } | null}
+ */
+export function mentionTrigger(text, caret) {
+  const prose = withoutCode(text);
+  const before = prose.slice(0, caret);
+  const start = before.lastIndexOf('@');
+  if (start === -1) return null;
+  const query = before.slice(start + 1);
+  if (!/^(?:[a-z][a-z0-9-]{0,23})?$/i.test(query)) return null;
+  if (start > 0 && /[\w@/]/.test(before[start - 1])) return null;
+  let end = caret;
+  while (end < prose.length && /[a-z0-9-]/i.test(prose[end])) end += 1;
+  if (/^\/[\w@.-]/.test(prose.slice(end))) return null;
+  return { start, end, query };
+}
+
+// Who the user can mention in a conversation: `@all` where a mention routes at all, and every member that can still
+// run a turn. The user is no mention target, and a stopped agent is rejected as a recipient.
+/**
+ * @param {{ kind: string, members: string[] }} conversation
+ * @param {{ id: string, role: string, status: string }[]} agents
+ * @returns {{ id: string, hint: string }[]}
+ */
+export function mentionEntries(conversation, agents) {
+  const entries = conversation.kind === 'direct' ? [] : [{ id: 'all', hint: 'Everyone in this conversation' }];
+  for (const agent of agents) {
+    if (!conversation.members.includes(agent.id) || agent.status === 'stopped') continue;
+    entries.push({
+      id: agent.id,
+      hint: `${agent.role === 'lead' ? 'Team lead' : 'Worker'} · ${statusLabels[agent.status]}`,
+    });
+  }
+  return entries;
+}
+
+// The entries whose ID starts with the query come first, then the ones that contain it, each in their own order.
+export function filterMentionEntries(entries, query) {
+  const needle = query.toLowerCase();
+  const starts = entries.filter((entry) => entry.id.startsWith(needle));
+  const contains = entries.filter((entry) => !entry.id.startsWith(needle) && entry.id.includes(needle));
+  return [...starts, ...contains];
+}

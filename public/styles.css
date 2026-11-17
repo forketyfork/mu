@@ -2988,6 +2988,11 @@ kbd {
   overflow: auto;
 }
 
+/* Above the box, not over it: the list is opened by typing, and it must not cover the words being typed. */
+.mention-suggestions {
+  bottom: calc(100% + var(--space-6px));
+}
+
 .mention-option {
   display: flex;
   width: 100%;
@@ -3004,7 +3009,8 @@ kbd {
   text-align: left;
 }
 
-.mention-option:hover {
+.mention-menu button.mention-option:hover,
+.mention-option[aria-selected='true'] {
   background: var(--mention-option-hover-surface);
 }
 

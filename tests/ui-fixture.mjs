@@ -8,6 +8,7 @@ import { decorateMarkdown, sanitizeMarkdown } from '../public/markdown-core.js';
 import { createMotion, stateChanges, themeValue } from '../public/motion.js';
 import * as tools from '../public/tools.js';
 import * as picker from '../public/picker.js';
+import { createMentionAutocomplete } from '../public/mention-autocomplete.js';
 import { createVisualsView } from '../public/visuals-view.js';
 
 const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
@@ -188,6 +189,7 @@ export async function fixture(
   const purifier = createDOMPurify(window);
   // JSDOM has no module loader. Execute the application with its real module dependencies supplied here.
   Object.assign(window, model, tools, picker, {
+    createMentionAutocomplete,
     stateChanges,
     themeValue,
     createMotion: () => createMotion(preference),
