@@ -15,6 +15,7 @@ import {
   initials,
   agentLifecycleActions,
   isAgentBusy,
+  advanceViewed,
   baselineViewed,
   isNewMessage,
   laneActivities,
@@ -31,7 +32,9 @@ import {
   totalUnread,
   transcriptConversations,
   transcriptNote,
+  UNREAD_PAGE,
   unreadCount,
+  unreadLabel,
   viewFromHash,
   viewHashes,
   visualFromHash,
@@ -333,14 +336,17 @@ async function loadThrough(id, messageId) {
   }
 }
 
-// After a resync, each conversation whose newest message moved on gets the messages it missed. An open history is
-// caught up completely so that it stays contiguous; for any other conversation one page is enough to count unread messages.
+// The first snapshot after a load and each snapshot after a resync give each conversation whose newest message moved on
+// the messages it missed. An open history is caught up completely so that it stays contiguous; for any other conversation
+// the messages are read until the unread count reaches its label's limit, since more would not change what is shown.
 async function catchUp(id, after) {
   const open = historyLoaded(id);
+  const limit = open ? 1000 : UNREAD_PAGE;
   for (;;) {
-    const { messages } = await request(historyPath(id, { limit: open ? 1000 : 100, after }));
+    const { messages } = await request(historyPath(id, { limit, after }));
     state = { ...state, messages: mergeMessages(state.messages, messages) };
-    if (!open || messages.length < 1000) break;
+    if (messages.length < limit) break;
+    if (!open && unreadCount(state.messages, id, readThrough.get(id)) >= UNREAD_PAGE) break;
     after = messages.at(-1).id;
   }
   render(new Set(['messages']));
@@ -416,7 +422,7 @@ function renderConversations() {
       if (isArchived) label.append(node('span', 'archived-tag', 'Archived'));
       option.append(label);
       const unread = unreadCount(state.messages, conversation.id, readThrough.get(conversation.id));
-      if (unread) option.append(node('span', 'unread-count', String(unread)));
+      if (unread) option.append(node('span', 'unread-count', unreadLabel(unread)));
       option.addEventListener('click', () => selectConversation(conversation.id));
       fragment.append(option);
     }
@@ -503,11 +509,11 @@ function renderChatUnread() {
   const unread = totalUnread(state.messages, listedConversations(), readThrough);
   for (const badge of [$('chat-unread'), $('conversation-unread')]) {
     badge.hidden = !unread;
-    badge.textContent = unread > 99 ? '99+' : String(unread);
+    badge.textContent = unreadLabel(unread);
   }
   document
     .querySelector('.rail-link[data-view="chat"]')
-    .setAttribute('aria-label', unread ? `Team chat, ${unread} unread` : 'Team chat');
+    .setAttribute('aria-label', unread ? `Team chat, ${unreadLabel(unread)} unread` : 'Team chat');
 }
 
 const viewLabels = { workspace: 'Overview', chat: 'Chat', brag: 'Brag doc', visuals: 'Visuals' };
@@ -632,6 +638,38 @@ function openConversation(id) {
   elements.input.focus();
 }
 
+// The record lives in localStorage rather than on the server: it is the user's reading position in this browser, tabs of
+// the browser share it, an instance on another port has its own (storage is per origin), and it needs no service
+// restart. Another browser keeps its own position.
+// A record that cannot be read is reported with its text and then replaced by the baseline, which marks the existing
+// history as read; the report is the only trace, because the text is overwritten.
+function loadViewed() {
+  const raw = localStorage.getItem(viewedKey);
+  let viewed = null;
+  try {
+    viewed = parseViewed(raw);
+  } catch (error) {
+    console.error(
+      `Mu: ignoring the unreadable record of read messages in localStorage "${viewedKey}": ${error.message}. Stored text: ${raw}`,
+    );
+  }
+  if (viewed) return viewed;
+  viewed = baselineViewed(state.lastMessageIds, state.conversations);
+  localStorage.setItem(viewedKey, JSON.stringify(viewed));
+  return viewed;
+}
+
+// Takes the reading positions from the record, so that the unread counts survive a reload and follow the other tabs.
+function syncReadThrough() {
+  const viewed = loadViewed();
+  readThrough.clear();
+  for (const conversation of state.conversations)
+    readThrough.set(
+      conversation.id,
+      newMessageBoundary(viewed, conversation.id, state.lastMessageIds[conversation.id] ?? 0),
+    );
+}
+
 // Messages arriving while the chat is hidden stay unread so the rail badge can surface them.
 function markConversationRead() {
   if (view !== 'chat') {
@@ -642,17 +680,18 @@ function markConversationRead() {
     state.lastMessageIds[conversationId] ?? 0,
     conversationMessages(state.messages, conversationId).at(-1)?.id ?? 0,
   );
-  readThrough.set(conversationId, latest);
-  // The record lives in localStorage rather than on the server: it is the user's reading position in this browser,
-  // tabs share it, and it needs no service restart. Another browser keeps its own position.
-  const viewed =
-    parseViewed(localStorage.getItem(viewedKey)) ?? baselineViewed(state.lastMessageIds, state.conversations);
+  const viewed = loadViewed();
   if (viewing !== conversationId) {
     viewing = conversationId;
-    newBoundaries.set(conversationId, newMessageBoundary(viewed, conversationId));
+    newBoundaries.set(
+      conversationId,
+      newMessageBoundary(viewed, conversationId, state.lastMessageIds[conversationId] ?? 0),
+    );
     lastMessageSignature = '';
   }
-  localStorage.setItem(viewedKey, JSON.stringify({ ...viewed, [conversationId]: latest }));
+  const advanced = advanceViewed(viewed, conversationId, latest, state.conversations);
+  readThrough.set(conversationId, advanced[conversationId]);
+  if (JSON.stringify(advanced) !== JSON.stringify(viewed)) localStorage.setItem(viewedKey, JSON.stringify(advanced));
 }
 
 function selectConversation(id) {
@@ -2017,19 +2056,22 @@ function applySnapshot(snapshot) {
     messages: previous?.messages ?? [],
   };
   optimisticActivities = null;
-  if (!previous)
-    for (const conversation of state.conversations)
-      readThrough.set(conversation.id, state.lastMessageIds[conversation.id] ?? 0);
-  else
-    for (const [id, last] of Object.entries(state.lastMessageIds)) {
-      const held = Math.max(previous.lastMessageIds[id] ?? 0, readThrough.get(id) ?? 0);
-      // A history that could not catch up would show a gap, so it is loaded again the next time it is shown.
-      if (last > held)
-        catchUp(id, held).catch((error) => {
-          histories.delete(id);
-          showStateError(`Could not load the missed messages: ${error.message}`);
-        });
-    }
+  if (!previous) syncReadThrough();
+  const { agents, tasks, conversations } = state;
+  const hidden = previous ? new Set() : archivedItems({ agents, tasks, conversations }).conversations;
+  for (const [id, last] of Object.entries(state.lastMessageIds)) {
+    // After a load, only the messages above the stored reading position are missing; archived conversations are not
+    // counted, so they are not fetched.
+    const held = previous
+      ? Math.max(previous.lastMessageIds[id] ?? 0, readThrough.get(id) ?? 0)
+      : (readThrough.get(id) ?? 0);
+    // A history that could not catch up would show a gap, so it is loaded again the next time it is shown.
+    if (last > held && !hidden.has(id))
+      catchUp(id, held).catch((error) => {
+        histories.delete(id);
+        showStateError(`Could not load the missed messages: ${error.message}`);
+      });
+  }
   render(allKinds);
   // A page that was opened at the address of a visual shows it once the workspace is known.
   if (!previous && view === 'visuals') visualsView.show(visualFromHash(location.hash));
@@ -2279,6 +2321,12 @@ for (const link of $$('.rail-link[data-view]')) {
   });
 }
 $$('.rail-link[data-view="chat"]')[0].title = `Team chat (${leadChatShortcutLabel(macKeyboard)} writes to the lead)`;
+// Another tab of this browser moved a reading position, or the record was cleared.
+window.addEventListener('storage', (event) => {
+  if (event.storageArea !== localStorage || (event.key !== viewedKey && event.key !== null) || !state) return;
+  syncReadThrough();
+  renderConversations();
+});
 window.addEventListener('hashchange', () => showView(viewFromHash(location.hash)));
 $('new-messages').addEventListener('click', scrollChat);
 elements.messages.addEventListener('scroll', () => {

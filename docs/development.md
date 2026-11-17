@@ -37,6 +37,8 @@ A second check, `tests/browser/lead-shortcut.browser.mjs`, presses the shortcut 
 
 A third check, `tests/browser/focus-drag.browser.mjs`, drags cards of the focus list with the browser's own drag (Chrome hands it over through the protocol, and the test replays it as drag events at chosen points) and drops them under a short lane's cards, on its bottom edge and on the other lane's header, over a column that is not the first. JSDOM has no layout, so only a real browser shows which part of a lane box receives a drop. The pre-commit hook runs it with the others.
 
+A fourth check, `tests/browser/unread-persist.browser.mjs`, covers the unread markers with what JSDOM only fakes: a real reload, the `storage` event between two tabs of one browser, and storage that is kept apart for two Mu instances on different ports. It runs with the others.
+
 ## Git hooks
 
 `npm ci` (or `npm install`) sets `core.hooksPath` to the tracked `.githooks` directory. The `pre-commit` hook runs `npm run check` and then `npm test`, which takes about fifteen seconds and needs a running Docker daemon. For a commit that changes the visual frame it also runs [the browser check](#the-visual-frame-in-a-real-browser). The setting is in the repository's shared configuration, so it applies to every worktree. `npm ci` writes it only when it is not already `.githooks`, so it also works where Git configuration is read-only, as in a Codex agent's turn.

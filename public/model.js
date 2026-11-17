@@ -154,16 +154,23 @@ export function unreadCount(messages, conversationId, readThrough = 0) {
   ).length;
 }
 
-// Where the user had read each conversation when the chat was last open, kept in the browser: `{ [conversationId]: lastMessageId }`.
-// Null means there is no usable record: the browser never opened the chat, or the stored text is unreadable.
+// Where the user had read each conversation, kept in the browser: `{ [conversationId]: lastMessageId }`. Null means there
+// is no record yet. A stored text that is not such a record throws, so that the page can report it instead of reading
+// the browser's state as "nothing was ever read".
 export function parseViewed(raw) {
   if (raw === null) return null;
+  let value;
   try {
-    const value = JSON.parse(raw);
-    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
-  } catch {
-    return null;
+    value = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`the stored text is not JSON (${error.message})`, { cause: error });
   }
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('the stored value is not an object of conversation positions');
+  for (const [id, position] of Object.entries(value))
+    if (!Number.isSafeInteger(position) || position < 0)
+      throw new Error(`the position of "${id}" is not a message ID: ${JSON.stringify(position)}`);
+  return value;
 }
 
 // A first record treats everything that exists now as seen, so a new browser does not tint the whole history.
@@ -174,9 +181,21 @@ export function baselineViewed(lastMessageIds, conversations) {
   );
 }
 
-// A conversation missing from the record appeared after it began, so none of its messages was seen.
-export function newMessageBoundary(viewed, conversationId) {
-  return Number.isInteger(viewed[conversationId]) ? viewed[conversationId] : 0;
+// A conversation missing from the record appeared after it began, so none of its messages was seen. A position beyond the
+// conversation's newest message belongs to another history, such as a Mu that started again with an empty database on the
+// same port; it cannot hide messages that do not exist yet, so it counts as the newest one.
+export function newMessageBoundary(viewed, conversationId, newest = Infinity) {
+  return Number.isInteger(viewed[conversationId]) ? Math.min(viewed[conversationId], newest) : 0;
+}
+
+// The record after the user read a conversation through `position`. A position never moves back, because another tab
+// may have read further than this one knows. Conversations that no longer exist are dropped, so deleted rooms do not
+// accumulate.
+export function advanceViewed(viewed, conversationId, position, conversations) {
+  const kept = new Set(conversations.map((conversation) => conversation.id));
+  const next = Object.fromEntries(Object.entries(viewed).filter(([id]) => kept.has(id)));
+  next[conversationId] = Math.max(next[conversationId] ?? 0, position);
+  return next;
 }
 
 export function isNewMessage(message, boundary) {
@@ -202,6 +221,13 @@ export const visualHash = (id, version = null) => `${viewHashes.visuals}/${id}${
 export function visualFromHash(hash) {
   const match = /^#visuals\/(vis-[0-9a-f]{8})(?:\/v([1-9]\d{0,8}))?$/.exec(hash);
   return match ? { id: match[1], version: match[2] ? Number(match[2]) : null } : null;
+}
+
+// The history is read one page at a time, so a count at the page size may stand for more messages.
+export const UNREAD_PAGE = 100;
+
+export function unreadLabel(count) {
+  return count >= UNREAD_PAGE ? '99+' : String(count);
 }
 
 export function totalUnread(messages, conversations, readThrough) {

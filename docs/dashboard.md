@@ -39,7 +39,9 @@ Messages support Markdown: code blocks, lists, links and tables. Each message sh
 
 Above the message box, a line names the members that are running a turn in this conversation, and, dimmer, those working elsewhere.
 
-When you open a chat, the messages that arrived since your last visit have a faint tint. The browser remembers what you have read, so another browser starts from scratch. Each conversation keeps its own draft.
+When you open a chat, the messages that arrived since your last visit have a faint tint. Unread counts (on the chat icon and beside each conversation) and the tint come from the same record, which your browser keeps. They survive a reload or closing the tab, and open tabs follow each other: reading a conversation in one clears its count in the others. Another browser, or a Mu on another port, keeps its own record, and a browser that has none starts with the existing history marked as read.
+
+Messages that arrived while no tab was open count as unread on the next load, however long ago they came: what counts is your last reading position in each conversation, not the time. A count is exact up to 99; above that it shows **99+**. The first load fetches only the messages above your position, and only for conversations that are not archived. A conversation you have never opened since it was created has all its messages unread. When the record in the browser is unreadable, the page reports it in the browser console (**More tools > Developer tools**), together with the stored text, and starts again from the existing history marked as read. Each conversation keeps its own draft.
 
 At the bottom of a chat, **Enter** sends a message and **Shift + Enter** adds a line. The live UTF-8 byte count appears beside the sender label and **Send** button. On narrow screens, the keyboard hint is hidden visually so the count stays visible; the textarea keeps the hint as its accessible description.
 

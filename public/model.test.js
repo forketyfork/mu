@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   activityVerbs,
+  advanceViewed,
   agentRuntime,
   archivedItems,
   codeReference,
@@ -23,6 +24,7 @@ import {
   tasksOfAgents,
   totalUnread,
   unreadCount,
+  unreadLabel,
   viewFromHash,
   viewHashes,
 } from './model.js';
@@ -581,9 +583,31 @@ test('a conversation missing from the record has all its messages new', () => {
   assert.equal(newMessageBoundary(parseViewed('{"dm-lead":4}'), 'room-a'), 0);
 });
 
-test('unreadable viewed data is treated as no record', () => {
+test('no stored record is no record; a stored text that is not a record of positions is an error', () => {
   assert.equal(parseViewed(null), null);
-  for (const raw of ['not json', '[1]', '7', 'null']) assert.equal(parseViewed(raw), null);
+  assert.deepEqual(parseViewed('{"dm-lead":4,"room-a":0}'), { 'dm-lead': 4, 'room-a': 0 });
+  for (const raw of ['not json', '[1]', '7', 'null', '{"a":"4"}', '{"a":-1}', '{"a":1.5}', '{"a":null}'])
+    assert.throws(() => parseViewed(raw), /not (JSON|an object|a message ID)|stored/, raw);
+});
+
+test('a position beyond the newest message counts as the newest one', () => {
+  assert.equal(newMessageBoundary({ 'dm-lead': 900 }, 'dm-lead', 12), 12);
+  assert.equal(newMessageBoundary({ 'dm-lead': 5 }, 'dm-lead', 12), 5);
+  assert.equal(newMessageBoundary({}, 'dm-lead', 12), 0);
+});
+
+test('reading advances a position, never moves it back, and drops conversations that are gone', () => {
+  const conversations = [{ id: 'dm-lead' }, { id: 'room-a' }];
+  const viewed = { 'dm-lead': 7, 'room-a': 2, 'room-deleted': 30 };
+  assert.deepEqual(advanceViewed(viewed, 'room-a', 9, conversations), { 'dm-lead': 7, 'room-a': 9 });
+  assert.deepEqual(advanceViewed(viewed, 'dm-lead', 3, conversations), { 'dm-lead': 7, 'room-a': 2 });
+  assert.deepEqual(advanceViewed({}, 'room-a', 4, conversations), { 'room-a': 4 });
+});
+
+test('an unread count of a whole page is shown as 99+, because the page may stand for more', () => {
+  assert.equal(unreadLabel(0), '0');
+  assert.equal(unreadLabel(99), '99');
+  assert.equal(unreadLabel(100), '99+');
 });
 
 const held = (id, conversationId = 'room-a') => ({ id, conversationId, from: 'lead', text: `#${id}` });

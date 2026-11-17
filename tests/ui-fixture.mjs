@@ -112,12 +112,18 @@ export async function settle() {
 // Runs the dashboard in JSDOM against a server state and a controllable event stream. `initial` and every `push` take
 // the whole workspace in the shape of GET /api/state; the fixture sends it as Mu's stream would, a snapshot first and then
 // the changes, and answers history requests from the workspace last pushed.
-export async function fixture(t, { reduced = false, hash = '', initial = initialState(), platform = '' } = {}) {
+export async function fixture(
+  t,
+  { reduced = false, hash = '', initial = initialState(), platform = '', storage = {} } = {},
+) {
   const { window } = new JSDOM(html, {
     url: `http://localhost/?token=${'b'.repeat(64)}${hash}`,
     runScripts: 'outside-only',
   });
   t.after(() => window.close());
+  for (const [key, value] of Object.entries(storage)) window.localStorage.setItem(key, value);
+  const consoleErrors = [];
+  window.console.error = (...parts) => consoleErrors.push(parts.join(' '));
   window.eval(themes);
   const preference = new window.EventTarget();
   preference.matches = reduced;
@@ -210,6 +216,7 @@ export async function fixture(t, { reduced = false, hash = '', initial = initial
     window,
     $,
     preference,
+    consoleErrors,
     animations,
     scrolls,
     requests,
@@ -223,6 +230,17 @@ export async function fixture(t, { reduced = false, hash = '', initial = initial
     // Sends a batch as it is, for tests of the stream itself.
     send(event, data) {
       events.dispatchEvent(new window.MessageEvent(event, { data: JSON.stringify(data) }));
+    },
+    // What this browser's storage holds, to carry into the fixture of a reload.
+    stored: () => Object.fromEntries(Object.entries(window.localStorage)),
+    // Another tab of the same browser writes the storage; the browser tells this tab with a storage event.
+    otherTab(key, value) {
+      const oldValue = window.localStorage.getItem(key);
+      if (value === null) window.localStorage.removeItem(key);
+      else window.localStorage.setItem(key, value);
+      window.dispatchEvent(
+        new window.StorageEvent('storage', { key, oldValue, newValue: value, storageArea: window.localStorage }),
+      );
     },
     click: (selector) => $(selector).click(),
     update(next) {
