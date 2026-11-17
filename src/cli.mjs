@@ -50,7 +50,7 @@ Usage: node src/cli.mjs COMMAND [options]
   visual show     --id ID [--section SECTION | --source] [--version N]
                   (the outline, or the Markdown of one section or of the whole visual)
   visual comments --id ID [--version N] [--all]
-                  (the user's comments that wait for an answer, each with its section, block and quoted text;
+                  (the user's comments that wait for an answer, each with its section, block, and quoted text or patch line;
                    --all: the answered ones too)
   visual answers  --id ID [--version N]
                   (the answers that the user sent to the questions of the visual's forms, by field ID, and the
@@ -669,12 +669,13 @@ export async function main(
       return comments
         .filter((comment) => comment.status === 'sent' && (values.all || comment.answeredIn === null))
         .filter((comment) => version === null || comment.version === version)
-        .map(({ id: commentId, version: on, sectionId, block, quote, text, sentAt, answeredIn }) => ({
+        .map(({ id: commentId, version: on, sectionId, block, quote, line, text, sentAt, answeredIn }) => ({
           id: commentId,
           version: on,
           sectionId,
           block,
           quote,
+          line: line ?? null,
           text,
           sentAt,
           answeredIn,

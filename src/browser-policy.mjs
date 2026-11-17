@@ -25,10 +25,12 @@ const FRAME_ASSETS = Object.freeze({
   '/visual/sheen.js': { file: 'public/visual/sheen.js' },
   '/visual/form.js': { file: 'public/visual/form.js' },
   '/visual/scene.js': { file: 'public/visual/scene.js' },
+  '/visual/patch.js': { file: 'public/visual/patch.js' },
   '/visual/format.js': { file: 'src/visual-format.mjs' },
   // The format imports its parts by their file names.
   '/visual/visual-spec.mjs': { file: 'src/visual-spec.mjs' },
   '/visual/visual-scene.mjs': { file: 'src/visual-scene.mjs' },
+  '/visual/visual-patch.mjs': { file: 'src/visual-patch.mjs' },
   '/vendor/marked.js': { file: 'node_modules/marked/lib/marked.esm.js' },
   '/vendor/purify.js': { file: 'node_modules/dompurify/dist/purify.es.mjs' },
   '/vendor/anime.js': { file: 'node_modules/animejs/dist/bundles/anime.esm.min.js' },

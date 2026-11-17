@@ -953,3 +953,152 @@ textarea.form-input {
     opacity: 0.24;
   }
 }
+
+/*
+ * A patch: the files of a diff, each a head and a table of its lines. The signs and the line numbers are drawn from
+ * attributes, so that they are no text of the block, and a quote of selected lines holds only their code.
+ */
+.visual-patch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12px);
+  margin: 1em 0;
+}
+
+.patch-file {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--border-radius-8px);
+  background: var(--markdown-body-pre-surface);
+}
+
+.patch-file-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4px) var(--space-12px);
+  padding: var(--space-6px) var(--space-12px);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--font-size-14px);
+}
+
+.patch-file-head:last-child {
+  border-bottom: 0;
+}
+
+.patch-path {
+  font-family: var(--font-mono);
+  font-weight: var(--font-weight-600);
+  overflow-wrap: anywhere;
+}
+
+.patch-note {
+  color: var(--muted);
+}
+
+.patch-scroll {
+  overflow-x: auto;
+}
+
+.patch-lines {
+  min-width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-14px);
+  line-height: var(--line-height-1-5);
+}
+
+.patch-hunk-head td {
+  padding: var(--space-2px) var(--space-12px);
+  background: var(--accent-soft);
+  color: var(--muted);
+  white-space: pre;
+}
+
+.patch-number {
+  width: 1px;
+  padding: 0;
+  border-right: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.patch-gutter {
+  display: block;
+  width: 100%;
+  min-width: 3.5em;
+  padding: 0 var(--space-8px);
+  border: 0;
+  background: none;
+  color: var(--subtle);
+  font: inherit;
+  text-align: right;
+  cursor: pointer;
+}
+
+.patch-gutter::before {
+  content: attr(data-number);
+}
+
+.patch-gutter:hover,
+.patch-gutter:focus-visible {
+  color: var(--accent);
+}
+
+.patch-code {
+  width: 100%;
+  padding: 0 var(--space-12px) 0 var(--space-4px);
+  color: var(--markdown-body-pre-code-ink);
+  white-space: pre;
+  tab-size: 4;
+}
+
+.patch-code::before {
+  display: inline-block;
+  width: 1.5ch;
+  content: attr(data-sign);
+  color: var(--subtle);
+  user-select: none;
+}
+
+.patch-line.add > .patch-code {
+  background: var(--status-working-surface);
+}
+
+.patch-line.add > .patch-code::before {
+  color: var(--green);
+}
+
+.patch-line.delete > .patch-code {
+  background: var(--status-error-surface);
+}
+
+.patch-line.delete > .patch-code::before {
+  color: var(--red);
+}
+
+.patch-code.no-newline::after {
+  content: 'no newline at end of file';
+  margin-left: var(--space-8px);
+  color: var(--subtle);
+  font-family: var(--font-body);
+  font-size: var(--font-size-12px);
+  user-select: none;
+}
+
+/* A character that a reader would not see, shown as its code point. */
+.patch-unseen {
+  margin: 0 var(--space-2px);
+  padding: 0 var(--space-4px);
+  border: 1px solid var(--amber);
+  border-radius: var(--border-radius-4px);
+  color: var(--amber);
+  font-size: var(--font-size-12px);
+}
+
+.patch-line.commented {
+  outline-offset: -1px;
+}
+
+.working-sheen.line {
+  border-radius: 0;
+}

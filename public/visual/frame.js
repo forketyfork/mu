@@ -10,14 +10,17 @@ import {
   codeLanguage,
   parseBlocks,
   parseForm,
+  parsePatch,
   parseScene,
   sceneMoments,
   sceneState,
   sceneVisible,
+  visibleParts,
 } from '/visual/format.js';
-import { locate } from '/visual/anchor.js';
+import { lineRow, locate } from '/visual/anchor.js';
 import { createForms } from '/visual/form.js';
 import { createMarks } from '/visual/marks.js';
+import { createPatches } from '/visual/patch.js';
 import { createRenderer, visualMarkdown } from '/visual/render.js';
 import { createMotion, createScenes } from '/visual/scene.js';
 import { createSheen } from '/visual/sheen.js';
@@ -106,17 +109,19 @@ async function scene(figure, block) {
   (await scenes).render(figure, block);
 }
 
+const patches = createPatches({ document, parsePatch, visibleParts });
+
 const renderer = createRenderer({
   document,
   parseBlocks,
   markdownHtml: (source) => visualMarkdown(source, { parse: marked.parse, sanitize: DOMPurify.sanitize }),
   highlight,
-  richBlocks: { mermaid, form: forms.render, scene },
+  richBlocks: { mermaid, form: forms.render, scene, patch: patches.render },
   onProblems: (problems) => tell({ type: 'problems', problems }),
 });
 
 const marks = createMarks({ document, window, container, limits: COMMENT_LIMITS, tell });
-const sheen = createSheen({ document, window, container, locate });
+const sheen = createSheen({ document, window, container, locate, lineRow });
 
 function applyTokens(tokens) {
   for (const [name, value] of Object.entries(tokens))

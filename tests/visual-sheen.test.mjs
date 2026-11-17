@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { locate } from '../public/visual/anchor.js';
+import { lineRow, locate } from '../public/visual/anchor.js';
 import { createSheen, linesPath, placeOf } from '../public/visual/sheen.js';
 
 const QUOTE = { text: 'cache', prefix: 'the ', suffix: ' is' };
@@ -15,6 +15,7 @@ function page(t) {
         <h2>A</h2>
         <div id="a-0" data-block="0"><p>Here the cache is filled.</p></div>
         <figure id="a-1" data-block="1"></figure>
+        <figure id="a-2" data-block="2" class="visual-patch"><table><tr id="a-2-row" class="patch-line add" data-path="x.js" data-new="7"></tr></table></figure>
       </section>
       <section class="visual-section" id="section-b" data-section="b" data-rev="b1"><div id="b-0" data-block="0"><p>B</p></div></section>
     </main>`,
@@ -28,6 +29,8 @@ function page(t) {
     'section-a': [20, 30, 840, 600],
     'a-0': [40, 90, 800, 120],
     'a-1': [40, 220, 800, 300],
+    'a-2': [40, 530, 800, 90],
+    'a-2-row': [40, 560, 800, 24],
     'section-b': [20, 640, 840, 400],
     'b-0': [40, 660, 800, 60],
   };
@@ -51,7 +54,7 @@ function page(t) {
   window.ResizeObserver = class {
     observe() {}
   };
-  const sheen = createSheen({ document, window, container, locate });
+  const sheen = createSheen({ document, window, container, locate, lineRow });
   const lights = () =>
     [...document.querySelectorAll('.working-layer > .working-sheen')].map((light) => [
       light.dataset.comment,
@@ -64,7 +67,7 @@ function page(t) {
 
 test('a target is the whole visual, a section, a block or quoted text, on the content the comment was made on', (t) => {
   const { document, container } = page(t);
-  const place = (target) => placeOf(document, container, target, locate);
+  const place = (target) => placeOf(document, container, target, { locate, lineRow });
   assert.deepEqual(place({ sectionId: null }), { kind: 'whole', place: container });
   assert.deepEqual(place({ sectionId: 'a', sectionRev: 'a1', block: null }), {
     kind: 'section',
@@ -82,6 +85,16 @@ test('a target is the whole visual, a section, a block or quoted text, on the co
   assert.equal(place({ sectionId: 'a', sectionRev: 'a0', block: null }), null);
   assert.equal(place({ sectionId: 'gone', sectionRev: 'x', block: null }), null);
   assert.equal(place({ sectionId: 'a', sectionRev: 'a1', block: 7 }), null);
+  // A line of a patch is its row; a line that the patch does not draw leaves the block.
+  const line = { path: 'x.js', side: 'new', number: 7 };
+  assert.deepEqual(place({ sectionId: 'a', sectionRev: 'a1', block: 2, quote: null, line }), {
+    kind: 'line',
+    place: document.getElementById('a-2-row'),
+  });
+  assert.equal(
+    place({ sectionId: 'a', sectionRev: 'a1', block: 2, quote: null, line: { ...line, number: 8 } }).kind,
+    'block',
+  );
 });
 
 test('the lines of a quote make one clip path around the box of the quote', () => {
@@ -114,6 +127,14 @@ test('every target gets one light in a layer over the document, which follows th
     { id: 'vc-3', sectionId: null, sectionRev: null, block: null, quote: null },
     { id: 'vc-4', sectionId: 'a', sectionRev: 'a0', block: null, quote: null },
     { id: 'vc-5', sectionId: 'a', sectionRev: 'a1', block: 1, quote: null },
+    {
+      id: 'vc-6',
+      sectionId: 'a',
+      sectionRev: 'a1',
+      block: 2,
+      quote: null,
+      line: { path: 'x.js', side: 'new', number: 7 },
+    },
   ]);
   assert.deepEqual(lights(), [
     // The light of a quote reaches a little beyond its text, and is cut to its lines.
@@ -122,6 +143,7 @@ test('every target gets one light in a layer over the document, which follows th
     // The whole visual is lit as far as its sections reach, which is beyond the element that holds them.
     ['vc-3', 'whole', '20px 30px 840px 2000px'],
     ['vc-5', 'block', '40px 220px 800px 300px'],
+    ['vc-6', 'line', '40px 560px 800px 24px'],
   ]);
   const [onText, onSection] = document.querySelectorAll('.working-sheen');
   assert.equal(onText.style.clipPath, 'path("M260 0h204v28h-204ZM0 26h94v28h-94Z")');
@@ -141,7 +163,7 @@ test('every target gets one light in a layer over the document, which follows th
   sheen.apply();
   assert.deepEqual(
     lights().map(([id]) => id),
-    ['vc-1', 'vc-3', 'vc-5'],
+    ['vc-1', 'vc-3', 'vc-5', 'vc-6'],
   );
   // The turn ended, or wrote its version: the dashboard names nothing.
   sheen.set([]);

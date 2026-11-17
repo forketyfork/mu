@@ -24,7 +24,8 @@
       "/visual/marks.js": ["./public/visual/marks.js"],
       "/visual/sheen.js": ["./public/visual/sheen.js"],
       "/visual/form.js": ["./public/visual/form.js"],
-      "/visual/scene.js": ["./public/visual/scene.js"]
+      "/visual/scene.js": ["./public/visual/scene.js"],
+      "/visual/patch.js": ["./public/visual/patch.js"]
     }
   },
   "include": ["src", "scripts", "tests", "public", "*.mjs"]

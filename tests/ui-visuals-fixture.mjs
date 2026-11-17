@@ -71,6 +71,7 @@ export async function viewer(t, { hash = '', visuals = [record()], versions }) {
         sectionRev: input.sectionRev ?? null,
         block: input.block,
         quote: input.quote,
+        line: input.line ?? null,
         text: input.text,
         status: 'draft',
         createdAt: now,

@@ -1,6 +1,6 @@
 # Visuals
 
-A visual is a document that an agent writes for you: a plan to approve, an explanation of a pull request, a design with diagrams. It has sections, highlighted code, Mermaid diagrams, animated explainers and questions that you answer in place. The dashboard shows it beside its task, keeps every version, and redraws a section the moment the agent changes it. You comment on any part of it, and the agent that wrote it answers by changing that part.
+A visual is a document that an agent writes for you: a plan to approve, an explanation of a pull request, a design with diagrams. It has sections, highlighted code, Mermaid diagrams, animated explainers, code changes to review and questions that you answer in place. The dashboard shows it beside its task, keeps every version, and redraws a section the moment the agent changes it. You comment on any part of it, and the agent that wrote it answers by changing that part.
 
 Ask for one in plain words ("show me the plan as a visual", "explain this PR in a visual"). The lead tells the worker to write it; the agents learn the format from the visuals skill.
 
@@ -27,12 +27,12 @@ Each turn in which the agent changes a visual makes one new version. The header 
 
 Tell the author what to change, at the place where you read it. The comments are on the right of the document.
 
-- **Select text** and click **Comment** beside the selection. A selection can cover several paragraphs of one section, and works in code and in tables. **Click a diagram** to comment on it as a block.
-- The buttons above the field say what the comment is about: the selected text or the block, the section you are reading, or the whole visual.
+- **Select text** and click **Comment** beside the selection. A selection can cover several paragraphs of one section, and works in code and in tables. **Click a diagram** to comment on it as a block, and **click a line number** of a code change to comment on that line.
+- The buttons above the field say what the comment is about: the selected text, the line or the block, the section you are reading, or the whole visual.
 - Type what you want, or click a ready request: **Simpler**, **More detail**, **Example**, **Shorter**, **Why?**.
 - **Send now** sends the comment to the author at once (also Ctrl or ⌘ + Enter). **Save draft** keeps it; only you see a draft, and you can edit, send or delete it. **Send all** sends every draft of the version in one message, so the author answers them in one turn.
 - The text you commented on is marked in the document. Click a mark to see its comment, and a comment to see its place.
-- While the author works on a comment, a soft light moves across what the comment is about: the selected text, the block, the section, or the whole visual. The comment shows **In work**. With several comments in one turn, each place is lit. The light goes out when the author's turn writes its version, where the changed sections flash, or when the turn ends without a change, also after an error or a restart of Mu. If your system asks for reduced motion, the place has a still tint and nothing moves.
+- While the author works on a comment, a soft light moves across what the comment is about: the selected text, the line, the block, the section, or the whole visual. The comment shows **In work**. With several comments in one turn, each place is lit. The light goes out when the author's turn writes its version, where the changed sections flash, or when the turn ends without a change, also after an error or a restart of Mu. If your system asks for reduced motion, the place has a still tint and nothing moves.
 
 A comment reaches the agent that wrote the visual as a chat message from you in the visual's conversation, so it continues the session in which the agent wrote the visual. The message names the section and quotes the text; you can read it in that conversation's chat. The agent changes the sections that the comments concern, which makes a new version, and each changed section flashes as it is redrawn. Write a name in a comment without `@`: a comment that mentions an agent is refused, because the message would start that agent too. A comment, the selected text or an answer that holds a character which is not shown, such as a zero-width space pasted from another page, is refused with the character named, so the author gets only what you saw.
 
@@ -51,6 +51,17 @@ A visual can ask you questions: one of several options, several of them, a short
 - You send what the list shows, so read it before you send. When a line of the list changed just before your click, nothing is sent: the line is marked **Changed just now**, and you click **Send answers** again after reading it.
 
 Questions are answered on the newest version. An earlier version shows its questions with your answers and takes no change. An answer stays with its question: when the author changes other parts of the visual, or moves the question, your answer is still there; when the author changes the question itself, its help or the hint of an option included, it starts without an answer, and so does a question whose suggestion you kept when the author takes the suggestion away. The list of visuals shows for each visual how many questions wait for you.
+
+## Review a code change
+
+A visual can show a code change as the agent's `git diff` produced it: each file with its path, what happened to it (new, deleted, renamed, a new mode, binary), and its hunks, with the old line number, the new line number and the line. Removed lines are red, added lines green.
+
+- **Click a line number** to comment on that line. The comment names the file and the line, for example `src/store.mjs:12`, or `src/store.mjs:12 (old)` for a removed line, and the message quotes the line for the author.
+- Select code to comment on part of a line or on several lines, as anywhere else in a visual. The line numbers and the `+` and `-` signs are not part of the selected text.
+- A character that is not drawn, such as a direction override that makes code read differently than it runs, or a zero-width space, is shown as its code point in a box, for example `U+202E`. That is what the change holds; the agent did not add it.
+- A long line scrolls sideways.
+
+A `diff` block, the kind of short sketch an agent writes with `+` and `-` lines and `...` for left-out code, stays highlighted code without line numbers.
 
 ## Watch an explainer
 
@@ -72,7 +83,7 @@ A diagram or another block that cannot be drawn is replaced by the error and its
 
 ## How agents write visuals
 
-An agent writes one Markdown file and sends it with the CLI. The first line `# Title` names the visual, each `## Heading {#id}` starts a section, a fenced block with a language is highlighted code, a `mermaid` block is a diagram, a `scene` block is an animated explainer, and a `form` block asks questions:
+An agent writes one Markdown file and sends it with the CLI. The first line `# Title` names the visual, each `## Heading {#id}` starts a section, a fenced block with a language is highlighted code, a `mermaid` block is a diagram, a `scene` block is an animated explainer, a `patch` block holds the output of `git diff` for review, and a `form` block asks questions:
 
 ````markdown
 # Move the session store to SQLite
@@ -125,7 +136,7 @@ node src/cli.mjs visual guide                                         # the visu
 
 Only the author changes a visual; you and the members of its conversation read it, and only you comment on it and answer its questions. A visual belongs to the conversation of the turn that created it and to that conversation's task. See the [CLI reference](cli.md#visuals) for every option, and `skills/visuals/SKILL.md` for the instructions the agents follow.
 
-Limits: 200 sections per visual, 128 KiB per section, and 1 MiB for all sections of one version together; 200 comments per version, each up to 4000 bytes, with a quote of up to 600 characters; 30 questions per form with up to 12 options each, 100 questions per version, and 2000 characters per text answer; 40 parts, 60 lines and 40 steps per explainer, on a grid of 12 columns and 8 rows. Code is highlighted in Bash, C, C++, CSS, diff, Dockerfile, Go, INI and TOML, Java, JavaScript, JSON, Kotlin, Markdown, Python, Ruby, Rust, shell sessions, SQL, Swift, TypeScript, XML and HTML, and YAML; other languages are shown as plain code.
+Limits: 200 sections per visual, 128 KiB per section, and 1 MiB for all sections of one version together; 200 comments per version, each up to 4000 bytes, with a quote of up to 600 characters; 30 questions per form with up to 12 options each, 100 questions per version, and 2000 characters per text answer; 40 parts, 60 lines and 40 steps per explainer, on a grid of 12 columns and 8 rows; 100 files and 5000 lines per code change. Code is highlighted in Bash, C, C++, CSS, diff, Dockerfile, Go, INI and TOML, Java, JavaScript, JSON, Kotlin, Markdown, Python, Ruby, Rust, shell sessions, SQL, Swift, TypeScript, XML and HTML, and YAML; other languages are shown as plain code.
 
 ## Where visuals are stored
 

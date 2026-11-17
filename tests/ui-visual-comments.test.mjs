@@ -104,6 +104,61 @@ test('what the frame reports as selected is used only when it names shown conten
     assert.equal(report(target, rect === undefined ? RECT : rect), undefined, why);
 });
 
+const LINE = { path: 'src/a.js', side: 'new', number: 12 };
+const ON_LINE = { sectionId: 'a', sectionRev: 'a1', block: 1, quote: null, line: LINE };
+
+test('a line of a patch that the frame reports is used only in the shape of a line, without a quote', () => {
+  /** @type {(target: any) => any} */
+  const report = (target) => selectionOf({ target, rect: RECT }, SECTIONS);
+  assert.deepEqual(report(ON_LINE).target, ON_LINE);
+  assert.deepEqual(report({ ...ON_LINE, line: { ...LINE, side: 'old', extra: 1 } }).target.line, {
+    ...LINE,
+    side: 'old',
+  });
+  assert.deepEqual(report({ ...ON_LINE, line: null }).target, {
+    sectionId: 'a',
+    sectionRev: 'a1',
+    block: 1,
+    quote: null,
+  });
+  /** @type {[string, any][]} */
+  const refused = [
+    ['a line and a quote', { ...ON_LINE, quote: QUOTE }],
+    ['a line without a block', { ...ON_LINE, block: null }],
+    ['a line that is no object', { ...ON_LINE, line: 'src/a.js:12' }],
+    ['an empty path', { ...ON_LINE, line: { ...LINE, path: ' ' } }],
+    ['a long path', { ...ON_LINE, line: { ...LINE, path: 'p'.repeat(401) } }],
+    ['a path that is no text', { ...ON_LINE, line: { ...LINE, path: 7 } }],
+    ['another side', { ...ON_LINE, line: { ...LINE, side: 'left' } }],
+    ['a number that is no number', { ...ON_LINE, line: { ...LINE, number: '12' } }],
+    ['line 0', { ...ON_LINE, line: { ...LINE, number: 0 } }],
+    ['a fraction', { ...ON_LINE, line: { ...LINE, number: 1.5 } }],
+    ['a line beyond the limit', { ...ON_LINE, line: { ...LINE, number: 1_000_000_001 } }],
+  ];
+  for (const [why, target] of refused) assert.equal(report(target), undefined, why);
+});
+
+test('a click on a line number of a patch makes a comment on that line', async (t) => {
+  const ui = await commenting(t);
+  ui.fromFrame({ type: 'selection', target: ON_LINE, rect: RECT });
+  assert.deepEqual(ui.scopes(), ['Line src/a.js:12*', 'Section “a”', 'Whole visual']);
+  assert.equal(ui.$('#visual-composer-quote').hidden, true);
+  ui.click('#visual-comment-bubble');
+  assert.deepEqual(ui.marks.at(-1).comments, [{ id: 'pending', ...ON_LINE, state: 'draft' }]);
+  ui.write('Why here?');
+  await ui.submit();
+  assert.deepEqual(ui.calls.slice(0, 1), [['POST', '/comments', { version: 2, ...ON_LINE, text: 'Why here?' }]]);
+  assert.deepEqual(ui.cards(), [['a, src/a.js:12', 'Sent', 'Why here?']]);
+  // As after a click on a diagram, the field stays on the line, and marks it while it has the focus.
+  assert.deepEqual(ui.marks.at(-1).comments, [
+    { id: 'vc-00000001', ...ON_LINE, state: 'sent' },
+    { id: 'pending', ...ON_LINE, state: 'draft' },
+  ]);
+  // A removed line is named by its old number.
+  ui.fromFrame({ type: 'selection', target: { ...ON_LINE, line: { ...LINE, side: 'old' } }, rect: RECT });
+  assert.deepEqual(ui.scopes(), ['Line src/a.js:12 (old)*', 'Section “a”', 'Whole visual']);
+});
+
 test('selected text is offered for a comment, and Send now makes it one message to the author', async (t) => {
   const ui = await commenting(t);
   const { $ } = ui;

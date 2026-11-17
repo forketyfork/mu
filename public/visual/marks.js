@@ -2,7 +2,7 @@
 // are about. The comment field, the list of comments and the buttons that send them are the dashboard's. Marks are
 // CSS highlights, ranges painted without a change of the document, so drawing a section anew stays the only thing
 // that changes its elements.
-import { locate, quoteOf } from '/visual/anchor.js';
+import { lineRow, locate, quoteOf } from '/visual/anchor.js';
 
 const STATES = ['answered', 'sent', 'draft', 'active'];
 const MARKED = 'commented';
@@ -26,7 +26,7 @@ export function createMarks({ document, window, container, limits, tell }) {
       return [state, highlight];
     }),
   );
-  /** @type {{ id: string, sectionId: string, sectionRev: string, block: number | null, quote: object | null, state: string }[]} */
+  /** @type {{ id: string, sectionId: string, sectionRev: string, block: number | null, quote: object | null, line?: object | null, state: string }[]} */
   let comments = [];
   let active = null;
   /** @type {Map<string, Range | Element>} */
@@ -55,11 +55,12 @@ export function createMarks({ document, window, container, limits, tell }) {
               (child) => /** @type {HTMLElement} */ (child).dataset.block === String(comment.block),
             );
       const range = block && comment.quote ? locate(block, comment.quote) : null;
+      const row = block && comment.line ? lineRow(block, /** @type {any} */ (comment.line)) : null;
       if (range) {
         highlights[comment.id === active ? 'active' : comment.state].add(range);
         placed.set(comment.id, range);
       } else {
-        const element = block ?? section;
+        const element = row ?? block ?? section;
         element.classList.add(MARKED);
         if (comment.id === active) element.classList.add(ACTIVE);
         placed.set(comment.id, element);
@@ -111,6 +112,12 @@ export function createMarks({ document, window, container, limits, tell }) {
 
   // A click on marked text names its comment; a click on a diagram or another drawn block offers a comment on it.
   container.addEventListener('click', (event) => {
+    // A line number of a patch offers a comment on its line; with the keyboard, the click has no place on the screen.
+    const gutter = /** @type {HTMLElement | null} */ (/** @type {Element} */ (event.target).closest?.('.patch-gutter'));
+    if (gutter) {
+      lineChosen(gutter);
+      return;
+    }
     if (!document.getSelection().isCollapsed) return;
     const inside = (rect) =>
       event.clientX >= rect.left &&
@@ -142,6 +149,26 @@ export function createMarks({ document, window, container, limits, tell }) {
     // The click ended whatever was selected; that end is not news after this.
     told = JSON.stringify(null);
   });
+
+  function lineChosen(gutter) {
+    const row = /** @type {HTMLElement | null} */ (gutter.closest('.patch-line'));
+    const figure = /** @type {HTMLElement | null} */ (gutter.closest('.visual-patch'));
+    const section = /** @type {HTMLElement | null} */ (figure?.closest('.visual-section'));
+    if (!row || !figure || !section || section.parentElement !== container) return;
+    const { left, top, right, bottom } = row.getBoundingClientRect();
+    tell({
+      type: 'selection',
+      target: {
+        sectionId: section.dataset.section,
+        sectionRev: section.dataset.rev,
+        block: Number(figure.dataset.block),
+        quote: null,
+        line: { path: row.dataset.path, side: gutter.dataset.side, number: Number(gutter.dataset.number) },
+      },
+      rect: { left, top, right, bottom },
+    });
+    told = JSON.stringify(null);
+  }
 
   // Code that is highlighted and a diagram that is drawn replace the text nodes that a mark stands on.
   let pending = false;

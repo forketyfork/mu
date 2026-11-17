@@ -1544,3 +1544,171 @@ test('an animated explainer plays its steps in the frame, and its labels stay te
     [],
   );
 });
+
+test('a patch is drawn as text with line numbers, and a click on a number comments on that line', async (t) => {
+  const { app, user, worker, visual, reached, logs, evaluate, inFrame, shot, mouse } = await opened(t, 'patch-');
+  // The paths and the lines are the author's text, and try what text can.
+  const hostile = '<img src=x onerror=window.pwned=8>';
+  const patch = [
+    'diff --git a/src/store.mjs b/src/store.mjs',
+    'index 3b18e51..a9c4d2f 100644',
+    '--- a/src/store.mjs',
+    '+++ b/src/store.mjs',
+    `@@ -10,4 +10,5 @@ export function open(path) { ${hostile}`,
+    '   const db = new Database(path);',
+    '-  db.exec(SCHEMA);',
+    '+  db.exec(SCHEMA_V2);',
+    '+  migrate(db);',
+    '',
+    `   return db; // ${hostile}`,
+    `diff --git a/${hostile} b/${hostile}`,
+    'new file mode 100644',
+    '--- /dev/null',
+    `+++ b/${hostile}`,
+    '@@ -0,0 +1,2 @@',
+    '+if (isAdmin‮) {',
+    `+\t${'x'.repeat(400)}`,
+    '\\ No newline at end of file',
+    'diff --git a/logo.png b/logo.png',
+    'Binary files a/logo.png and b/logo.png differ',
+  ].join('\n');
+  app.runner.active.set('worker', { conversationId: 'work' });
+  const changed = await worker('PATCH', `/api/visuals/${visual.id}`, {
+    source: `## Review {#review}\n\nThe store migrates on open.\n\n\`\`\`patch\n${patch}\n\`\`\`\n`,
+  });
+  assert.equal(changed.body.version, 2, JSON.stringify(changed.body));
+  app.runner.active.clear();
+  await until('the patch', () => inFrame(`document.querySelectorAll('.visual-patch .patch-line').length === 8`));
+  await inFrame(`document.querySelector('.visual-patch').scrollIntoView({ block: 'start' })`);
+  await shot('1-drawn');
+
+  const facts = await inFrame(`(() => {
+    const patch = document.querySelector('.visual-patch');
+    const row = (path, side, number) =>
+      [...patch.querySelectorAll('.patch-line')].find((item) => item.dataset.path === path && item.dataset[side] === String(number));
+    const added = row('src/store.mjs', 'new', 12);
+    const code = added.querySelector('.patch-code');
+    const lineHeight = parseFloat(getComputedStyle(code).lineHeight);
+    const scroll = patch.querySelectorAll('.patch-scroll')[1];
+    return {
+      markup: patch.querySelectorAll('img, script, a, b').length,
+      paths: [...patch.querySelectorAll('.patch-path')].map((path) => path.textContent),
+      notes: [...patch.querySelectorAll('.patch-note')].map((note) => note.textContent),
+      badges: [...patch.querySelectorAll('.patch-unseen')].map((badge) => [badge.textContent, getComputedStyle(badge).borderStyle]),
+      override: patch.textContent.includes('\\u202E'),
+      number: getComputedStyle(added.querySelector('.patch-gutter'), '::before').content,
+      sign: getComputedStyle(code, '::before').content,
+      eof: getComputedStyle(row('${hostile}', 'new', 2).querySelector('.patch-code'), '::after').content,
+      // The line break that ends a line in the text of the block adds no line on the screen.
+      oneLine: added.getBoundingClientRect().height < lineHeight * 1.5,
+      tinted: [getComputedStyle(code).backgroundColor, getComputedStyle(row('src/store.mjs', 'old', 11).querySelector('.patch-code')).backgroundColor, getComputedStyle(row('src/store.mjs', 'new', 10).querySelector('.patch-code')).backgroundColor],
+      scrolls: scroll.scrollWidth > scroll.clientWidth,
+      page: document.documentElement.scrollWidth <= innerWidth,
+    };
+  })()`);
+  assert.deepEqual(
+    { ...facts, tinted: undefined },
+    {
+      markup: 0,
+      paths: ['src/store.mjs', hostile, 'logo.png'],
+      notes: ['new file', 'binary, not shown'],
+      badges: [['U+202E', 'solid']],
+      override: false,
+      number: '"12"',
+      sign: '"+"',
+      eof: '"no newline at end of file"',
+      oneLine: true,
+      tinted: undefined,
+      scrolls: true,
+      page: true,
+    },
+  );
+  const [addTint, deleteTint, contextTint] = facts.tinted;
+  assert.notEqual(addTint, deleteTint);
+  assert.equal(contextTint, 'rgba(0, 0, 0, 0)');
+
+  // Selected lines are quoted as their code, without numbers or signs.
+  await inFrame(`(() => {
+    const codes = [...document.querySelectorAll('.visual-patch .patch-line .patch-code')];
+    const range = document.createRange();
+    range.setStart(codes[2].firstChild, 2);
+    range.setEnd(codes[3].firstChild, 14);
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+  })()`);
+  await until('the offer to comment on the selected code', async () =>
+    (await evaluate(`document.getElementById('visual-composer-quote').textContent`)).startsWith('db.exec'),
+  );
+  assert.equal(
+    await evaluate(`document.getElementById('visual-composer-quote').textContent`),
+    'db.exec(SCHEMA_V2);\n  migrate(db);',
+  );
+  await inFrame(`getSelection().removeAllRanges()`);
+
+  // A real press on the number of a line offers a comment on that line.
+  const numberAt = async (side, number) => {
+    const inside = await inFrame(`(() => {
+      const row = [...document.querySelectorAll('.visual-patch .patch-line')].find((item) => item.dataset.path === 'src/store.mjs' && item.dataset.${side} === '${number}');
+      const { left, top, width, height } = row.querySelector('.patch-gutter[data-side="${side}"]').getBoundingClientRect();
+      return { x: left + width / 2, y: top + height / 2 };
+    })()`);
+    const frame = await evaluate(
+      `(() => { const { left, top } = document.querySelector('iframe').getBoundingClientRect(); return { left, top }; })()`,
+    );
+    return { x: frame.left + inside.x, y: frame.top + inside.y };
+  };
+  const scopes = `[...document.querySelectorAll('.visual-scope')].map((option) => option.textContent + (option.getAttribute('aria-pressed') === 'true' ? '*' : ''))`;
+  const at = await numberAt('new', 12);
+  await mouse('mousePressed', at);
+  await mouse('mouseReleased', at);
+  await until('the offer to comment on line 12', async () => (await evaluate(scopes))[0] === 'Line src/store.mjs:12*');
+  await shot('2-line');
+  await evaluate(`document.getElementById('visual-comment-bubble').click()`);
+  await evaluate(`(() => {
+    const field = document.getElementById('visual-composer-text');
+    field.focus();
+    field.value = 'Why migrate here and not in the caller?';
+    field.dispatchEvent(new Event('input'));
+  })()`);
+  await evaluate(`document.getElementById('visual-composer-send').click()`);
+  await until('the sent comment', () =>
+    evaluate(
+      `document.querySelector('#visual-comments-list .visual-comment .visual-comment-state')?.textContent === 'Sent'`,
+    ),
+  );
+  assert.equal(
+    await evaluate(`document.querySelector('#visual-comments-list .visual-comment-where').textContent`),
+    'Review, src/store.mjs:12',
+  );
+  // The row of the line is marked, and nothing else.
+  await until('the mark on the line', () =>
+    inFrame(
+      `document.querySelectorAll('.commented').length === 1 && Boolean(document.querySelector('.patch-line.commented[data-new="12"]'))`,
+    ),
+  );
+  assert.equal(
+    await inFrame(`getComputedStyle(document.querySelector('.patch-line.commented')).outlineStyle`),
+    'solid',
+  );
+  await shot('3-commented');
+
+  const [comment] = (await worker('GET', `/api/visuals/${visual.id}/comments`)).body;
+  assert.deepEqual(comment.line, { path: 'src/store.mjs', side: 'new', number: 12 });
+  const message = (await user('GET', '/api/conversations/work/messages?limit=20')).body.messages.find(
+    (item) => item.from === 'user',
+  );
+  assert.match(
+    message.text,
+    new RegExp(
+      `1\\. \`${comment.id}\` on section \`review\`, \`src/store\\.mjs\` line 12 \`migrate\\(db\\);\`:\\n> Why migrate here`,
+    ),
+  );
+
+  assert.equal(await inFrame(`window.pwned ?? null`), null);
+  assert.equal(await evaluate(`window.pwned ?? null`), null);
+  assert.deepEqual(reached, []);
+  assert.deepEqual(
+    logs.filter((line) => /patch\.js|visual-patch|\[exception\]/.test(line)),
+    [],
+  );
+});

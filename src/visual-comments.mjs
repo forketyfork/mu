@@ -2,7 +2,16 @@ import { randomUUID } from 'node:crypto';
 import { httpError as bad } from './http-error.mjs';
 import { mentions } from './store.mjs';
 import { MESSAGE_QUOTE_CHARS, feedbackText, locator, quoted } from './visual-feedback.mjs';
-import { COMMENT_LIMITS, SECTION_ID, parseBlocks, unseen } from './visual-format.mjs';
+import {
+  COMMENT_LIMITS,
+  PATCH_LIMITS,
+  SECTION_ID,
+  parseBlocks,
+  parsePatch,
+  patchLine,
+  unseen,
+  visibleParts,
+} from './visual-format.mjs';
 
 // The user's comments on a visual. A comment belongs to one version and names the section, the block and the quoted
 // text it is about; it is a draft until the user sends it, and then reaches the author as a chat message from the
@@ -99,13 +108,28 @@ export function createVisualComments({ store, visuals, sendAsUser }) {
       suffix: part('suffix', COMMENT_LIMITS.contextChars, false),
     };
   };
-  // Where a comment points: the visual as a whole, a section, a block of it, or quoted text in a block.
+  const lineOf = (value) => {
+    if (value === undefined || value === null) return null;
+    if (typeof value !== 'object' || Array.isArray(value)) throw bad('line must be an object');
+    for (const key of Object.keys(value))
+      if (!['path', 'side', 'number'].includes(key)) throw bad(`line has no field ${key}; it takes path, side, number`);
+    const { path, side, number } = value;
+    if (typeof path !== 'string' || !path || [...path].length > PATCH_LIMITS.pathChars)
+      throw bad(`line.path must be the path of a file of the patch`);
+    if (side !== 'old' && side !== 'new') throw bad('line.side is old or new');
+    if (!Number.isInteger(number) || number < 1 || number > PATCH_LIMITS.lineNumber)
+      throw bad('line.number must be a line number');
+    return { path, side, number };
+  };
+  // Where a comment points: the visual as a whole, a section, a block of it, a line of a patch, or quoted text in a
+  // block.
   const targetOf = (input, version) => {
     const quote = quoteOf(input.quote);
+    const line = lineOf(input.line);
     if (input.sectionId === undefined || input.sectionId === null) {
-      if (quote || (input.block !== undefined && input.block !== null))
-        throw bad('A quote or a block needs the section it is in');
-      return { sectionId: null, sectionRev: null, block: null, quote: null };
+      if (quote || line || (input.block !== undefined && input.block !== null))
+        throw bad('A quote, a line or a block needs the section it is in');
+      return { sectionId: null, sectionRev: null, block: null, quote: null, line: null };
     }
     const section =
       typeof input.sectionId === 'string' && SECTION_ID.test(input.sectionId)
@@ -122,18 +146,28 @@ export function createVisualComments({ store, visuals, sendAsUser }) {
         409,
       );
     if (input.block === undefined || input.block === null) {
-      if (quote) throw bad('A quote needs the block it is in');
-      return { sectionId: section.id, sectionRev: section.rev, block: null, quote: null };
+      if (quote || line) throw bad('A quote or a line needs the block it is in');
+      return { sectionId: section.id, sectionRev: section.rev, block: null, quote: null, line: null };
     }
     const blocks = parseBlocks(section.body);
     if (!Number.isInteger(input.block) || input.block < 0 || input.block >= blocks.length)
       throw bad(`Section ${section.id} has ${blocks.length} ${blocks.length === 1 ? 'block' : 'blocks'}`);
-    return { sectionId: section.id, sectionRev: section.rev, block: input.block, quote };
+    if (line) {
+      if (quote) throw bad('A comment names a line or a quote, not both');
+      const block = blocks[input.block];
+      if (block.type !== 'patch') throw bad(`Block ${input.block + 1} of section ${section.id} is no patch`);
+      // The line is checked against the patch of the revision that the reader saw, like a quote's section.
+      if (!patchLine(parsePatch(block.text), line))
+        throw bad(
+          `The patch in block ${input.block + 1} of section ${section.id} has no ${line.side} line ${line.number} in ${line.path}`,
+        );
+    }
+    return { sectionId: section.id, sectionRev: section.rev, block: input.block, quote, line };
   };
 
   function create(visualId, input) {
     for (const key of Object.keys(input))
-      if (!['from', 'version', 'sectionId', 'sectionRev', 'block', 'quote', 'text'].includes(key))
+      if (!['from', 'version', 'sectionId', 'sectionRev', 'block', 'quote', 'line', 'text'].includes(key))
         throw bad(`Unknown comment field ${key}`);
     const visual = visuals.get(visualId);
     if (!Number.isInteger(input.version) || input.version < 1) throw bad('version must be a positive integer');
@@ -210,7 +244,17 @@ export function createVisualComments({ store, visuals, sendAsUser }) {
       if (comment.block === null) return `${section}${since ? '' : ' as a whole'}`;
       if (comment.quote) return `${section}, at ${locator(comment.quote.text, MESSAGE_QUOTE_CHARS)}`;
       const { body } = visuals.readSection(visual.id, comment.sectionRev);
-      return `${section}, block ${comment.block + 1} (${parseBlocks(body)[comment.block].type})`;
+      const block = parseBlocks(body)[comment.block];
+      if (comment.line) {
+        const { path, side, number } = comment.line;
+        const { text } = patchLine(parsePatch(block.text), comment.line);
+        // The line as the reader saw it: a character that is not shown is written as its code point.
+        const shown = visibleParts(text)
+          .map((part) => part.text)
+          .join('');
+        return `${section}, ${locator(path, MESSAGE_QUOTE_CHARS)} ${side === 'old' ? 'old line' : 'line'} ${number}${shown.trim() ? ` ${locator(shown, MESSAGE_QUOTE_CHARS)}` : ''}`;
+      }
+      return `${section}, block ${comment.block + 1} (${block.type})`;
     };
     // The message says what the user saw. A draft is checked where it is written, and here again: the store may
     // hold one that was saved under an older rule.

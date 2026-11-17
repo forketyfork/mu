@@ -103,7 +103,7 @@ test('a comment is a draft of the user until it is sent, and only the user write
   };
   await refused({ sectionId: 'missing' }, /Version 1 has no section missing/);
   await refused({ block: 1 }, /Section overview has 1 block/);
-  await refused({ block: null }, /A quote needs the block/);
+  await refused({ block: null }, /A quote or a line needs the block/);
   await refused({ sectionId: null }, /needs the section/);
   // A comment on a section names the revision that its writer saw, so that it never lands on other text unseen.
   await refused({ sectionRev: undefined }, /sectionRev is needed with sectionId/);
@@ -582,6 +582,7 @@ test('the CLI lists the comments that wait for an answer and names them in a pat
       sectionId: 'overview',
       block: 0,
       quote: ON_CODE.quote,
+      line: null,
       text: ON_CODE.text,
       sentAt: sent.sentAt,
       answeredIn: null,
@@ -610,4 +611,105 @@ test('the CLI lists the comments that wait for an answer and names them in a pat
     [[sent.id, 2]],
   );
   assert.deepEqual(await main(['visual', 'comments', '--id', visual.id, '--all', '--version', '2'], env), []);
+});
+
+const REVIEW = `# Review of the store change
+
+## The change {#change}
+
+Read this first.
+
+\`\`\`patch
+diff --git a/src/store.mjs b/src/store.mjs
+--- a/src/store.mjs
++++ b/src/store.mjs
+@@ -10,3 +10,3 @@ export function open(path) {
+   const db = new Database(path);
+-  db.exec(SCHEMA);
++  db.exec(\`@lead \${SCHEMA}\`);‮
+   return db;
+\`\`\`
+`;
+const REVIEW_REV = sectionRev(parseDocument(REVIEW).sections.find((section) => section.id === 'change'));
+
+test('a comment on a patch names a line by its file, side and number, checked against the patch the reader saw', async (t) => {
+  const { app, user, worker, startTurn, url } = await team(t);
+  const messages = async () => (await user('GET', '/api/conversations/work/messages?limit=50')).body.messages;
+  startTurn('worker');
+  const visual = (await worker('POST', '/api/visuals', { source: REVIEW })).body;
+  app.runner.active.clear();
+  const comments = `/api/visuals/${visual.id}/comments`;
+  const onLine = (line, extra = {}) => ({
+    version: 1,
+    sectionId: 'change',
+    sectionRev: REVIEW_REV,
+    block: 1,
+    line,
+    text: 'Why this?',
+    ...extra,
+  });
+  const added = { path: 'src/store.mjs', side: 'new', number: 11 };
+  const { status, body: comment } = await user('POST', comments, onLine(added));
+  assert.equal(status, 201);
+  assert.deepEqual([comment.block, comment.quote, comment.line], [1, null, added]);
+  // A line of context has a number on each side, and a removed line has an old one.
+  for (const line of [
+    { path: 'src/store.mjs', side: 'old', number: 12 },
+    { path: 'src/store.mjs', side: 'new', number: 12 },
+    { path: 'src/store.mjs', side: 'old', number: 11 },
+  ])
+    assert.equal((await user('POST', comments, onLine(line))).status, 201, JSON.stringify(line));
+
+  const refused = async (input, pattern) => {
+    const response = await user('POST', comments, input);
+    assert.equal(response.status, 400, JSON.stringify(input));
+    assert.match(response.body.error, pattern);
+  };
+  await refused(onLine({ ...added, number: 13 }), /has no new line 13 in src\/store\.mjs/);
+  await refused(onLine({ ...added, side: 'old', number: 13 }), /has no old line 13/);
+  await refused(onLine({ ...added, path: 'src/other.mjs' }), /has no new line 11 in src\/other\.mjs/);
+  await refused(onLine({ ...added, side: 'left' }), /line\.side is old or new/);
+  await refused(onLine({ ...added, number: 0 }), /line\.number must be a line number/);
+  await refused(onLine({ ...added, number: '11' }), /line\.number must be a line number/);
+  await refused(onLine({ ...added, number: 1e9 + 1 }), /line\.number must be a line number/);
+  await refused(onLine({ ...added, path: '' }), /line\.path must be the path/);
+  await refused(onLine({ ...added, path: 'p'.repeat(401) }), /line\.path must be the path/);
+  await refused(onLine({ ...added, column: 3 }), /line has no field column/);
+  await refused(onLine('src/store.mjs:11'), /line must be an object/);
+  await refused(onLine(added, { block: 0 }), /Block 1 of section change is no patch/);
+  await refused(onLine(added, { block: null }), /A quote or a line needs the block it is in/);
+  await refused(onLine(added, { sectionId: null, sectionRev: undefined, block: null }), /needs the section it is in/);
+  await refused(onLine(added, { quote: { text: 'db', prefix: '', suffix: '' } }), /a line or a quote, not both/);
+  // A line of a revision that the reader did not see is refused like a quote of it.
+  assert.equal((await user('POST', comments, onLine(added, { sectionRev: 'other' }))).status, 409);
+
+  // The message names the file and the line, and quotes the line as it was drawn: no mention, no hidden character.
+  const before = (await messages()).length;
+  assert.equal((await user('POST', `${comments}/send`, { version: 1, ids: [comment.id] })).status, 200);
+  const [message] = (await messages()).slice(before);
+  assert.deepEqual(mentions(message.text), ['worker']);
+  assert.match(
+    message.text,
+    new RegExp(
+      `^1\\. \`${comment.id}\` on section \`change\`, \`src/store\\.mjs\` line 11 \`db\\.exec\\('@ lead \\$\\{SCHEMA\\}'\\);U\\+202E\`:\\n> Why this\\?$`,
+      'm',
+    ),
+  );
+  assert.equal(/[‮]/.test(message.text), false);
+  // A removed line is named by its old number.
+  const removed = (await user('POST', comments, onLine({ path: 'src/store.mjs', side: 'old', number: 11 }))).body;
+  assert.equal((await user('POST', `${comments}/send`, { version: 1, ids: [removed.id] })).status, 200);
+  assert.match(
+    (await messages()).find((item) => item.text.includes(removed.id)).text,
+    new RegExp(`\`${removed.id}\` on section \`change\`, \`src/store\\.mjs\` old line 11 \``),
+  );
+
+  const env = {
+    MU_URL: url,
+    MU_AGENT_ID: 'worker',
+    MU_TOKEN: app.identity.issue('worker'),
+    MU_CONVERSATION_ID: 'work',
+  };
+  const [listed] = await main(['visual', 'comments', '--id', visual.id], env);
+  assert.deepEqual([listed.id, listed.block, listed.quote, listed.line], [comment.id, 1, null, added]);
 });

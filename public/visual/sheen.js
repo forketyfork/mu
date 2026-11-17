@@ -7,15 +7,22 @@
 const TEXT_MARGIN = 2;
 
 /**
+ * @typedef {{
+ *   locate: (block: Element, quote: any) => Range | null,
+ *   lineRow: (block: Element, line: any) => HTMLElement | null,
+ * }} Finders
+ */
+
+/**
  * Where a target is in the document as it is drawn now: the element or the range, and what it is. Null when the
  * content that the comment was written on is not on the page.
  * @param {Document} document
  * @param {HTMLElement} container The element that holds the sections.
- * @param {{ sectionId: string | null, sectionRev?: string, block?: number | null, quote?: object | null }} target
- * @param {(block: Element, quote: any) => Range | null} locate Finds a quote in a block, as for the marks.
- * @returns {{ kind: 'whole' | 'section' | 'block' | 'text', place: Element | Range } | null}
+ * @param {{ sectionId: string | null, sectionRev?: string, block?: number | null, quote?: object | null, line?: any }} target
+ * @param {Finders} finders How the marks find a quote and a line in a block.
+ * @returns {{ kind: 'whole' | 'section' | 'block' | 'line' | 'text', place: Element | Range } | null}
  */
-export function placeOf(document, container, target, locate) {
+export function placeOf(document, container, target, { locate, lineRow }) {
   if (target.sectionId === null) return { kind: 'whole', place: container };
   const section = document.getElementById(`section-${target.sectionId}`);
   // A comment belongs to the content it was made on, as for its mark.
@@ -25,6 +32,8 @@ export function placeOf(document, container, target, locate) {
     (child) => /** @type {HTMLElement} */ (child).dataset.block === String(target.block),
   );
   if (!block) return null;
+  const row = target.line ? lineRow(block, target.line) : null;
+  if (row) return { kind: 'line', place: row };
   const range = target.quote ? locate(block, target.quote) : null;
   return range ? { kind: 'text', place: range } : { kind: 'block', place: block };
 }
@@ -70,14 +79,15 @@ export function linesPath(rects, box) {
  * @param {Document} options.document
  * @param {Window & typeof globalThis} options.window
  * @param {HTMLElement} options.container The element that holds the sections.
- * @param {(block: Element, quote: any) => Range | null} options.locate
+ * @param {Finders['locate']} options.locate
+ * @param {Finders['lineRow']} options.lineRow
  */
-export function createSheen({ document, window, container, locate }) {
+export function createSheen({ document, window, container, locate, lineRow }) {
   const layer = document.createElement('div');
   layer.className = 'working-layer';
   layer.setAttribute('aria-hidden', 'true');
   container.after(layer);
-  /** @type {{ id: string, sectionId: string | null, sectionRev?: string, block?: number | null, quote?: object | null }[]} */
+  /** @type {{ id: string, sectionId: string | null, sectionRev?: string, block?: number | null, quote?: object | null, line?: object | null }[]} */
   let targets = [];
   /** @type {Map<string, HTMLElement>} The light of each target; it keeps moving while its place is measured anew. */
   const drawn = new Map();
@@ -87,7 +97,7 @@ export function createSheen({ document, window, container, locate }) {
     const origin = layer.getBoundingClientRect();
     const kept = new Set();
     for (const target of targets) {
-      const found = placeOf(document, container, target, locate);
+      const found = placeOf(document, container, target, { locate, lineRow });
       if (!found) continue;
       const box = found.kind === 'whole' ? wholeBox(container) : found.place.getBoundingClientRect();
       if (!box.width || !box.height) continue;
@@ -137,7 +147,7 @@ export function createSheen({ document, window, container, locate }) {
   return {
     /**
      * Sets what the author works on. A target is what a comment is about: the whole visual for a null `sectionId`,
-     * else a section, one of its blocks, or quoted text in a block.
+     * else a section, one of its blocks, a line of a patch, or quoted text in a block.
      */
     set(next) {
       targets = Array.isArray(next)

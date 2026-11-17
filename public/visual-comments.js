@@ -6,6 +6,9 @@
 // The limits of a quote; `COMMENT_LIMITS` of the visual format holds the same numbers for the service and the frame.
 export const QUOTE_CHARS = 600;
 export const CONTEXT_CHARS = 32;
+// The limits of a line of a patch; `PATCH_LIMITS` of the visual format holds the same numbers.
+const PATH_CHARS = 400;
+const LINE_NUMBER = 1_000_000_000;
 const MAX_BLOCKS = 10_000;
 const PENDING = 'pending';
 const LEAD_TITLE = 'Introduction';
@@ -39,14 +42,30 @@ export function selectionOf(message, sections) {
   }
   if (target.block !== null && !(Number.isInteger(target.block) && target.block >= 0 && target.block < MAX_BLOCKS))
     return undefined;
+  let line = null;
+  if (target.line !== undefined && target.line !== null) {
+    const { path, side, number } = target.line;
+    if (
+      quote !== null ||
+      target.block === null ||
+      !text(path, PATH_CHARS, true) ||
+      (side !== 'old' && side !== 'new') ||
+      !(Number.isInteger(number) && number >= 1 && number <= LINE_NUMBER)
+    )
+      return undefined;
+    line = { path, side, number };
+  }
   const sides = ['left', 'top', 'right', 'bottom'];
   if (typeof rect !== 'object' || rect === null || !sides.every((side) => Number.isFinite(rect[side])))
     return undefined;
   return {
-    target: { sectionId: section.id, sectionRev: section.rev, block: target.block, quote },
+    target: { sectionId: section.id, sectionRev: section.rev, block: target.block, quote, ...(line ? { line } : {}) },
     rect: Object.fromEntries(sides.map((side) => [side, rect[side]])),
   };
 }
+
+/** A line of a patch as the user reads it: `src/a.js:12`, or `src/a.js:12 (old)` for a line that was removed. */
+export const lineLabel = (line) => `${line.path}:${line.number}${line.side === 'old' ? ' (old)' : ''}`;
 
 /**
  * @param {object} options
@@ -123,12 +142,13 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
       comment.status === 'draft' ? 'draft' : comment.answeredIn === null ? 'sent' : 'answered';
     const marks = data.shown.comments
       .filter((comment) => comment.sectionId !== null && comment.id !== editing)
-      .map(({ id, sectionId, sectionRev, block, quote, ...comment }) => ({
+      .map(({ id, sectionId, sectionRev, block, quote, line, ...comment }) => ({
         id,
         sectionId,
         sectionRev,
         block,
         quote,
+        ...(line ? { line } : {}),
         state: state(comment),
       }));
     const pending = target();
@@ -149,7 +169,14 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
     const ids = inWork();
     const targets = (data?.shown.comments ?? [])
       .filter((comment) => ids.has(comment.id))
-      .map(({ id, sectionId, sectionRev, block, quote }) => ({ id, sectionId, sectionRev, block, quote }));
+      .map(({ id, sectionId, sectionRev, block, quote, line }) => ({
+        id,
+        sectionId,
+        sectionRev,
+        block,
+        quote,
+        ...(line ? { line } : {}),
+      }));
     const signature = JSON.stringify(targets);
     if (!always && signature === workingSent) return;
     workingSent = signature;
@@ -160,6 +187,7 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
     if (comment.sectionId === null) return 'Whole visual';
     const title = titleOf(comment.sectionId);
     if (comment.block === null) return `Section “${title}”`;
+    if (comment.line) return `${title}, ${lineLabel(comment.line)}`;
     return comment.quote ? title : `${title}, block ${comment.block + 1}`;
   }
 
@@ -167,7 +195,10 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
     const current = target();
     const options = [];
     if (base?.block !== null && base?.block !== undefined)
-      options.push(['narrow', base.quote ? 'Selected text' : `Block ${base.block + 1}`]);
+      options.push([
+        'narrow',
+        base.line ? `Line ${lineLabel(base.line)}` : base.quote ? 'Selected text' : `Block ${base.block + 1}`,
+      ]);
     const sectionId = base?.sectionId ?? reading;
     if (sectionId && sectionOf(sectionId)) options.push(['section', `Section “${titleOf(sectionId)}”`]);
     options.push(['visual', 'Whole visual']);
@@ -330,7 +361,13 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
     base =
       comment.sectionId === null
         ? null
-        : { sectionId: comment.sectionId, sectionRev: comment.sectionRev, block: comment.block, quote: comment.quote };
+        : {
+            sectionId: comment.sectionId,
+            sectionRev: comment.sectionRev,
+            block: comment.block,
+            quote: comment.quote,
+            ...(comment.line ? { line: comment.line } : {}),
+          };
     scope = comment.sectionId === null ? 'visual' : comment.block === null ? 'section' : 'narrow';
     showError('');
     renderComposer();
@@ -382,6 +419,7 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
               ...(current ? { sectionRev: current.sectionRev } : {}),
               block: current?.block ?? null,
               quote: current?.quote ?? null,
+              ...(current?.line ? { line: current.line } : {}),
               text,
             }),
           });

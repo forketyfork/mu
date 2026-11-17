@@ -25,6 +25,29 @@ export function unseen(text, lines = false) {
   return found && `U+${found[0].codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`;
 }
 
+/**
+ * A text cut into what a reader sees and the characters that a reader does not see, each of these as its code point
+ * (`U+202E`). Code under review can hold such characters on purpose, so a patch shows them instead of refusing them:
+ * drawn as a badge, a direction override no longer turns the text around, and a quote of it says what was there. A
+ * tab is seen, and so is the glue of an emoji, as for `unseen`.
+ * @param {string} text
+ * @returns {{ text: string, unseen: boolean }[]}
+ */
+export function visibleParts(text) {
+  const glue = new Set([...text.matchAll(EMOJI_GLUE)].map((match) => match.index));
+  /** @type {{ text: string, unseen: boolean }[]} */
+  const parts = [];
+  let from = 0;
+  for (const match of text.matchAll(new RegExp(UNSEEN, 'gu'))) {
+    if (match[0] === '\t' || glue.has(match.index)) continue;
+    if (match.index > from) parts.push({ text: text.slice(from, match.index), unseen: false });
+    parts.push({ text: `U+${match[0].codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`, unseen: true });
+    from = match.index + match[0].length;
+  }
+  if (from < text.length) parts.push({ text: text.slice(from), unseen: false });
+  return parts;
+}
+
 /** Throws when an object of a block has a property that its format does not know. */
 export function onlyKeys(object, allowed, what) {
   const unknown = Object.keys(object).find((key) => !allowed.includes(key));

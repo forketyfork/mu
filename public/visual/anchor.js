@@ -80,3 +80,17 @@ export function locate(block, quote) {
   range.setEnd(...point(best.at + quote.text.length, true));
   return range;
 }
+
+/**
+ * The row of a patch block that a comment on a line names, or null. The values are compared with the attributes that
+ * the patch renderer set; no selector is built from them.
+ * @param {Element} block
+ * @param {{ path: string, side: 'old' | 'new', number: number }} line
+ * @returns {HTMLElement | null}
+ */
+export function lineRow(block, line) {
+  const rows = /** @type {NodeListOf<HTMLElement>} */ (block.querySelectorAll('.patch-line'));
+  return (
+    [...rows].find((row) => row.dataset.path === line.path && row.dataset[line.side] === String(line.number)) ?? null
+  );
+}

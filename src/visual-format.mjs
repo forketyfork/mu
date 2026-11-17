@@ -2,11 +2,13 @@
 // block with a registered info string is a rich block. These are pure text functions without Node or DOM APIs: the
 // service validates with them, and it serves this file to the visual frame, which renders with them, so the two
 // cannot disagree about where a section or a block ends. See "Visuals" in docs/architecture.md.
+import { parsePatch } from './visual-patch.mjs';
 import { parseScene } from './visual-scene.mjs';
 import { ID, isObject, onlyKeys, unseen } from './visual-spec.mjs';
 
+export { PATCH_LIMITS, parsePatch, patchLine } from './visual-patch.mjs';
 export { SCENE_LIMITS, parseScene, sceneMoments, sceneState, sceneVisible } from './visual-scene.mjs';
-export { unseen } from './visual-spec.mjs';
+export { unseen, visibleParts } from './visual-spec.mjs';
 
 export const LIMITS = Object.freeze({
   titleBytes: 160,
@@ -224,6 +226,11 @@ export const RICH_BLOCKS = {
       parseScene(block.text);
     },
   },
+  patch: {
+    validate(block) {
+      parsePatch(block.text);
+    },
+  },
 };
 
 // The languages a code block is highlighted in, by the name of their highlight.js grammar, and other names authors
@@ -263,7 +270,6 @@ const LANGUAGE_ALIASES = Object.freeze({
   kt: 'kotlin',
   md: 'markdown',
   mjs: 'javascript',
-  patch: 'diff',
   py: 'python',
   rb: 'ruby',
   rs: 'rust',

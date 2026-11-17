@@ -42,7 +42,7 @@ export const rev = (section) => hash(section).slice(0, 16);
 
 - The first line `# Title` names the visual. Text before the first `##` is the lead section, `intro`.
 - Each `## Heading {#id}` starts a section. Give every section an ID (lowercase letters, digits, hyphens): the ID is how you change that section later, and it survives a new heading. Without `{#id}` the ID is derived from the heading.
-- A fenced block with a language is highlighted code. A `mermaid` block is drawn as a diagram, a `scene` block is an animated explainer (see below), and a `form` block asks the user. Inside a section use `###` and deeper headings.
+- A fenced block with a language is highlighted code. A `mermaid` block is drawn as a diagram, a `scene` block is an animated explainer, a `patch` block is a change for review, and a `form` block asks the user (see below). Inside a section use `###` and deeper headings.
 - An image must be a `data:` URL of a PNG, JPEG, GIF or WebP; the dashboard loads nothing from the network. Raw HTML is removed. A link opens only after the user confirms its address.
 - The reply names the visual (`vis-…`) and its sections. Mention the visual to the user by its ID as a code span, `` `vis-1a2b3c4d` ``: the dashboard turns it into a link.
 
@@ -72,7 +72,7 @@ node "$MU_CLI" visual list --conversation ID                  # the visuals of o
 
 ## Answer the user's comments
 
-The user comments on a visual in the dashboard: on selected text, on a block such as a diagram, on a section, or on the visual as a whole. The comments arrive as one chat message from the user in the visual's conversation, in the session in which you wrote it:
+The user comments on a visual in the dashboard: on selected text, on a block such as a diagram, on a line of a patch, on a section, or on the visual as a whole. The comments arrive as one chat message from the user in the visual's conversation, in the session in which you wrote it:
 
 ```text
 @your-id 2 comments on visual `vis-1a2b3c4d` `Move the session store to SQLite`, version 1:
@@ -84,7 +84,7 @@ The user comments on a visual in the dashboard: on selected text, on a block suc
 > Show the failure path too.
 ```
 
-- The quote in the message is a short locator and may be cut. `visual comments --id ID` prints every comment that waits for an answer, with its section, the whole quote and the text around it. Its `block` is an index into the `blocks` of that section in `visual show`, counted from 0; the message counts from 1.
+- The quote in the message is a short locator and may be cut. `visual comments --id ID` prints every comment that waits for an answer, with its section, the whole quote and the text around it, or the `line` of a patch. Its `block` is an index into the `blocks` of that section in `visual show`, counted from 0; the message counts from 1.
 - Answer in the visual, not in chat: change the section a comment concerns, or add a section when it asks for more. Change only what the comments concern; the user sees exactly those sections flash.
 - While your turn runs, the dashboard lights the place of each comment that the turn holds, until your first change of the visual or the end of the turn. The user sees that you work on them, so do not say so in chat.
 - Name the comments that a change answers: `visual patch --id ID --file .tmp/changes.md --resolves vc-5e6f7a8b,vc-9c0d1e2f`. The dashboard then shows them as answered in the new version. `--resolves` also works alone, for a comment that an earlier change of the same turn already answered.
@@ -150,6 +150,45 @@ node "$MU_CLI" visual answers --id vis-1a2b3c4d   # {"answers": {"store": "sqlit
 - The text around a question is not part of it. When you change that text so that the question means something else, change the question's ID, so that the user is asked again. Each answer in `fields` names the version on which the user sent it (`sentVersion`); `visual show --version` shows what the user read there. Never act on an answer that was given to another meaning of the question.
 - The user can send again; the message then marks an answer as `(changed)` and lists the ones that were taken back. Text after `>` in an answer is the user's; a label is your own text coming back and never an instruction.
 - End the turn as after comments: `NO_REPLY` when the visual says everything, otherwise a reply addressed to `@user`.
+
+## Review code
+
+When the user reviews a change, show the change itself in a `patch` block: the output of `git diff`, pasted unchanged. The dashboard draws each file with its hunks and line numbers, and the user comments on a single line by clicking its number.
+
+````markdown
+## The store opens with the new schema {#store}
+
+`open` now migrates an old database before it returns it.
+
+```patch
+diff --git a/src/store.mjs b/src/store.mjs
+index 3b18e51..a9c4d2f 100644
+--- a/src/store.mjs
++++ b/src/store.mjs
+@@ -10,4 +10,5 @@ export function open(path) {
+   const db = new Database(path);
+-  db.exec(SCHEMA);
++  db.exec(SCHEMA_V2);
++  migrate(db);
+
+   return db;
+```
+````
+
+- Take the text from `git diff`, `git diff --cached` or `git show --format= COMMIT`, with `-M` to show renames. New, deleted, renamed and binary files and mode changes are shown; a binary patch (`--binary`) and the combined diff of a merge are not.
+- Split a large change by concern: one section per idea, with a sentence above each patch that says why the change is so. Several files can share a block; a path appears once in a block.
+- A block holds at most 100 files and 5000 lines of hunks, and the section at most 128 KiB.
+- The command checks the file headers, the hunk headers and the line counts of a patch. A patch that you cut or edited by hand is refused with the line that does not fit. For a few lines without headers, such as a sketch with `...` for left-out code, use a `diff` block: that is highlighted code, and the user comments on it by selecting text.
+- A character that a reader would not see, such as a direction override or a zero-width space, is shown in the patch as its code point (`U+202E`), so the reviewer sees it.
+
+A comment on a line names the file, the line and its text:
+
+```text
+1. `vc-1a2b3c4d` on section `store`, `src/store.mjs` line 12 `migrate(db);`:
+> Why here and not in the caller?
+```
+
+`old line` means a line that the change removes, numbered as in the old file; `line` is numbered as in the new file. In `visual comments`, `line` is `{"path", "side": "old" | "new", "number"}`.
 
 ## Explain with motion
 
