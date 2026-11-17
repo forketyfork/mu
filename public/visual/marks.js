@@ -115,12 +115,19 @@ export function createMarks({ document, window, container, limits, tell }) {
   // the document.
   let clickOffer = false;
   let offeredBy = null;
-  document.addEventListener('click', (event) => {
-    if (!clickOffer || event === offeredBy) return;
+  const endOffer = () => {
+    if (!clickOffer) return;
     clickOffer = false;
     told = null;
     report();
+  };
+  document.addEventListener('click', (event) => {
+    if (event !== offeredBy) endOffer();
   });
+  // The dashboard puts the button where the offer was made and is not told when the place moves, so a scroll or a new
+  // size of the frame ends the offer, as a click elsewhere does.
+  window.addEventListener('scroll', endOffer, { passive: true });
+  window.addEventListener('resize', endOffer);
 
   // A click on marked text names its comment; a click on a diagram or another drawn block offers a comment on it.
   container.addEventListener('click', (event) => {

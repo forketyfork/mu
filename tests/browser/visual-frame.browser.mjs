@@ -1604,6 +1604,29 @@ test('a patch is drawn as text with line numbers, and a click on a number commen
   assert.equal(under.hidden, false);
   assert.ok(Math.abs(under.left - line.left) <= 2, JSON.stringify({ under, line }));
   assert.ok(Math.abs(under.top - line.bottom) <= 2, JSON.stringify({ under, line }));
+  // The button is put where the line was; when the frame scrolls, the line moves away and the offer ends.
+  const moved = await inFrame(`(() => {
+    const before = scrollY;
+    scrollBy(0, before > 60 ? -60 : 60);
+    return scrollY - before;
+  })()`);
+  assert.notEqual(moved, 0, 'the frame scrolls');
+  await until('the offer to end with the scroll', () =>
+    evaluate(`document.getElementById('visual-comment-bubble').hidden`),
+  );
+  await inFrame(`scrollBy(0, ${-moved})`);
+  await until('the line in its place again', async () => {
+    const { bottom } = await inFrame(
+      `(() => ({ bottom: document.querySelector('.patch-line[data-path="src/store.mjs"][data-new="12"]').getBoundingClientRect().bottom }))()`,
+    );
+    return Math.abs(bottom - line.bottom) < 1;
+  });
+  const again = await numberAt('new', 12);
+  await mouse('mousePressed', again);
+  await mouse('mouseReleased', again);
+  await until('the offer on line 12 after the scroll', () =>
+    evaluate(`!document.getElementById('visual-comment-bubble').hidden`),
+  );
   // A press anywhere else takes the offer back, in the frame and outside it.
   const away = await inFrame(`(() => {
     const { right, top } = document.querySelector('.visual-section').getBoundingClientRect();
