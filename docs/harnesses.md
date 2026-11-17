@@ -105,6 +105,8 @@ An approved command can write the whole file system, except what the profile den
 
 Mu also passes `--ignore-rules`, so Codex's execpolicy rules (yours in `~/.codex/rules` and a repository's `.codex/rules`) do not apply to Mu agents. With a profile that has deny entries, a command that an allow rule matches skips the review but stays in the sandbox, so it could never get out, even when it must. This also drops any `forbidden` or `prompt` rule.
 
+An approved command is not unsandboxed: when the profile has deny entries, which Mu's always has, Codex runs the command under Seatbelt with the whole disk writable but with the same Mach-service rules. Those rules are a fixed allowlist in Codex that a profile cannot extend, and they leave out the LaunchServices and window-server lookups that Chrome needs at launch. A Codex agent therefore cannot run Chrome, with or without escalation, and asking for it only costs turns (checked with Codex 0.169 and Chrome 157). The same holds for any tool that starts a macOS application. Browser work, the browser check of `npm run test:browser` and commits that trigger it belong to Claude agents; the check fails with this explanation when Chrome dies at launch.
+
 To turn escalation off for every Codex agent, for example for untrusted input, add `"-c", "approval_policy=\"never\""` to `cliArgs.codex`. Codex then rejects every request to leave the sandbox.
 
 ## pi

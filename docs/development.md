@@ -21,6 +21,8 @@ One test starts a probe script with `python3`, so the tests need it on `PATH`.
 
 The tests can run inside a Codex agent's sandbox. There, the tests that start a Seatbelt sandbox and those that need Docker are skipped with the reason, because macOS cannot start a sandbox inside another and the sandbox cannot reach Docker.
 
+The browser check cannot run there: Chrome aborts at launch, because Codex allows a fixed set of system services and Chrome needs others, such as LaunchServices and the window server, and asking Codex to run the command outside the sandbox does not help ([why](harnesses.md#escalation-outside-the-sandbox)). The check fails and says so instead of being skipped, because a skip would pass the check that the pre-commit hook exists for. Run `npm run test:browser`, and commit changes that touch what it covers, from a Claude agent or your own shell.
+
 The `demo` adapter exercises routing and process handling without a model; see [The demo adapter](harnesses.md#the-demo-adapter). Runs with real models also depend on each CLI's account, configuration, permissions and version.
 
 ### The visual frame in a real browser

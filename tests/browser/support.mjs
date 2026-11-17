@@ -46,13 +46,17 @@ export class FakeChat extends EventEmitter {
   }
 }
 
-export async function cdp(port) {
+// `failure` returns the error to throw once the browser is known to be gone; polling a port nobody listens on would
+// end in a bare "fetch failed" after ten seconds.
+export async function cdp(port, failure = () => undefined) {
   let version;
   for (let attempt = 0; ; attempt += 1) {
     try {
       version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
       break;
     } catch (error) {
+      const gone = failure();
+      if (gone) throw gone;
       if (attempt > 100) throw error;
       await sleep(100);
     }
@@ -86,13 +90,35 @@ export async function cdp(port) {
   };
 }
 
-// Starts a headless browser with a throwaway profile, and returns the connection to it.
-export async function startBrowser(t) {
-  assert.ok(existsSync(CHROME), `No browser at ${CHROME}; set CHROME to the binary of Google Chrome or Chromium`);
+const STDERR_TAIL = 600;
+
+// A browser that exits before DevTools answers has crashed or been refused at launch. The usual refuser is the sandbox of
+// an agent: Chrome needs system services at start (LaunchServices, the window server), a Codex agent's Seatbelt profile
+// does not allow them, and Chrome aborts in _RegisterApplication. Asking Codex to run the command outside its sandbox
+// does not lift this, because Mu's profile has deny entries and the command stays under Seatbelt. A skip would pass the
+// check the pre-commit hook exists for, so the failure names the cause and what to do instead.
+function earlyExit(chrome, { code, signal, stderr, elapsed }) {
+  const how = signal ? `signal ${signal}` : `code ${code}`;
+  const output = stderr.trim();
+  return new Error(
+    [
+      `${chrome} exited (${how}) ${elapsed} ms after it started, before DevTools answered.`,
+      "A sandbox that blocks the system services Chrome needs at launch, such as a Codex agent's, is a likely cause.",
+      'Asking for escalation does not help: the command still runs under the sandbox. Run the browser check outside an',
+      'agent sandbox: from a Claude worker or from your own shell (see docs/development.md).',
+      output ? `Chrome's last output:\n${output.slice(-STDERR_TAIL)}` : "Chrome's output was empty.",
+    ].join(' '),
+  );
+}
+
+// Starts a headless browser with a throwaway profile, and returns the connection to it. `chrome` names the binary.
+export async function startBrowser(t, { chrome: binary = CHROME } = {}) {
+  assert.ok(existsSync(binary), `No browser at ${binary}; set CHROME to the binary of Google Chrome or Chromium`);
   const debugPort = await freePort();
   const profile = await mkdtemp(join(tmpdir(), 'mu-chrome-'));
+  const started = Date.now();
   const chrome = spawn(
-    CHROME,
+    binary,
     [
       '--headless=new',
       `--remote-debugging-port=${debugPort}`,
@@ -102,14 +128,27 @@ export async function startBrowser(t) {
       '--window-size=1500,1000',
       'about:blank',
     ],
-    { stdio: 'ignore' },
+    { stdio: ['ignore', 'ignore', 'pipe'] },
   );
+  let stderr = '';
+  chrome.stderr.on('data', (chunk) => {
+    stderr = (stderr + chunk).slice(-STDERR_TAIL);
+  });
+  /** @type {Error | undefined} */
+  let failure;
+  chrome.once('error', (error) => {
+    failure = new Error(`${binary} did not start: ${error.message}`);
+  });
+  // 'close' comes after the last of the output, 'exit' may not.
+  chrome.once('close', (code, signal) => {
+    failure ??= earlyExit(binary, { code, signal, stderr, elapsed: Date.now() - started });
+  });
   t.after(async () => {
     chrome.kill('SIGKILL');
     await sleep(300);
     await rm(profile, { recursive: true, force: true });
   });
-  const browser = await cdp(debugPort);
+  const browser = await cdp(debugPort, () => failure);
   t.after(() => browser.close());
   return browser;
 }
