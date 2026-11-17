@@ -701,6 +701,9 @@ function markConversationRead() {
   const advanced = advanceViewed(viewed, conversationId, latest, rememberedConversations(), state.lastMessageId);
   readThrough.set(conversationId, advanced[conversationId]);
   writtenPositions.set(conversationId, advanced[conversationId]);
+  // What the record forgot is forgotten here too, so that a room that returns from the archive is unread again and a
+  // later storage event does not put its old position back.
+  for (const map of [readThrough, writtenPositions]) for (const id of map.keys()) if (!(id in advanced)) map.delete(id);
   if (JSON.stringify(advanced) !== JSON.stringify(viewed)) localStorage.setItem(viewedKey, JSON.stringify(advanced));
 }
 

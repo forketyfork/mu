@@ -176,3 +176,21 @@ test('a record that another tab cleared is not put back from this tab', async (t
   ui.otherTab(KEY, null);
   assert.deepEqual(record(ui), { 'dm-lead': 3, 'room-a': 4 });
 });
+
+test('a room that returns from the archive is unread again, and no stale position is put back for it', async (t) => {
+  const initial = initialState();
+  const ui = await fixture(t, { initial, storage: { [KEY]: JSON.stringify({ 'dm-lead': 1 }) } });
+  ui.click('.rail-link[data-view="chat"]');
+  ui.click('[data-conversation="room-a"]');
+  await settle();
+  assert.deepEqual(record(ui), { 'dm-lead': 1, 'room-a': 2 });
+  const verified = structuredClone(initial);
+  verified.tasks[0].status = 'verified';
+  ui.update(verified);
+  ui.click('[data-conversation="dm-lead"]');
+  assert.deepEqual(record(ui), { 'dm-lead': 1 }, 'the archived room is forgotten');
+  ui.update(initial);
+  assert.equal(unreadOf(ui, 'Review changes'), '1', 'the returned room is unknown, so its messages are unread');
+  ui.otherTab(KEY, JSON.stringify({ 'dm-lead': 1 }));
+  assert.deepEqual(record(ui), { 'dm-lead': 1 }, 'the old position of the room is not restored');
+});
