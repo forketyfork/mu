@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { httpError as bad } from './http-error.mjs';
-import { checkForms, createVisualAnswers } from './visual-answers.mjs';
+import { checkConditions, checkForms, createVisualAnswers } from './visual-answers.mjs';
 import { createVisualComments } from './visual-comments.mjs';
 import { feedbackText } from './visual-feedback.mjs';
 import { LIMITS, SECTION_ID, checkPatches, parseDocument, unseen, validateSection } from './visual-format.mjs';
@@ -13,7 +13,14 @@ const parseData = (row) => JSON.parse(/** @type {string} */ (row.data));
 const bytes = (text) => Buffer.byteLength(text);
 export const sectionRev = (section) =>
   createHash('sha256')
-    .update(JSON.stringify([section.id, section.title, section.body]))
+    // A condition is part of the section; a section without one keeps the revision it had before conditions existed.
+    .update(
+      JSON.stringify(
+        section.when === undefined
+          ? [section.id, section.title, section.body]
+          : [section.id, section.title, section.body, section.when],
+      ),
+    )
     .digest('hex')
     .slice(0, 16);
 
@@ -94,9 +101,13 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
   const writeVersion = (id, version, sections) => {
     const insertSection = store.db.prepare('INSERT OR IGNORE INTO visual_sections (visual_id,rev,data) VALUES (?,?,?)');
     const entries = sections.map((section) => {
-      const { id: sectionId, title, body } = section;
+      const { id: sectionId, title, when, body } = section;
       const hash = sectionRev(section);
-      insertSection.run(id, hash, JSON.stringify({ id: sectionId, title, body }));
+      insertSection.run(
+        id,
+        hash,
+        JSON.stringify({ id: sectionId, title, ...(when === undefined ? {} : { when }), body }),
+      );
       return { id: sectionId, rev: hash };
     });
     store.db
@@ -116,7 +127,13 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
     const row = store.db.prepare('SELECT data FROM visual_sections WHERE visual_id=? AND rev=?').get(id, hash);
     return row ? parseData(row) : null;
   };
-  const comments = createVisualComments({ store, visuals: { get, save, readVersion, readSection }, sendAsUser });
+  const comments = createVisualComments({
+    store,
+    visuals: { get, save, readVersion, readSection },
+    sendAsUser,
+    // What the author knows of the sections that the answers hide: only the answers it has, never a draft.
+    hiddenFor: (visualId, version) => answers.hidden(visualId, version, 'sent'),
+  });
   const answers = createVisualAnswers({ store, visuals: { get, save, readVersion } });
   // The sections of `version` that differ from the version before it, by ID.
   const difference = (id, version) => {
@@ -165,6 +182,7 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
         `A visual holds at most ${LIMITS.documentBytes / 1024} KiB of text in all its sections; this one would hold ${Math.ceil(size / 1024)} KiB`,
       );
     checkForms(sections);
+    checkConditions(sections);
     try {
       checkPatches(sections);
     } catch (error) {
@@ -320,7 +338,12 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
     const document = input.source === undefined ? null : parse(input.source);
     const current = readVersion(id, visual.version);
     const sections = apply(
-      current.sections.map(({ id: sectionId, title, body }) => ({ id: sectionId, title, body })),
+      current.sections.map(({ id: sectionId, title, when, body }) => ({
+        id: sectionId,
+        title,
+        ...(when === undefined ? {} : { when }),
+        body,
+      })),
       input,
       document,
     );
@@ -404,6 +427,8 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
         // The comments on earlier versions that this version answers.
         answers: comments.answeredIn(id, version.number),
         forms: answers.view(id, version, caller),
+        // What the user's answers hide, drafts included, is the user's to see.
+        ...(caller === 'user' ? { hidden: answers.hidden(id, version, 'current') } : {}),
       },
       versions: versions(id).map((item) => ({ ...item, comments: counts.get(item.number) ?? 0 })),
     };
@@ -422,7 +447,9 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
     const reviewed = input.answers === undefined ? null : answers.compose(visual, version, input.answers);
     const drafts = comments.drafts(id, input.version);
     if (!reviewed && !drafts.length) throw bad(`Version ${input.version} has nothing to send`);
-    const { lines, sorted } = comments.items(visual, version, drafts);
+    // Answers sent with the comments are the author's once it reads the message.
+    const hidden = answers.hidden(id, version, reviewed ? 'current' : 'sent');
+    const { lines, sorted } = comments.items(visual, version, drafts, hidden);
     const sent = await comments.deliver({
       visual,
       drafts: sorted,

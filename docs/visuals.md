@@ -50,6 +50,8 @@ A visual can ask you questions: one of several options, several of them, a short
 - After sending you can change an answer and send again; the message then says which answers changed. **Clear** takes an answer back, and **Back to the suggestion** returns to what the author suggested.
 - You send what the list shows, so read it before you send. When a line of the list changed just before your click, nothing is sent: the line is marked **Changed just now**, and you click **Send answers** again after reading it.
 
+Some sections are there for one answer only: the author writes a part of the plan for each choice, and the document shows the part for your answer. It changes as you choose, and a section that appears flashes. A question in a hidden section is not asked: its answer is not sent, and when you send, the author loses an answer that you gave to it earlier. Your draft answer stays there for when the section comes back. A comment on a hidden section stays in the list, marked **(hidden by your answers)**, and you can still send it. The author learns which sections you see only from the answers that you send.
+
 Questions are answered on the newest version. An earlier version shows its questions with your answers and takes no change. An answer stays with its question: when the author changes other parts of the visual, or moves the question, your answer is still there; when the author changes the question itself, its help or the hint of an option included, it starts without an answer, and so does a question whose suggestion you kept when the author takes the suggestion away. The list of visuals shows for each visual how many questions wait for you.
 
 ## Review a code change

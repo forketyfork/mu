@@ -53,8 +53,8 @@ Usage: node src/cli.mjs COMMAND [options]
                   (the user's comments that wait for an answer, each with its section, block, and quoted text or patch line;
                    --all: the answered ones too)
   visual answers  --id ID [--version N]
-                  (the answers that the user sent to the questions of the visual's forms, by field ID, and the
-                   questions without an answer)
+                  (the answers that the user sent to the questions of the visual's forms, by field ID, the
+                   questions without an answer, and the sections that the sent answers hide)
   visual list     [--task-id ID] [--conversation ID]
   visual guide    (prints the visuals skill: when to write a visual, its format and how to revise it)
   inbox           [--id ID] [--wait SECONDS]
@@ -657,6 +657,7 @@ export async function main(
           sections: shown.sections.map((section) => ({
             id: section.id,
             title: section.title,
+            ...(section.when === undefined ? {} : { when: section.when }),
             bytes: Buffer.byteLength(section.body),
             blocks: parseBlocks(section.body).map((block) => block.type),
           })),

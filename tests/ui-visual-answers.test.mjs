@@ -407,3 +407,74 @@ test('a question whose sent answer was taken back says what the author still has
   assert.equal(ui.$('#visual-questions-send').hidden, false);
   assert.deepEqual(ui.answers.at(-1).fields, { notes: { state: 'unsent', own: false } });
 });
+
+test('a section that the user answers hide is not drawn, listed or answered, and a comment on it says so', async (t) => {
+  const plan = { ...section('plan', 'plan1', 'Postgres plan'), when: 'database=postgres' };
+  const comment = {
+    id: 'vc-00000001',
+    visualId: ID,
+    version: 2,
+    sectionId: 'plan',
+    sectionRev: 'plan1',
+    block: null,
+    quote: null,
+    line: null,
+    text: 'Why a server?',
+    status: 'draft',
+    createdAt: '2026-11-04T11:00:00Z',
+    updatedAt: '2026-11-04T11:00:00Z',
+    sentAt: null,
+    messageId: null,
+    answeredIn: null,
+  };
+  const latest = versionOf(record({ openQuestions: 1 }), 2, [...SECTIONS, plan], {
+    forms: [
+      {
+        sectionId: 'ask',
+        block: 1,
+        fields: [{ ...DATABASE, answer: { value: 'sqlite', source: 'default' }, unsent: true, sent: null }],
+      },
+      {
+        sectionId: 'plan',
+        block: 1,
+        fields: [{ ...NOTES, answer: { value: 'Draft words', source: 'user' }, unsent: true, sent: null }],
+      },
+    ],
+    comments: [comment],
+    hidden: ['plan'],
+  });
+  const ui = await answering(t, { versions: { latest } });
+  const sectionsOf = (message) => message.sections.map((item) => item.id);
+  const render = () => ui.posted.filter((message) => message.type === 'render').at(-1);
+  const outline = () =>
+    [...ui.window.document.querySelectorAll('.visual-outline-item')].map((item) => item.dataset.section);
+  // The frame never gets the text of a hidden section, nor the draft of its question.
+  assert.deepEqual(sectionsOf(render()), ['a', 'ask']);
+  assert.equal(JSON.stringify(ui.posted).includes('Text of plan'), false);
+  assert.deepEqual(outline(), ['a', 'ask']);
+  assert.deepEqual(ui.rows(), [
+    ['Which database? <img src=x onerror="window.injected = true">', 'Suggested', 'SQLite'],
+  ]);
+  assert.deepEqual(Object.keys(ui.answers.at(-1).fields), ['database']);
+  assert.equal(JSON.stringify(ui.answers).includes('Draft words'), false);
+  assert.equal(ui.$('#visual-questions-count').textContent, '1 of 1');
+  // A frame that reports an answer to the hidden question is not heard.
+  await ui.report('notes', 'Forged');
+  assert.deepEqual(ui.calls, []);
+  assert.equal(
+    ui.window.document.querySelector(`[data-comment="${comment.id}"] .visual-comment-where`).textContent,
+    'Section “Postgres plan” (hidden by your answers)',
+  );
+
+  // The answer that shows the section draws it, and marks it as new on the screen.
+  latest.shown.hidden = [];
+  await ui.report('database', 'postgres');
+  assert.deepEqual(sectionsOf(render()), ['a', 'ask', 'plan']);
+  assert.deepEqual(render().flash, ['plan']);
+  assert.deepEqual(outline(), ['a', 'ask', 'plan']);
+  assert.equal(ui.rows().length, 2);
+  assert.equal(
+    ui.window.document.querySelector(`[data-comment="${comment.id}"] .visual-comment-where`).textContent,
+    'Section “Postgres plan”',
+  );
+});

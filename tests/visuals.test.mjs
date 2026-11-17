@@ -15,6 +15,7 @@ import {
   parseDocument,
   validateSection,
 } from '../src/visual-format.mjs';
+import { checkConditions } from '../src/visual-answers.mjs';
 import { userHeaders } from './identity-fixture.mjs';
 import { team } from './visuals-fixture.mjs';
 
@@ -533,18 +534,24 @@ test('the CLI prints the visuals skill without a service, and the role files poi
 
 test('the examples of a visual in the skill and in the guide are visuals that the service takes', async () => {
   const types = new Set();
+  let conditions = 0;
   for (const path of ['skills/visuals/SKILL.md', 'docs/visuals.md']) {
     const text = await readFile(join(ROOT, path), 'utf8');
     const examples = [...text.matchAll(/^````markdown\n([\s\S]*?)\n````$/gm)].map(([, example]) => example);
     assert.ok(examples.length, path);
-    for (const example of examples)
-      for (const section of parseDocument(example).sections) {
+    for (const example of examples) {
+      const { sections } = parseDocument(example);
+      for (const section of sections) {
         assert.doesNotThrow(() => validateSection(section), path);
         for (const block of parseBlocks(section.body)) types.add(block.type);
       }
+      assert.doesNotThrow(() => checkConditions(sections), path);
+      conditions += sections.filter((section) => section.when).length;
+    }
   }
   // Every type of block has an example, so a change of its format that the examples do not follow fails here.
   assert.deepEqual([...types].sort(), ['markdown', ...Object.keys(RICH_BLOCKS)].sort());
+  assert.ok(conditions, 'an example shows a section for an answer');
 });
 
 test('the CLI writes, changes and reads back a visual as Markdown', async (t) => {

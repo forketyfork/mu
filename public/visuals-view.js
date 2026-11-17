@@ -18,6 +18,13 @@ export function themeTokens(root) {
   return tokens;
 }
 
+/**
+ * The sections that the reader sees: the service names those that the user's answers hide, and the frame never gets
+ * their text.
+ */
+export const visibleSections = (shown) =>
+  shown.sections.filter((section) => !(shown.hidden ?? []).includes(section.id));
+
 /** The sections of `next` to mark as just changed, given the sections shown before it. */
 export function changedSections(previous, next) {
   const before = new Map(previous.map((section) => [section.id, section.rev]));
@@ -229,7 +236,7 @@ export function createVisualsView({
 
   function renderOutline() {
     const shown = open.data?.shown;
-    const items = (shown?.sections ?? []).map((section) => {
+    const items = (shown ? visibleSections(shown) : []).map((section) => {
       const button = node('button', 'visual-outline-item');
       button.type = 'button';
       button.dataset.section = section.id;
@@ -269,7 +276,7 @@ export function createVisualsView({
     if (!open?.ready || !open.data) return;
     post({
       type: 'render',
-      sections: open.data.shown.sections,
+      sections: visibleSections(open.data.shown),
       flash,
       top,
       tokens: themeTokens(document.documentElement),
@@ -296,9 +303,17 @@ export function createVisualsView({
       // A change that arrives is marked in place: a new version for a user who follows the newest one, or new content
       // of the version on screen. A version the user switched to starts at its top.
       const live = flash && previous && (target.pinned === null || previous.shown.number === data.shown.number);
+      // A section that an answer of the user shows is new on the screen.
+      const same = previous?.shown.number === data.shown.number;
+      const seen = new Set(same ? visibleSections(previous.shown).map((section) => section.id) : []);
+      const appeared = same
+        ? visibleSections(data.shown)
+            .map((section) => section.id)
+            .filter((id) => !seen.has(id) && previous.shown.sections.some((section) => section.id === id))
+        : [];
       sendContent(
-        live ? changedSections(previous.shown.sections, data.shown.sections) : [],
-        !live && previous?.shown.number !== data.shown.number,
+        [...new Set([...(live ? changedSections(previous.shown.sections, data.shown.sections) : []), ...appeared])],
+        !live && !same,
       );
       answers.show(data);
     } catch (error) {

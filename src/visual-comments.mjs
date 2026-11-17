@@ -25,10 +25,12 @@ const parseData = (row) => JSON.parse(/** @type {string} */ (row.data));
  * @param {import('./store.mjs').Store} options.store
  * @param {{ get: (id: string) => any, save: (visual: any) => any, readVersion: (id: string, number: number) => any, readSection: (id: string, rev: string) => any }} options.visuals
  * @param {(text: string, conversationId: string) => Promise<{ id: number }>} options.sendAsUser
+ * @param {(visualId: string, version: any) => string[]} options.hiddenFor The sections of a version that the
+ *   answers the author has hide.
  *   Posts a chat message as the user, with the checks and the delivery notice of a message typed in the chat. An
  *   error that carries `saved` is about the notice only: that message is in the chat.
  */
-export function createVisualComments({ store, visuals, sendAsUser }) {
+export function createVisualComments({ store, visuals, sendAsUser, hiddenFor }) {
   store.db.exec(`
     CREATE TABLE IF NOT EXISTS visual_comments (id TEXT PRIMARY KEY, visual_id TEXT NOT NULL, version INTEGER NOT NULL, data TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS visual_comments_version ON visual_comments (visual_id, version);`);
@@ -218,8 +220,15 @@ export function createVisualComments({ store, visuals, sendAsUser }) {
     return { removed: comment.id };
   }
 
-  /** The comments in the order of the document, and the numbered item that states each in the chat message. */
-  function items(visual, version, comments) {
+  /**
+   * The comments in the order of the document, and the numbered item that states each in the chat message. `hidden`
+   * are the sections that the answers hide which the author has once it reads the message.
+   * @param {any} visual
+   * @param {any} version
+   * @param {any[]} comments
+   * @param {string[]} hidden
+   */
+  function items(visual, version, comments, hidden) {
     const order = new Map(version.sections.map((section, index) => [section.id, index]));
     // The visual as a whole first, then in the order of the document; a section that the version lost comes last.
     const position = (comment) => [
@@ -240,7 +249,9 @@ export function createVisualComments({ store, visuals, sendAsUser }) {
         : now.rev === comment.sectionRev
           ? ''
           : ', which you changed after the comment was written';
-      const section = `on section \`${comment.sectionId}\`${since}`;
+      // The user wrote the comment while the section was shown. A draft answer that hides it now is the user's.
+      const hides = now && hidden.includes(comment.sectionId) ? ' (hidden by the answers you have)' : '';
+      const section = `on section \`${comment.sectionId}\`${hides}${since}`;
       if (comment.block === null) return `${section}${since ? '' : ' as a whole'}`;
       if (comment.quote) return `${section}, at ${locator(comment.quote.text, MESSAGE_QUOTE_CHARS)}`;
       const { body } = visuals.readSection(visual.id, comment.sectionRev);
@@ -349,7 +360,7 @@ export function createVisualComments({ store, visuals, sendAsUser }) {
       throw bad(`Every comment of one message belongs to version ${input.version}`);
     if (!chosen.length) throw bad(`Version ${input.version} has no draft to send`);
     const version = visuals.readVersion(visualId, input.version);
-    const { lines, sorted } = items(visual, version, chosen);
+    const { lines, sorted } = items(visual, version, chosen, hiddenFor(visualId, version));
     return deliver({
       visual,
       drafts: sorted,

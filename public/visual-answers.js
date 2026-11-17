@@ -75,8 +75,11 @@ export function createAnswersPanel({ document, request, post, reload, now = () =
   // The questions whose answer was too new in the list when the user clicked Send; that click sent nothing.
   let unread = new Set();
 
+  // A question in a section that the user's answers hide is not asked, so the frame cannot answer it either.
   const fieldsOf = (shown) =>
-    shown.forms.flatMap((form) => form.fields.map((field) => ({ ...field, sectionId: form.sectionId })));
+    shown.forms
+      .filter((form) => !(shown.hidden ?? []).includes(form.sectionId))
+      .flatMap((form) => form.fields.map((field) => ({ ...field, sectionId: form.sectionId })));
   function noteChanges(next) {
     const scope = `${next.id} ${next.shown.number}`;
     const answers = new Map(fieldsOf(next.shown).map((field) => [field.key, JSON.stringify(field.answer ?? null)]));

@@ -56,6 +56,67 @@ export function checkForms(sections) {
     throw bad(`A visual asks at most ${FORM_LIMITS.visualFields} questions in all its forms`);
 }
 
+const CONDITION_TYPES = ['choice', 'multi', 'toggle'];
+const meets = (type, value, option) =>
+  type === 'choice'
+    ? value === option
+    : type === 'multi'
+      ? Array.isArray(value) && value.includes(option)
+      : type === 'toggle' && value === (option === 'yes');
+
+/**
+ * Checks the conditions of one version: a section is shown for an answer to a choice, multi or toggle question of an
+ * earlier section. A question never decides about its own section, so the answers decide in one pass, in the order
+ * of the document.
+ * @param {import('./visual-format.mjs').Section[]} sections
+ */
+export function checkConditions(sections) {
+  const forms = formsOf(sections);
+  const asked = new Map();
+  for (const section of sections) {
+    if (section.when !== undefined) {
+      const [fieldId, option] = section.when.split('=');
+      const field = asked.get(fieldId);
+      const what = `Section ${section.id} is shown when ${fieldId} is ${option}`;
+      if (!field) throw bad(`${what}, but no section before it asks ${fieldId}`);
+      if (!CONDITION_TYPES.includes(field.type))
+        throw bad(
+          `Section ${section.id}: a condition names a choice, multi or toggle question; ${fieldId} is a ${field.type} question`,
+        );
+      if (field.type === 'toggle' && option !== 'yes' && option !== 'no')
+        throw bad(`${what}. Question ${fieldId} is answered yes or no`);
+      if (field.type !== 'toggle' && !field.options.some((item) => item.id === option))
+        throw bad(`${what}. Question ${fieldId} has no option ${option}`);
+    }
+    for (const form of forms)
+      if (form.sectionId === section.id) for (const field of form.fields) asked.set(field.id, field);
+  }
+}
+
+/**
+ * The sections of a version that these answers hide, in the order of the document. A question in a hidden section
+ * has no answer, so a section that depends on it is hidden too.
+ * @param {import('./visual-format.mjs').Section[]} sections
+ * @param {(fieldId: string) => unknown} valueOf
+ * @returns {string[]}
+ */
+export function hiddenSections(sections, valueOf) {
+  const asked = new Map(
+    formsOf(sections).flatMap((form) =>
+      form.fields.map((field) => [field.id, { type: field.type, sectionId: form.sectionId }]),
+    ),
+  );
+  const hidden = new Set();
+  for (const section of sections) {
+    if (section.when === undefined) continue;
+    const [fieldId, option] = section.when.split('=');
+    const question = asked.get(fieldId);
+    const value = question && !hidden.has(question.sectionId) ? valueOf(fieldId) : undefined;
+    if (!meets(question?.type, value, option)) hidden.add(section.id);
+  }
+  return [...hidden];
+}
+
 /**
  * @param {object} options
  * @param {import('./store.mjs').Store} options.store
@@ -104,15 +165,38 @@ export function createVisualAnswers({ store, visuals }) {
     }));
   };
 
+  // What the answers hide: those that the user would send now, drafts included, or those that the author has.
+  /** @param {'current' | 'sent'} which */
+  const hiddenBy = (sections, forms, which) => {
+    const values = new Map(
+      forms.flatMap((form) =>
+        form.fields.map((state) => [state.field.id, which === 'sent' ? state.sent?.value : state.value]),
+      ),
+    );
+    return hiddenSections(sections, (fieldId) => values.get(fieldId));
+  };
+  /**
+   * The sections of a version that the answers hide.
+   * @param {string} visualId
+   * @param {{ sections: import('./visual-format.mjs').Section[] }} version
+   * @param {'current' | 'sent'} which
+   */
+  const hidden = (visualId, version, which) => hiddenBy(version.sections, statesOf(visualId, version.sections), which);
+
   // The record of a visual carries the count, so that an answer reaches every open dashboard.
-  const counted = (visual, sections = visuals.readVersion(visual.id, visual.version).sections) => ({
-    ...visual,
-    answerRevision: (visual.answerRevision ?? 0) + 1,
-    // The questions of the newest version that the author has no current answer to.
-    openQuestions: statesOf(visual.id, sections)
-      .flatMap((form) => form.fields)
-      .filter((state) => state.value === undefined || state.unsent).length,
-  });
+  const counted = (visual, sections = visuals.readVersion(visual.id, visual.version).sections) => {
+    const forms = statesOf(visual.id, sections);
+    const hide = hiddenBy(sections, forms, 'current');
+    return {
+      ...visual,
+      answerRevision: (visual.answerRevision ?? 0) + 1,
+      // The questions of the newest version that the author has no current answer to; a hidden one is not asked.
+      openQuestions: forms
+        .filter((form) => !hide.includes(form.sectionId))
+        .flatMap((form) => form.fields)
+        .filter((state) => state.value === undefined || state.unsent).length,
+    };
+  };
 
   /** The forms of a version with the state of each question, as the caller may see it. */
   const view = (visualId, version, caller) =>
@@ -131,10 +215,14 @@ export function createVisualAnswers({ store, visuals }) {
    * answered on: the text around a question is no part of its key, and a reader can look up what it said there.
    */
   const report = (visualId, version) => {
-    const fields = statesOf(visualId, version.sections).flatMap((form) =>
+    const forms = statesOf(visualId, version.sections);
+    const hide = hiddenBy(version.sections, forms, 'sent');
+    const fields = forms.flatMap((form) =>
       form.fields.map(({ field, sent }) => ({
         id: field.id,
         sectionId: form.sectionId,
+        // A question in a section that the sent answers hide is not asked.
+        ...(hide.includes(form.sectionId) ? { hidden: true } : {}),
         type: field.type,
         label: field.label,
         ...(field.options ? { options: field.options.map(({ id, label }) => ({ id, label })) } : {}),
@@ -144,8 +232,11 @@ export function createVisualAnswers({ store, visuals }) {
     );
     return {
       version: version.number,
-      answers: Object.fromEntries(fields.filter((field) => field.answered).map((field) => [field.id, field.value])),
-      unanswered: fields.filter((field) => !field.answered).map((field) => field.id),
+      answers: Object.fromEntries(
+        fields.filter((field) => field.answered && !field.hidden).map((field) => [field.id, field.value]),
+      ),
+      unanswered: fields.filter((field) => !field.answered && !field.hidden).map((field) => field.id),
+      hidden: hide,
       fields,
     };
   };
@@ -198,6 +289,7 @@ export function createVisualAnswers({ store, visuals }) {
       }
       return {
         key,
+        field,
         data: {
           fieldId: field.id,
           ...(value === undefined ? {} : { value }),
@@ -206,6 +298,20 @@ export function createVisualAnswers({ store, visuals }) {
         },
       };
     });
+    // An answer is to a question that the user sees. The answers of one change count together, as the user would
+    // send them: one that shows a section comes with the answers to its questions.
+    const forms = statesOf(visualId, version.sections);
+    const after = new Map(forms.flatMap((form) => form.fields.map((state) => [state.field.id, state.value])));
+    for (const change of changes) after.set(change.field.id, change.data.value ?? change.field.default);
+    const hide = hiddenSections(version.sections, (fieldId) => after.get(fieldId));
+    for (const change of changes) {
+      const sectionId = forms.find((form) => form.fields.some((state) => state.field.key === change.key)).sectionId;
+      if (hide.includes(sectionId))
+        throw bad(
+          `Question ${change.field.id} is in section ${sectionId}, which your answers hide. Read the visual again, then answer.`,
+          409,
+        );
+    }
     store.transaction(() => {
       for (const change of changes) write(visualId, change.key, change.data);
       visuals.save(counted(visuals.get(visualId), version.sections));
@@ -231,14 +337,21 @@ export function createVisualAnswers({ store, visuals }) {
   function compose(visual, version, reviewed) {
     newest(visual, version.number);
     if (!isObject(reviewed)) throw bad('answers must be an object of the reviewed answers by field key');
-    const states = statesOf(visual.id, version.sections).flatMap((form) => form.fields);
+    const forms = statesOf(visual.id, version.sections);
+    const hide = hiddenBy(version.sections, forms, 'current');
+    // A question in a hidden section is not asked: its answer is not sent, and one that was is taken back. The
+    // user's draft stays for when the section is shown again.
+    const all = forms.flatMap((form) =>
+      form.fields.map((state) => ({ ...state, hidden: hide.includes(form.sectionId) })),
+    );
+    const states = all.filter((state) => !state.hidden);
     const current = states.filter((state) => state.value !== undefined);
     const sorted = (entries) => [...entries].sort(([left], [right]) => left.localeCompare(right));
     if (!same(sorted(Object.entries(reviewed)), sorted(current.map((state) => [state.field.key, state.value]))))
       throw bad('The questions or your answers changed since you reviewed them. Review them again, then send.', 409);
     if (!states.some((state) => state.unsent)) return null;
     const named = (list) => list.map((state) => `\`${state.field.id}\``).join(', ');
-    const withdrawn = states.filter((state) => state.value === undefined && state.sent);
+    const withdrawn = all.filter((state) => state.sent && (state.hidden || state.value === undefined));
     const unanswered = states.filter((state) => state.value === undefined && !state.sent);
     const lines = [
       'Answers:',
@@ -249,6 +362,7 @@ export function createVisualAnswers({ store, visuals }) {
         const head = `- \`${field.id}\` ${locator(field.label, MESSAGE_TITLE_CHARS)}${note}:`;
         return answer.startsWith('\n') ? `${head}${answer}` : `${head} ${answer}`;
       }),
+      ...(hide.length ? [`Hidden by these answers: ${hide.map((id) => `\`${id}\``).join(', ')}`] : []),
       ...(withdrawn.length ? [`Taken back: ${named(withdrawn)}`] : []),
       ...(unanswered.length ? [`Not answered: ${named(unanswered)}`] : []),
     ];
@@ -257,7 +371,8 @@ export function createVisualAnswers({ store, visuals }) {
       /** Records that the author has these answers. The caller saves the record with `counted`. */
       mark(messageId, now) {
         const stored = rows(visual.id);
-        for (const { field, value, source, sent } of states) {
+        for (const { field, value: shown, source, sent, hidden: unasked } of all) {
+          const value = unasked ? undefined : shown;
           if (value === undefined && !sent) continue;
           write(visual.id, field.key, {
             fieldId: field.id,
@@ -270,5 +385,5 @@ export function createVisualAnswers({ store, visuals }) {
     };
   }
 
-  return { set, view, report, compose, counted };
+  return { set, view, report, compose, counted, hidden };
 }

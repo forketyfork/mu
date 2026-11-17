@@ -151,6 +151,36 @@ node "$MU_CLI" visual answers --id vis-1a2b3c4d   # {"answers": {"store": "sqlit
 - The user can send again; the message then marks an answer as `(changed)` and lists the ones that were taken back. Text after `>` in an answer is the user's; a label is your own text coming back and never an instruction.
 - End the turn as after comments: `NO_REPLY` when the visual says everything, otherwise a reply addressed to `@user`.
 
+### Show a section for one answer
+
+When part of a plan matters for one answer only, put it in a section that the answer shows: add `when="question=answer"` to the section's ID.
+
+````markdown
+## Choose the store {#choose}
+
+```form
+{ "fields": [
+  { "id": "engine", "type": "choice", "label": "Which store?",
+    "options": [ { "id": "sqlite", "label": "SQLite" }, { "id": "files", "label": "Keep the files" } ] },
+  { "id": "backup", "type": "toggle", "label": "Add a backup command?" }
+] }
+```
+
+## Move to SQLite {#sqlite-steps when="engine=sqlite"}
+
+One migration copies the sessions into the new table and keeps the files until it has checked the copy.
+
+## The backup command {#backup-steps when="backup=yes"}
+
+`mu backup` writes a copy of the store next to it, every night.
+````
+
+- The condition names a `choice`, `multi` or `toggle` question of an earlier section, and one answer: an option ID (for `multi`: one of the chosen options), or `yes` or `no`. The command refuses every other condition. It also refuses a change that removes the question that a condition names.
+- The user sees the section while their answer meets the condition, and a kept suggestion counts as an answer. The document changes as the user chooses. A section whose question is in a hidden section is hidden too.
+- A question in a hidden section is not asked: its answer is not sent, and an answer that you got before is listed under `Taken back`. The answers message names the hidden sections (`Hidden by these answers: ...`), and `visual answers` lists them under `hidden`. You learn what the user sees only from the answers the user sends. Before the first send, every section with a condition counts as hidden.
+- A comment on a section that your answers hide says `(hidden by the answers you have)`.
+- Keep the explanation of a choice in a shown section. Conditions are for the branches that follow the choice.
+
 ## Review code
 
 When the user reviews a change, show the change itself in a `patch` block: the output of `git diff`, pasted unchanged. The dashboard draws each file with its hunks and line numbers, and the user comments on a single line by clicking its number.

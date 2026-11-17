@@ -1,8 +1,17 @@
 import test from 'node:test';
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { main } from '../src/cli.mjs';
 import { mentions } from '../src/store.mjs';
-import { FORM_LIMITS, answerOf, parseBlocks, parseForm, unseen } from '../src/visual-format.mjs';
+import {
+  FORM_LIMITS,
+  answerOf,
+  parseBlocks,
+  parseDocument,
+  parseForm,
+  sectionSource,
+  unseen,
+} from '../src/visual-format.mjs';
 import { team } from './visuals-fixture.mjs';
 
 const fence = (fields) => `\`\`\`form\n${JSON.stringify({ fields }, null, 2)}\n\`\`\``;
@@ -63,10 +72,17 @@ async function asked(t, source = PLAN) {
     });
   };
   // What the dashboard sends for review: the answer of every question that has one.
-  const reviewed = async () =>
-    Object.fromEntries(
-      (await fields()).filter((field) => field.answer).map((field) => [field.key, field.answer.value]),
+  // A question in a section that the user's answers hide is not in the list.
+  const reviewed = async () => {
+    const { forms, hidden } = await shown();
+    return Object.fromEntries(
+      forms
+        .filter((form) => !hidden.includes(form.sectionId))
+        .flatMap((form) => form.fields)
+        .filter((field) => field.answer)
+        .map((field) => [field.key, field.answer.value]),
     );
+  };
   const send = async (version = 1) => context.user('POST', `${path}/feedback`, { version, answers: await reviewed() });
   const messages = async () => (await context.user('GET', '/api/conversations/work/messages?limit=50')).body.messages;
   // The chat message of a send; a notice about its delivery may follow it.
@@ -308,6 +324,7 @@ test("an answer is the user's until it is sent: only the user answers, and the a
     version: 1,
     answers: {},
     unanswered: ['database', 'extras', 'notes', 'workers', 'dry-run'],
+    hidden: [],
     fields: (await read()).fields,
   });
   assert.equal((await outsider('GET', `${path}/answers`)).status, 403);
@@ -728,4 +745,275 @@ test('answers and draft comments of a version go out together, in one message an
   assert.match(await sentText(only), /^@worker A comment on visual/);
   assert.equal((await user('POST', `${path}/feedback`, { version: 1 })).status, 400);
   assert.equal((await user('POST', `${path}/feedback/x`, { version: 1 })).status, 405);
+});
+
+const STORE = {
+  id: 'store',
+  type: 'choice',
+  label: 'Where do the data live?',
+  options: [
+    { id: 'sqlite', label: 'SQLite' },
+    { id: 'postgres', label: 'PostgreSQL' },
+  ],
+};
+const FILE = { id: 'file', type: 'text', label: 'Which file?' };
+const REPLICAS = { id: 'replicas', type: 'toggle', label: 'Run replicas?' };
+// Sections that the answers show: one per database, one that a question of a hidden section shows, and one that an
+// option of a multi shows.
+const CONDITIONAL = `# Storage plan
+
+Why we move.
+
+## Storage {#storage}
+
+${fence([STORE, EXTRAS])}
+
+## SQLite plan {#plan-sqlite when="store=sqlite"}
+
+One file next to the data.
+
+${fence([FILE])}
+
+## PostgreSQL plan {#plan-pg when="store=postgres"}
+
+A server of its own.
+
+${fence([REPLICAS])}
+
+## Replicas {#replicas when="replicas=yes"}
+
+Two replicas.
+
+## Backups {#backups when="extras=backup"}
+
+Every night.
+`;
+
+test('a heading can show its section only for an answer, and the condition is part of the section', () => {
+  const { sections } = parseDocument(CONDITIONAL);
+  assert.deepEqual(
+    sections.map((section) => [section.id, section.title, section.when ?? null]),
+    [
+      ['intro', '', null],
+      ['storage', 'Storage', null],
+      ['plan-sqlite', 'SQLite plan', 'store=sqlite'],
+      ['plan-pg', 'PostgreSQL plan', 'store=postgres'],
+      ['replicas', 'Replicas', 'replicas=yes'],
+      ['backups', 'Backups', 'extras=backup'],
+    ],
+  );
+  assert.equal(sectionSource(sections[2]).split('\n')[0], '## SQLite plan {#plan-sqlite when="store=sqlite"}');
+  assert.deepEqual(parseDocument(sectionSource(sections[2])).sections, [{ ...sections[2] }]);
+  // A `{#` in the condition starts no ID.
+  assert.deepEqual(
+    parseDocument('## T when="{#a"}').sections.map((section) => [section.title, section.when]),
+    [['T when="{#a"}', undefined]],
+  );
+  // Without an ID the words are the title.
+  assert.deepEqual(
+    parseDocument('## Plan when="store=sqlite"').sections.map((section) => [section.id, section.title, section.when]),
+    [['plan-when-store-sqlite', 'Plan when="store=sqlite"', undefined]],
+  );
+  for (const condition of ['store', 'store=', '=sqlite', 'Store=sqlite', 'store=sqlite=x', 'store = sqlite', ''])
+    assert.throws(
+      () => parseDocument(`intro\n\n## Plan {#plan when="${condition}"}`),
+      /^Error: Line 3: the condition of section plan is when="field=option", with the ID of a question and of one of its options/,
+      condition,
+    );
+  // A long heading is read in one pass.
+  const started = performance.now();
+  for (const heading of [
+    `## a${' '.repeat(200_000)}x when="a=b"}`,
+    `## {#a${' when="'.repeat(40_000)}"}`,
+    `## a ${'{#a '.repeat(40_000)}when="a=b"}`,
+  ])
+    try {
+      parseDocument(heading);
+    } catch {
+      // Refused or read: either way, quickly.
+    }
+  assert.ok(performance.now() - started < 300);
+});
+
+test('a condition names a choice, multi or toggle question of an earlier section, and one of its answers', async (t) => {
+  const { worker, user } = await team(t);
+  const refused = async (source, pattern) => {
+    const response = await worker('POST', '/api/visuals', { source: `# Plan\n\n${source}` });
+    assert.equal(response.status, 400, source);
+    assert.match(response.body.error, pattern);
+  };
+  const storage = `## Storage {#storage}\n\n${fence([STORE, FILE, REPLICAS])}`;
+  await refused(
+    `${storage}\n\n## Plan {#plan when="nothing=x"}`,
+    /Section plan is shown when nothing is x, but no section before it asks nothing/,
+  );
+  await refused(
+    `## Plan {#plan when="store=sqlite"}\n\n${fence([STORE])}`,
+    /Section plan is shown when store is sqlite, but no section before it asks store/,
+  );
+  await refused(`## Plan {#plan when="store=sqlite"}\n\n${storage}`, /no section before it asks store/);
+  await refused(
+    `${storage}\n\n## Plan {#plan when="file=x"}`,
+    /a condition names a choice, multi or toggle question; file is a text question/,
+  );
+  await refused(`${storage}\n\n## Plan {#plan when="store=mysql"}`, /Question store has no option mysql/);
+  await refused(`${storage}\n\n## Plan {#plan when="replicas=maybe"}`, /Question replicas is answered yes or no/);
+  assert.equal(
+    (await worker('POST', '/api/visuals', { source: `# Plan\n\n${storage}\n\n## Plan {#plan when="replicas=no"}` }))
+      .status,
+    201,
+  );
+
+  // A change that takes away the question of a condition is refused like one that names an unknown question.
+  const visual = (await worker('POST', '/api/visuals', { source: CONDITIONAL })).body;
+  const patched = await worker('PATCH', `/api/visuals/${visual.id}`, { remove: ['storage'] });
+  assert.equal(patched.status, 400);
+  assert.match(
+    patched.body.error,
+    /Section plan-sqlite is shown when store is sqlite, but no section before it asks store/,
+  );
+  assert.equal((await user('GET', `/api/visuals/${visual.id}`)).body.version, 1);
+});
+
+test('the user answers decide what is shown, and the author learns it only from the answers the user sends', async (t) => {
+  const context = await asked(t, CONDITIONAL);
+  const { worker, user, path, visual, shown, fields, answer, send, sentText, read, record } = context;
+  const ALL = ['plan-sqlite', 'plan-pg', 'replicas', 'backups'];
+  assert.deepEqual((await shown()).hidden, ALL);
+  // A question in a hidden section is not asked.
+  assert.equal((await record()).openQuestions, 2);
+
+  // A draft is the user's: what it shows is in the user's view only.
+  assert.equal((await answer({ store: 'postgres', extras: ['backup'] })).status, 200);
+  assert.deepEqual((await shown()).hidden, ['plan-sqlite', 'replicas']);
+  assert.equal((await shown(worker)).hidden, undefined);
+  assert.deepEqual((await read()).hidden, ALL);
+  assert.deepEqual((await read()).unanswered, ['store', 'extras']);
+  const env = { MU_URL: context.url, MU_AGENT_ID: 'worker', MU_TOKEN: context.app.identity.issue('worker') };
+  const outline = await main(['visual', 'show', '--id', visual.id], env);
+  assert.equal(JSON.stringify(outline).includes('hidden'), false);
+  assert.deepEqual(
+    outline.shown.sections.map((section) => section.when ?? null),
+    [null, null, 'store=sqlite', 'store=postgres', 'replicas=yes', 'extras=backup'],
+  );
+  assert.deepEqual(await main(['visual', 'answers', '--id', visual.id], env), await read());
+
+  // An answer to a question that the user's answers hide is refused, also when the frame forges one.
+  const forged = await answer({ file: 'data.db' });
+  assert.equal(forged.status, 409);
+  assert.match(forged.body.error, /^Question file is in section plan-sqlite, which your answers hide/);
+  // The answers of one change count together.
+  assert.equal((await answer({ store: 'sqlite', file: 'data.db' })).status, 200);
+  assert.equal((await answer({ replicas: true })).status, 409);
+  assert.deepEqual((await shown()).hidden, ['plan-pg', 'replicas']);
+
+  const first = await sentText(await send());
+  assert.match(first, /^- `store` .*: `sqlite` `SQLite`$/m);
+  assert.match(first, /^- `file` `Which file\?`:\n> data\.db$/m);
+  assert.match(first, /^Hidden by these answers: `plan-pg`, `replicas`$/m);
+  assert.equal(/replicas`? `Run/.test(first), false);
+  assert.equal(/Not answered/.test(first), false);
+  const report = await read();
+  assert.deepEqual(
+    [report.answers, report.unanswered, report.hidden],
+    [{ store: 'sqlite', extras: ['backup'], file: 'data.db' }, [], ['plan-pg', 'replicas']],
+  );
+  assert.deepEqual(
+    report.fields.map((field) => [field.id, field.hidden ?? false]),
+    [
+      ['store', false],
+      ['extras', false],
+      ['file', false],
+      ['replicas', true],
+    ],
+  );
+
+  // Another answer hides a section with a sent answer: the author has it no longer, and the user's words stay.
+  await answer({ store: 'postgres', extras: [] });
+  await answer({ replicas: true });
+  assert.deepEqual((await shown()).hidden, ['plan-sqlite', 'backups']);
+  assert.equal((await record()).openQuestions, 3);
+  const second = await sentText(await send());
+  assert.match(second, /^- `store` .*\(changed\): `postgres` `PostgreSQL`$/m);
+  assert.match(second, /^- `replicas` `Run replicas\?`: yes$/m);
+  assert.match(second, /^Hidden by these answers: `plan-sqlite`, `backups`$/m);
+  assert.match(second, /^Taken back: `file`$/m);
+  assert.equal(second.includes('data.db'), false);
+  assert.deepEqual(
+    [(await read()).answers, (await read()).hidden],
+    [{ store: 'postgres', extras: [], replicas: true }, ['plan-sqlite', 'backups']],
+  );
+  assert.equal((await record()).openQuestions, 0);
+  await answer({ replicas: false });
+  assert.deepEqual((await shown()).hidden, ['plan-sqlite', 'replicas', 'backups']);
+  await answer({ replicas: true });
+  await answer({ store: 'sqlite' });
+  // The question that shows the replicas is in a hidden section now, so its answer shows nothing.
+  assert.deepEqual((await shown()).hidden, ['plan-pg', 'replicas', 'backups']);
+  const file = (await fields()).find((field) => field.id === 'file');
+  assert.deepEqual([file.answer, file.unsent], [{ value: 'data.db', source: 'user' }, true]);
+  assert.equal((await user('GET', path)).body.shown.hidden.includes('plan-sqlite'), false);
+});
+
+test('a comment on a hidden section says so by the answers that the author has, never by a draft', async (t) => {
+  const { user, path, shown, answer, send, sentText } = await asked(t, CONDITIONAL);
+  await answer({ store: 'sqlite' });
+  await send();
+  const { rev } = (await shown()).sections.find((section) => section.id === 'plan-sqlite');
+  const comment = async (text) =>
+    (await user('POST', `${path}/comments`, { version: 1, sectionId: 'plan-sqlite', sectionRev: rev, text })).body;
+  const alone = async (item) => sentText(await user('POST', `${path}/comments/send`, { version: 1, ids: [item.id] }));
+  const first = await comment('Why next to the data?');
+  // The user's draft hides the section, and the author does not have that draft: the message does not tell it,
+  // also when the feedback goes without the answers.
+  await answer({ store: 'postgres' });
+  assert.match(await alone(first), /on section `plan-sqlite` as a whole:\n> Why next to the data\?/);
+  await comment('Without answers.');
+  const withoutAnswers = await user('POST', `${path}/feedback`, { version: 1 });
+  assert.equal(withoutAnswers.body.answers, false);
+  assert.match(await sentText(withoutAnswers), /on section `plan-sqlite` as a whole:\n> Without answers\./);
+  await comment('And the backups?');
+  const together = await sentText(await send());
+  assert.match(
+    together,
+    /on section `plan-sqlite` \(hidden by the answers you have\) as a whole:\n> And the backups\?/,
+  );
+  assert.match(together, /^Hidden by these answers: `plan-sqlite`/m);
+  assert.match(
+    await alone(await comment('One more.')),
+    /on section `plan-sqlite` \(hidden by the answers you have\) as a whole:/,
+  );
+});
+
+test('a condition is part of its section: a change of it alone is a change, and a patch of others keeps it', async (t) => {
+  const answers = await asked(t, CONDITIONAL);
+  const { worker, user, path } = answers;
+  const sections = async () => (await user('GET', path)).body.shown.sections;
+  // A section without a condition keeps the revision that it had before conditions existed.
+  const storage = (await sections()).find((section) => section.id === 'storage');
+  const before = createHash('sha256')
+    .update(JSON.stringify([storage.id, storage.title, storage.body]))
+    .digest('hex')
+    .slice(0, 16);
+  assert.equal(storage.rev, before);
+  const plan = `One file next to the data.\n\n${fence([FILE])}`;
+  const changed = await worker('PATCH', path, {
+    source: `## SQLite plan {#plan-sqlite when="store=postgres"}\n\n${plan}`,
+  });
+  assert.deepEqual([changed.body.version, changed.body.changed], [2, ['plan-sqlite']]);
+  await worker('PATCH', path, { source: '## Backups {#backups}\n\nEvery hour.' });
+  assert.deepEqual(
+    (await sections()).map((section) => section.when ?? null),
+    [null, null, 'store=postgres', 'store=postgres', 'replicas=yes', null],
+  );
+  const changedBack = await worker('PATCH', path, {
+    source: `## SQLite plan {#plan-sqlite when="store=sqlite"}\n\n${plan}`,
+  });
+  assert.equal(changedBack.status, 200);
+  await answers.answer({ store: 'sqlite', file: 'data.db' }, 4);
+  await answers.send(4);
+  assert.deepEqual((await answers.read()).answers, { store: 'sqlite', file: 'data.db' });
+  await worker('PATCH', path, { source: `## SQLite plan {#plan-sqlite when="store=postgres"}\n\n${plan}` });
+  const report = await answers.read();
+  assert.deepEqual([report.answers, report.hidden], [{ store: 'sqlite' }, ['plan-sqlite', 'plan-pg', 'replicas']]);
 });

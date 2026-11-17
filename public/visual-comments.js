@@ -183,8 +183,14 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
     post({ type: 'working', targets });
   }
 
+  const hiddenSection = (id) => (data?.shown.hidden ?? []).includes(id);
+
   function whereOf(comment) {
     if (comment.sectionId === null) return 'Whole visual';
+    // The comment stays the user's to send; the section is back when the answers show it.
+    return `${placeOf(comment)}${hiddenSection(comment.sectionId) ? ' (hidden by your answers)' : ''}`;
+  }
+  function placeOf(comment) {
     const title = titleOf(comment.sectionId);
     if (comment.block === null) return `Section “${title}”`;
     if (comment.line) return `${title}, ${lineLabel(comment.line)}`;

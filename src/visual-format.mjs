@@ -32,7 +32,7 @@ export const SECTION_ID = ID;
 export const LEAD_SECTION = 'intro';
 
 /**
- * @typedef {{ id: string, title: string, body: string }} Section
+ * @typedef {{ id: string, title: string, body: string, when?: string }} Section
  * @typedef {{ type: string, text: string, info: string }} Block
  */
 
@@ -350,15 +350,30 @@ function headingText(line, level) {
   return line.slice(start, end);
 }
 
-// Splits `Title {#id}` into its parts. The ID ends the heading and holds no closing brace and no white space; of
-// several `{#` that fit, the first one starts it.
+// A section that the answers show: `when="store=sqlite"`, the ID of a question and of one of its answers.
+const CONDITION = /^([a-z][a-z0-9-]{0,47})=([a-z][a-z0-9-]{0,47})$/;
+const CONDITION_WORD = ' when="';
+
+// Splits `Title {#id}` or `Title {#id when="field=option"}` into its parts. The ID ends the heading and holds no
+// closing brace and no white space; of several `{#` that fit, the first one starts it. The heading is read from its
+// end, character by character, so that a long one costs one pass.
 function headingId(heading) {
-  if (!heading.endsWith('}')) return { title: heading, id: null };
-  let from = heading.length - 1;
+  if (!heading.endsWith('}')) return { title: heading, id: null, when: null };
+  let end = heading.length - 1;
+  let when = null;
+  if (heading.endsWith('"}')) {
+    const open = heading.lastIndexOf('"', heading.length - 3);
+    const word = open - CONDITION_WORD.length + 1;
+    if (open !== -1 && word >= 0 && heading.startsWith(CONDITION_WORD, word)) {
+      when = heading.slice(open + 1, -2);
+      end = word;
+    }
+  }
+  let from = end;
   while (from > 0 && heading[from - 1] !== '}' && !/\s/.test(heading[from - 1])) from -= 1;
   const at = heading.indexOf('{#', from);
-  if (at === -1) return { title: heading, id: null };
-  return { title: heading.slice(0, at).trim(), id: heading.slice(at + 2, -1) };
+  if (at === -1 || at >= end) return { title: heading, id: null, when: null };
+  return { title: heading.slice(0, at).trim(), id: heading.slice(at + 2, end), when };
 }
 
 const trimBlankLines = (lines) => {
@@ -380,7 +395,7 @@ export function parseDocument(source) {
   if (typeof source !== 'string') throw new Error('The source of a visual is Markdown text');
   const text = source.replace(/\r\n?/g, '\n');
   let title = null;
-  /** @type {{ id: string | null, title: string, lines: string[], line: number }[]} */
+  /** @type {{ id: string | null, title: string, when?: string, lines: string[], line: number }[]} */
   const drafts = [{ id: LEAD_SECTION, title: '', lines: [], line: 1 }];
   let seenContent = false;
   const unclosed = walk(text, (line, fence, index) => {
@@ -394,12 +409,16 @@ export function parseDocument(source) {
       const heading = headingText(line, 2);
       if (heading !== null) {
         seenContent = true;
-        const { title: headingTitle, id } = headingId(heading);
+        const { title: headingTitle, id, when } = headingId(heading);
         if (id !== null && !SECTION_ID.test(id))
           throw new Error(
             `Line ${index + 1}: section ID {#${id}} must start with a lowercase letter and use at most 48 lowercase letters, digits or hyphens`,
           );
-        drafts.push({ id, title: headingTitle, lines: [], line: index + 1 });
+        if (when !== null && !CONDITION.test(when))
+          throw new Error(
+            `Line ${index + 1}: the condition of section ${id} is when="field=option", with the ID of a question and of one of its options, or yes or no for a toggle`,
+          );
+        drafts.push({ id, title: headingTitle, ...(when === null ? {} : { when }), lines: [], line: index + 1 });
         return;
       }
     }
@@ -431,7 +450,12 @@ export function parseDocument(source) {
       for (let n = 2; used.has(id); n += 1) id = `${base}-${n}`;
       used.add(id);
     }
-    sections.push({ id, title: draft.title, body: trimBlankLines(draft.lines) });
+    sections.push({
+      id,
+      title: draft.title,
+      ...(draft.when === undefined ? {} : { when: draft.when }),
+      body: trimBlankLines(draft.lines),
+    });
   }
   return { title, sections };
 }
@@ -509,7 +533,7 @@ export function sectionSource(section) {
   const heading =
     section.id === LEAD_SECTION && !section.title
       ? ''
-      : `## ${section.title}${section.title ? ' ' : ''}{#${section.id}}\n\n`;
+      : `## ${section.title}${section.title ? ' ' : ''}{#${section.id}${section.when ? `${CONDITION_WORD}${section.when}"` : ''}}\n\n`;
   return `${heading}${section.body}\n`;
 }
 
