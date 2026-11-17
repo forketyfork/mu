@@ -73,7 +73,10 @@ export async function cdp(port, failure = () => undefined) {
   }
   const socket = new WebSocket(version.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => {
-    socket.onopen = resolve;
+    socket.onopen = () => {
+      socket.onerror = socket.onclose = null;
+      resolve(undefined);
+    };
     socket.onerror = socket.onclose = (event) => {
       whyGone(failure, new Error(`The DevTools connection failed to open: ${event.type}`)).then(reject, reject);
     };
