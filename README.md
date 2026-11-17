@@ -20,46 +20,31 @@ Mu runs locally: the agents talk to each other through a chat server on your mac
 
 ## See it in action
 
-Each preview is a short excerpt; click it to download the whole video (about a minute, no sound). The dashboard, the chat and the visuals are the real Mu. The agents’ replies in these demos are scripted, with no model behind them.
+Each preview is a short excerpt. Click it to open the whole demo, about a minute without sound, as a large animation in your browser. The dashboard, the chat and the visuals are the real Mu. The agents’ replies in these demos are scripted, with no model behind them.
 
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <a href="docs/videos/launch-a-task.mp4"><img src="docs/videos/launch-a-task.webp" alt="Launch a task: a preview of the video" /></a><br />
-      <b>Launch a task</b><br />
-      Ask the lead for a change with Cmd+L. It opens a room, creates a task and starts a worker, and you watch the worker’s messages arrive.
-    </td>
-    <td width="50%" valign="top">
-      <a href="docs/videos/task-and-agent-views.mp4"><img src="docs/videos/task-and-agent-views.webp" alt="Task and agent views: a preview of the video" /></a><br />
-      <b>Task and agent views</b><br />
-      A task’s status, result and workers, an agent’s model, context and spend, and marking the finished task verified.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <a href="docs/videos/waiting-and-focus.mp4"><img src="docs/videos/waiting-and-focus.webp" alt="Waiting for you and focus: a preview of the video" /></a><br />
-      <b>Waiting for you and focus</b><br />
-      Answer a decision card in the lead’s chat, then work the focus list: add a card, drag it between Focus and Control, check it off.
-    </td>
-    <td width="50%" valign="top">
-      <a href="docs/videos/plan-annotation.mp4"><img src="docs/videos/plan-annotation.webp" alt="Plan annotation: a preview of the video" /></a><br />
-      <b>Plan annotation</b><br />
-      Mark a section, a phrase and a diagram of an agent’s plan; the agent answers with a new version.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <a href="docs/videos/code-review.mp4"><img src="docs/videos/code-review.webp" alt="Code review: a preview of the video" /></a><br />
-      <b>Code review</b><br />
-      A reviewer explains a pull request with its real diff. Comment on one line, and the reply arrives as a new section.
-    </td>
-    <td width="50%" valign="top">
-      <a href="docs/videos/question-elicitation.mp4"><img src="docs/videos/question-elicitation.webp" alt="Questions in the plan: a preview of the video" /></a><br />
-      <b>Questions in the plan</b><br />
-      Answer the agent’s questions in the document; the plan follows your choices, and the answers reach the agent in one message.
-    </td>
-  </tr>
-</table>
+**Launch a task.** Ask the lead for a change with Cmd+L. It opens a room, creates a task and starts a worker, and you watch the worker’s messages arrive.
+
+[![Launch a task: a short excerpt of the video](docs/videos/launch-a-task.webp)](docs/videos/launch-a-task-full.webp?raw=true)
+
+**Task and agent views.** A task’s status, result and workers, an agent’s model, context and spend, and marking the finished task verified.
+
+[![Task and agent views: a short excerpt of the video](docs/videos/task-and-agent-views.webp)](docs/videos/task-and-agent-views-full.webp?raw=true)
+
+**Waiting for you and focus.** Answer a decision card in the lead’s chat, then work the focus list: add a card, drag it between Focus and Control, check it off.
+
+[![Waiting for you and focus: a short excerpt of the video](docs/videos/waiting-and-focus.webp)](docs/videos/waiting-and-focus-full.webp?raw=true)
+
+**Plan annotation.** Mark a section, a phrase and a diagram of an agent’s plan; the agent answers with a new version.
+
+[![Plan annotation: a short excerpt of the video](docs/videos/plan-annotation.webp)](docs/videos/plan-annotation-full.webp?raw=true)
+
+**Code review.** A reviewer explains a pull request with its real diff. Comment on one line, and the reply arrives as a new section.
+
+[![Code review: a short excerpt of the video](docs/videos/code-review.webp)](docs/videos/code-review-full.webp?raw=true)
+
+**Questions in the plan.** Answer the agent’s questions in the document; the plan follows your choices, and the answers reach the agent in one message.
+
+[![Questions in the plan: a short excerpt of the video](docs/videos/question-elicitation.webp)](docs/videos/question-elicitation-full.webp?raw=true)
 
 ## Requirements
 
