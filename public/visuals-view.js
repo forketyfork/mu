@@ -54,6 +54,7 @@ export function safeLink(href) {
  * @param {(id: string, version?: number | null) => void} options.navigate Shows a visual, or the list for a null ID.
  * @param {(id: string, version?: number | null) => string} options.hashOf
  * @param {(agent: object) => boolean} options.isBusy
+ * @param {(key: any) => void} options.onKey Receives a key that the frame took from the browser, as the frame sent it.
  */
 export function createVisualsView({
   document,
@@ -65,6 +66,7 @@ export function createVisualsView({
   navigate,
   hashOf,
   isBusy,
+  onKey,
 }) {
   const $ = (id) => /** @type {any} */ (document.getElementById(id));
   const node = (tag, className, text) => {
@@ -389,6 +391,7 @@ export function createVisualsView({
       $('visual-link-open').href = href;
       $('visual-link').hidden = false;
     } else if (message.type === 'selection') comments.selection(message);
+    else if (message.type === 'key') onKey(message);
     else if (message.type === 'comment') comments.focus(message.id);
     else if (message.type === 'answer') answers.answer(message);
     else if (message.type === 'problems') {

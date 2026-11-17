@@ -112,7 +112,7 @@ export async function settle() {
 // Runs the dashboard in JSDOM against a server state and a controllable event stream. `initial` and every `push` take
 // the whole workspace in the shape of GET /api/state; the fixture sends it as Mu's stream would, a snapshot first and then
 // the changes, and answers history requests from the workspace last pushed.
-export async function fixture(t, { reduced = false, hash = '', initial = initialState() } = {}) {
+export async function fixture(t, { reduced = false, hash = '', initial = initialState(), platform = '' } = {}) {
   const { window } = new JSDOM(html, {
     url: `http://localhost/?token=${'b'.repeat(64)}${hash}`,
     runScripts: 'outside-only',
@@ -144,6 +144,9 @@ export async function fixture(t, { reduced = false, hash = '', initial = initial
     return animation;
   };
   window.matchMedia = () => preference;
+  Object.defineProperty(window.navigator, 'platform', { value: platform });
+  // JSDOM has no popover API; hiding one that is not open does nothing, as in a browser.
+  window.HTMLElement.prototype.hidePopover = () => {};
   let events;
   let current = structuredClone(initial);
   let seq = 0;

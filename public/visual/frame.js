@@ -184,6 +184,16 @@ function showPlace({ sectionId, field }) {
   place.classList.add('flash');
 }
 
+// A key pressed inside the frame never reaches the dashboard, so the dashboard's shortcut for the lead's chat is
+// passed on. The frame cannot ask the dashboard whether it honors the key, and the browser must be refused the key
+// now, so it is always taken; the dashboard decides what it is worth on this platform.
+window.addEventListener('keydown', (event) => {
+  if (event.key.toLowerCase() !== 'l' || !(event.metaKey || event.ctrlKey)) return;
+  event.preventDefault();
+  const { key, code, metaKey, ctrlKey, shiftKey, altKey, repeat, isComposing } = event;
+  tell({ type: 'key', key, code, metaKey, ctrlKey, shiftKey, altKey, repeat, isComposing });
+});
+
 window.addEventListener('message', (event) => {
   if (event.source !== window.parent || event.origin !== dashboardOrigin) return;
   const message = event.data;

@@ -36,6 +36,8 @@ import {
   viewHashes,
   visualFromHash,
   visualHash,
+  isLeadChatShortcut,
+  leadChatShortcutLabel,
 } from './model.js';
 import { markdownElement } from './markdown.js';
 import { emptyMessages, groupBrag } from './brag.js';
@@ -50,6 +52,7 @@ import { createVisualsView } from './visuals-view.js';
 const $ = (id) => document.getElementById(id);
 /** @type {(selector: string) => NodeListOf<HTMLElement>} */
 const $$ = (selector) => document.querySelectorAll(selector);
+const macKeyboard = /^Mac/i.test(navigator.platform);
 const focusedElement = () => /** @type {HTMLElement | null} */ (document.activeElement);
 const elements = {
   grid: $('agent-grid'),
@@ -611,6 +614,9 @@ const visualsView = createVisualsView({
   navigate: openVisual,
   hashOf: visualHash,
   isBusy: isAgentBusy,
+  onKey: (key) => {
+    if (isLeadChatShortcut(key, macKeyboard)) focusLeadChat();
+  },
 });
 
 // A reference inside a dialog brings its target to the page behind it, so the dialog gives way.
@@ -2268,6 +2274,7 @@ for (const link of $$('.rail-link[data-view]')) {
     navigate(link.dataset.view);
   });
 }
+$$('.rail-link[data-view="chat"]')[0].title = `Team chat (${leadChatShortcutLabel(macKeyboard)} writes to the lead)`;
 window.addEventListener('hashchange', () => showView(viewFromHash(location.hash)));
 $('new-messages').addEventListener('click', scrollChat);
 elements.messages.addEventListener('scroll', () => {
@@ -2281,7 +2288,22 @@ elements.input.addEventListener('keydown', (event) => {
     if (!$('send-message').disabled) $('message-form').requestSubmit();
   }
 });
+// Takes the user to the composer of the lead's private chat from anywhere on the page. It returns false, and the
+// browser keeps the key, when the page cannot honor it: no lead chat yet, or a dialog with a form open. That dialog
+// owns the keyboard, and giving way would drop what was typed into it. The read-only dialogs give way, as they do for
+// a reference.
+function focusLeadChat() {
+  if (!state?.conversations.some((conversation) => conversation.id === 'dm-lead')) return false;
+  if (document.querySelector('dialog[open]:has(form)')) return false;
+  $('reader-settings').hidePopover();
+  $('mention-menu').hidden = true;
+  $('mention-toggle').setAttribute('aria-expanded', 'false');
+  openConversation('dm-lead');
+  return true;
+}
+
 document.addEventListener('keydown', (event) => {
+  if (isLeadChatShortcut(event, macKeyboard) && focusLeadChat()) event.preventDefault();
   if (event.key === 'Escape' && $('conversation-browser').open) {
     $('conversation-browser').open = false;
     $('conversation-browser').querySelector('summary').focus();

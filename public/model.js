@@ -594,3 +594,21 @@ export function applyChanges(state, changes) {
   }
   return { state: next, touched };
 }
+
+// Cmd+L on a Mac, Ctrl+L elsewhere. On a Mac, Ctrl+L belongs to the text fields (it centers the cursor line), and
+// elsewhere the Windows or Super key with L locks or opens the system, so each platform answers to one modifier.
+// A layout without a Latin L, such as Cyrillic, is matched by its physical key.
+/**
+ * @param {{ key: string, code?: string, metaKey?: boolean, ctrlKey?: boolean, shiftKey?: boolean, altKey?: boolean, repeat?: boolean, isComposing?: boolean }} event
+ * @param {boolean} mac
+ */
+export function isLeadChatShortcut(event, mac) {
+  if (event.repeat || event.isComposing || event.shiftKey || event.altKey) return false;
+  if (mac ? !event.metaKey || event.ctrlKey : !event.ctrlKey || event.metaKey) return false;
+  const key = String(event.key);
+  return key.toLowerCase() === 'l' || (!/^[a-z]$/i.test(key) && event.code === 'KeyL');
+}
+
+export function leadChatShortcutLabel(mac) {
+  return mac ? '⌘L' : 'Ctrl+L';
+}

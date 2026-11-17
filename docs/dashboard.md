@@ -126,3 +126,7 @@ To add a theme, see [Development](development.md#add-a-dashboard-theme).
 ## Keyboard
 
 Every choice list (the conversation list and the fields of the new-agent form) opens with a click, Enter or Space; the arrow keys, Home, End or typing move the selection, Enter chooses, and Escape closes. In Reading settings, Tab moves through the size buttons and theme choices, the arrow keys move among themes, and Escape closes the panel. Escape also closes an opened task card.
+
+**⌘L** (**Ctrl + L** off a Mac) opens your private chat with the lead and puts the cursor in its message box, from wherever you are: another view, another chat (its draft stays there), a text field, a visual (also with the cursor inside the visual itself), or an open task card or transcript, which close. In the lead's own message box it keeps your text and the cursor where they are. A dialog with a form (**New agent**, **Create task room**) keeps the key and its text; the browser then does with it what it always does. So does a dashboard without a lead. The shortcut is also in the tooltip of the chat icon in the left rail.
+
+The key is the browser's own "go to the address bar", and only the browser decides whether a page may take it. Chrome and the browsers built on it reserve few keys (for tabs, windows and quitting), and this is not one. If a browser keeps the key for its address bar anyway, the dashboard cannot use it there; the chat icon in the left rail opens the same chat.
