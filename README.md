@@ -24,27 +24,27 @@ Each preview is a short excerpt. Click it to open the whole demo, about a minute
 
 **Launch a task.** Ask the lead for a change with Cmd+L. It opens a room, creates a task and starts a worker, and you watch the worker’s messages arrive.
 
-[![Launch a task: a short excerpt of the video](docs/videos/launch-a-task.webp)](https://github.com/forketyfork/mu/raw/main/docs/videos/launch-a-task-full.webp)
+[![Launch a task: a short excerpt of the video](docs/videos/launch-a-task.webp)](https://github.com/user-attachments/assets/2a691172-218a-4f89-a07d-45741f4ca2b1)
 
 **Task and agent views.** A task’s status, result and workers, an agent’s model, context and spend, and marking the finished task verified.
 
-[![Task and agent views: a short excerpt of the video](docs/videos/task-and-agent-views.webp)](https://github.com/forketyfork/mu/raw/main/docs/videos/task-and-agent-views-full.webp)
+[![Task and agent views: a short excerpt of the video](docs/videos/task-and-agent-views.webp)](https://github.com/user-attachments/assets/4303bd93-fc21-4b70-b6a5-a14bbb2156c3)
 
 **Waiting for you and focus.** Answer a decision card in the lead’s chat, then work the focus list: add a card, drag it between Focus and Control, check it off.
 
-[![Waiting for you and focus: a short excerpt of the video](docs/videos/waiting-and-focus.webp)](https://github.com/forketyfork/mu/raw/main/docs/videos/waiting-and-focus-full.webp)
+[![Waiting for you and focus: a short excerpt of the video](docs/videos/waiting-and-focus.webp)](https://github.com/user-attachments/assets/9a7bcc05-37d9-47df-9ae4-b65dced11a78)
 
 **Plan annotation.** Mark a section, a phrase and a diagram of an agent’s plan; the agent answers with a new version.
 
-[![Plan annotation: a short excerpt of the video](docs/videos/plan-annotation.webp)](https://github.com/forketyfork/mu/raw/main/docs/videos/plan-annotation-full.webp)
+[![Plan annotation: a short excerpt of the video](docs/videos/plan-annotation.webp)](https://github.com/user-attachments/assets/b3f1ed05-9737-4cf7-a771-ce07c27bab09)
 
 **Code review.** A reviewer explains a pull request with its real diff. Comment on one line, and the reply arrives as a new section.
 
-[![Code review: a short excerpt of the video](docs/videos/code-review.webp)](https://github.com/forketyfork/mu/raw/main/docs/videos/code-review-full.webp)
+[![Code review: a short excerpt of the video](docs/videos/code-review.webp)]([https://github.com/forketyfork/mu/raw/main/docs/videos/code-review-full.webp](https://github.com/user-attachments/assets/2748e448-d99b-4fa6-b2c6-193597c25c5a))
 
 **Questions in the plan.** Answer the agent’s questions in the document; the plan follows your choices, and the answers reach the agent in one message.
 
-[![Questions in the plan: a short excerpt of the video](docs/videos/question-elicitation.webp)](https://github.com/forketyfork/mu/raw/main/docs/videos/question-elicitation-full.webp)
+[![Questions in the plan: a short excerpt of the video](docs/videos/question-elicitation.webp)](https://github.com/user-attachments/assets/d8b33d43-3579-4efc-8352-eca3d76932fd)
 
 ## Requirements
 
