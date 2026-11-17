@@ -19,6 +19,7 @@ import {
   isNewMessage,
   newMessageBoundary,
   parseViewed,
+  restorePositions,
   splitMentions,
   summarizeAgents,
   tasksOfAgents,
@@ -596,12 +597,30 @@ test('a position beyond the newest message counts as the newest one', () => {
   assert.equal(newMessageBoundary({}, 'dm-lead', 12), 0);
 });
 
-test('reading advances a position, never moves it back, and drops conversations that are gone', () => {
+test('reading advances a position, keeps a genuine one that is further, and drops conversations that are gone', () => {
   const conversations = [{ id: 'dm-lead' }, { id: 'room-a' }];
   const viewed = { 'dm-lead': 7, 'room-a': 2, 'room-deleted': 30 };
-  assert.deepEqual(advanceViewed(viewed, 'room-a', 9, conversations), { 'dm-lead': 7, 'room-a': 9 });
-  assert.deepEqual(advanceViewed(viewed, 'dm-lead', 3, conversations), { 'dm-lead': 7, 'room-a': 2 });
-  assert.deepEqual(advanceViewed({}, 'room-a', 4, conversations), { 'room-a': 4 });
+  assert.deepEqual(advanceViewed(viewed, 'room-a', 9, conversations, 20), { 'dm-lead': 7, 'room-a': 9 });
+  assert.deepEqual(advanceViewed(viewed, 'dm-lead', 3, conversations, 20), { 'dm-lead': 7, 'room-a': 2 });
+  assert.deepEqual(advanceViewed({}, 'room-a', 4, conversations, 20), { 'room-a': 4 });
+});
+
+test('a stored position beyond the newest message is replaced when the conversation is read', () => {
+  const conversations = [{ id: 'dm-lead' }];
+  assert.deepEqual(advanceViewed({ 'dm-lead': 900 }, 'dm-lead', 1, conversations, 1), { 'dm-lead': 1 });
+});
+
+test('restoring written positions puts back what a simultaneous write erased, and never lowers a position', () => {
+  const conversations = [{ id: 'dm-lead' }, { id: 'room-a' }];
+  const written = new Map([
+    ['dm-lead', 5],
+    ['room-a', 2],
+    ['gone', 9],
+  ]);
+  assert.deepEqual(restorePositions({ 'dm-lead': 1, 'room-a': 6 }, written, conversations), {
+    'dm-lead': 5,
+    'room-a': 6,
+  });
 });
 
 test('an unread count of a whole page is shown as 99+, because the page may stand for more', () => {

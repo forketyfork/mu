@@ -24,6 +24,7 @@ import {
   mergeMessages,
   newMessageBoundary,
   parseViewed,
+  restorePositions,
   statusLabels,
   summarizeAgents,
   taskSquare,
@@ -84,6 +85,8 @@ const showArchivedKey = 'mu:show-archived';
 let showArchived = localStorage.getItem(showArchivedKey) === 'true';
 let archived = { tasks: new Set(), agents: new Set(), conversations: new Set() };
 const readThrough = new Map();
+// What this tab wrote to the record of read messages, to put it back if another tab's write erased it.
+const writtenPositions = new Map();
 const drafts = new Map();
 const viewedKey = 'mu:chat-viewed';
 // Per conversation: the boundary taken when the chat was opened. Messages above it stay tinted until the next open.
@@ -670,6 +673,12 @@ function syncReadThrough() {
     );
 }
 
+// Archived conversations belong to verified work and are not remembered; the open one stays, as it stays listed.
+const rememberedConversations = () =>
+  state.conversations.filter(
+    (conversation) => conversation.id === conversationId || !archived.conversations.has(conversation.id),
+  );
+
 // Messages arriving while the chat is hidden stay unread so the rail badge can surface them.
 function markConversationRead() {
   if (view !== 'chat') {
@@ -689,8 +698,9 @@ function markConversationRead() {
     );
     lastMessageSignature = '';
   }
-  const advanced = advanceViewed(viewed, conversationId, latest, state.conversations);
+  const advanced = advanceViewed(viewed, conversationId, latest, rememberedConversations(), state.lastMessageId);
   readThrough.set(conversationId, advanced[conversationId]);
+  writtenPositions.set(conversationId, advanced[conversationId]);
   if (JSON.stringify(advanced) !== JSON.stringify(viewed)) localStorage.setItem(viewedKey, JSON.stringify(advanced));
 }
 
@@ -2324,6 +2334,12 @@ $$('.rail-link[data-view="chat"]')[0].title = `Team chat (${leadChatShortcutLabe
 // Another tab of this browser moved a reading position, or the record was cleared.
 window.addEventListener('storage', (event) => {
   if (event.storageArea !== localStorage || (event.key !== viewedKey && event.key !== null) || !state) return;
+  if (event.key === null) writtenPositions.clear();
+  else {
+    const viewed = loadViewed();
+    const restored = restorePositions(viewed, writtenPositions, rememberedConversations());
+    if (JSON.stringify(restored) !== JSON.stringify(viewed)) localStorage.setItem(viewedKey, JSON.stringify(restored));
+  }
   syncReadThrough();
   renderConversations();
 });

@@ -188,13 +188,24 @@ export function newMessageBoundary(viewed, conversationId, newest = Infinity) {
   return Number.isInteger(viewed[conversationId]) ? Math.min(viewed[conversationId], newest) : 0;
 }
 
-// The record after the user read a conversation through `position`. A position never moves back, because another tab
-// may have read further than this one knows. Conversations that no longer exist are dropped, so deleted rooms do not
-// accumulate.
-export function advanceViewed(viewed, conversationId, position, conversations) {
+// The record after the user read a conversation through `position`. `conversations` are those worth remembering: a
+// conversation that is gone or archived is dropped, so rooms do not accumulate. The stored position stays if it is
+// known to be genuine: a position beyond `newest`, the newest message that exists, belongs to another history and is
+// replaced, so it cannot hide messages that arrive later.
+export function advanceViewed(viewed, conversationId, position, conversations, newest = Infinity) {
   const kept = new Set(conversations.map((conversation) => conversation.id));
   const next = Object.fromEntries(Object.entries(viewed).filter(([id]) => kept.has(id)));
-  next[conversationId] = Math.max(next[conversationId] ?? 0, position);
+  const stored = next[conversationId];
+  next[conversationId] = stored !== undefined && stored <= newest ? Math.max(stored, position) : position;
+  return next;
+}
+
+// Two tabs that write the record at the same moment each replace the whole of it, so one can erase the other's advance.
+// A tab keeps what it wrote and puts it back, never lowering a position, when it sees a record that lacks it.
+export function restorePositions(viewed, written, conversations) {
+  const kept = new Set(conversations.map((conversation) => conversation.id));
+  const next = { ...viewed };
+  for (const [id, position] of written) if (kept.has(id)) next[id] = Math.max(next[id] ?? 0, position);
   return next;
 }
 

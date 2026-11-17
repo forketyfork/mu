@@ -94,11 +94,12 @@ test('a second tab that reads a conversation clears its marker here, and an unre
 });
 
 test('a tab that is behind does not move the stored position back', async (t) => {
-  const ui = await fixture(t, { initial: initialState() });
+  const initial = withArrivals();
+  const ui = await fixture(t, { initial });
   ui.click('.rail-link[data-view="chat"]');
-  ui.otherTab(KEY, JSON.stringify({ 'dm-lead': 50, 'room-a': 2 }));
-  ui.update(withArrivals());
-  assert.equal(record(ui)['dm-lead'], 50);
+  ui.otherTab(KEY, JSON.stringify({ 'dm-lead': 4, 'room-a': 4 }));
+  ui.update({ ...initial, messages: [...initial.messages, message(5, 'room-a')] });
+  assert.equal(record(ui)['dm-lead'], 4, 'a position that exists is kept when this tab reads less');
 });
 
 test('a position beyond the newest message belongs to another history and does not hide new messages', async (t) => {
@@ -109,6 +110,14 @@ test('a position beyond the newest message belongs to another history and does n
   assert.equal(railBadge(ui), '');
   ui.update(withArrivals());
   assert.equal(railBadge(ui), '2');
+  ui.click('.rail-link[data-view="chat"]');
+  assert.equal(record(ui)['dm-lead'], 3, 'reading replaces the position that cannot be real');
+  ui.click('.rail-link[data-view="workspace"]');
+  const next = withArrivals();
+  next.messages.push(message(5));
+  ui.update(next);
+  assert.equal(unreadOf(ui, 'Review changes'), '1');
+  assert.equal(railBadge(ui), '2', 'the new message in the private chat and the room message are unread');
 });
 
 test('the record drops conversations that no longer exist when it is written', async (t) => {
@@ -138,5 +147,32 @@ test('a record that is cleared by another tab is treated as a first load', async
   assert.equal(railBadge(ui), '2');
   ui.otherTab(KEY, null);
   assert.equal(railBadge(ui), '');
+  assert.deepEqual(record(ui), { 'dm-lead': 3, 'room-a': 4 });
+});
+
+test('a conversation of verified work is not kept in the record', async (t) => {
+  const initial = initialState();
+  initial.tasks[0].status = 'verified';
+  const ui = await fixture(t, { initial, storage: { [KEY]: JSON.stringify({ 'dm-lead': 1, 'room-a': 2 }) } });
+  ui.click('.rail-link[data-view="chat"]');
+  assert.deepEqual(record(ui), { 'dm-lead': 1 });
+});
+
+test('a position that another tab erased by writing at the same moment is put back', async (t) => {
+  const ui = await fixture(t, { initial: withArrivals() });
+  ui.click('.rail-link[data-view="chat"]');
+  ui.click('[data-conversation="room-a"]');
+  await settle();
+  assert.deepEqual(record(ui), { 'dm-lead': 3, 'room-a': 4 });
+  // The other tab read the record before this tab's write and replaced it after, with an advance of its own.
+  ui.otherTab(KEY, JSON.stringify({ 'dm-lead': 3, 'room-a': 2, extra: 1 }));
+  assert.deepEqual(record(ui), { 'dm-lead': 3, 'room-a': 4, extra: 1 });
+  assert.equal(unreadOf(ui, 'Review changes'), '', 'the room stays read');
+});
+
+test('a record that another tab cleared is not put back from this tab', async (t) => {
+  const ui = await fixture(t, { initial: withArrivals() });
+  ui.click('.rail-link[data-view="chat"]');
+  ui.otherTab(KEY, null);
   assert.deepEqual(record(ui), { 'dm-lead': 3, 'room-a': 4 });
 });
