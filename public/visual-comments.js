@@ -99,6 +99,9 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
   // What the reader selected last, and the selection the comment field is about. The field follows the selection
   // until it holds text; after that, only the user moves it.
   let selection = null;
+  // The quote that a saved comment used up. The frame tells about a selected text again whenever it moves on the
+  // screen, so the same text is not offered again until the selection ends or changes.
+  let used = null;
   let base = null;
   let offered = null;
   /** @type {'narrow' | 'section' | 'visual'} */
@@ -434,6 +437,7 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
       // A new comment uses up the selection it was written on: the frame cannot say that a click on a line or a diagram
       // ended, so nothing else would. A change to a draft leaves the selection that is shown as it is.
       if (!edited) {
+        used = selection?.quote ? JSON.stringify(selection) : null;
         selection = null;
         hideBubble();
       }
@@ -530,6 +534,8 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
       if (!data) return;
       const reported = selectionOf(message, data.shown.sections);
       if (reported === undefined) return;
+      if (reported === null || JSON.stringify(reported.target) !== used) used = null;
+      if (used !== null) return;
       if (reported === null) {
         selection = null;
         hideBubble();
@@ -570,6 +576,7 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
       author = null;
       workingSent = '[]';
       selection = null;
+      used = null;
       reading = null;
       active = null;
       reset();

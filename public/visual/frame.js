@@ -130,14 +130,14 @@ function applyTokens(tokens) {
 
 let shown = null;
 // The section the dashboard asked for. The last sections of a page cannot scroll up to the reading line, so the place
-// the user asked for stays the section that is read until the page is read further down, the section leaves the
-// screen after the scroll has brought it there, or the user scrolls on their own.
+// the user asked for stays the section that is read until the page is read further down, or the scroll position moves
+// away from it. That is a fact of the position, not of the input: a wheel, a key, a touch and a drag of the scrollbar
+// all end up as a scroll, while a key typed into a form field does not move the page.
 let requested = null;
-let arrived = false;
-const onScreen = (section) => {
-  const { top, bottom } = section.getBoundingClientRect();
-  return top < window.innerHeight && bottom > 0;
-};
+// The least distance that the scroll position had from the place of the request since it was made, and how far it may
+// move from there: a scroll farther than this is the user's own.
+const SETTLED = 4;
+let nearest = Infinity;
 function activeSection() {
   const sections = [...container.children];
   let active = null;
@@ -147,9 +147,14 @@ function activeSection() {
   }
   active ??= container.firstElementChild;
   const asked = requested && document.getElementById(`section-${requested}`);
-  if (asked && onScreen(asked)) arrived = true;
-  if (asked && (arrived ? onScreen(asked) : true) && sections.indexOf(asked) >= sections.indexOf(active))
-    return requested;
+  if (asked) {
+    // The page cannot scroll past its end, so the place of a section near the end is where the page stops.
+    const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+    const place = Math.min(Math.max(0, window.scrollY + asked.getBoundingClientRect().top), maxScroll);
+    const distance = Math.abs(window.scrollY - place);
+    nearest = Math.min(nearest, distance);
+    if (distance <= nearest + SETTLED && sections.indexOf(asked) >= sections.indexOf(active)) return requested;
+  }
   requested = null;
   return /** @type {HTMLElement | null} */ (active)?.dataset.section ?? null;
 }
@@ -167,15 +172,6 @@ function reportActive() {
   });
 }
 window.addEventListener('scroll', reportActive, { passive: true });
-// The user's own ways to scroll end the request.
-const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']);
-const releaseRequest = () => {
-  requested = null;
-  reportActive();
-};
-window.addEventListener('wheel', releaseRequest, { passive: true });
-window.addEventListener('touchmove', releaseRequest, { passive: true });
-window.addEventListener('keydown', (event) => SCROLL_KEYS.has(event.key) && releaseRequest(), { passive: true });
 window.addEventListener('resize', reportActive);
 // A diagram that finishes drawing, or a new text size, moves the sections without a scroll.
 new ResizeObserver(reportActive).observe(container);
@@ -203,7 +199,7 @@ function showPlace({ sectionId, field }) {
       : undefined;
   const place = /** @type {HTMLElement} */ (question ?? section);
   requested = question ? null : sectionId;
-  arrived = false;
+  nearest = Infinity;
   reportActive();
   place.scrollIntoView({ behavior: 'smooth', block: question ? 'center' : 'start' });
   place.classList.remove('flash');

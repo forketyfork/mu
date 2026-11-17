@@ -1634,28 +1634,60 @@ test('a patch is drawn as text with line numbers, and a click on a number commen
 });
 
 test('the comment field is about the section that is read, also for the last one, and not about a comment that was saved', async (t) => {
-  const { app, evaluate, inFrame, shot } = await opened(t, 'target-');
+  const { app, worker, visual, evaluate, inFrame, shot } = await opened(t, 'target-');
+  // A last section with a form: its fields take keys, and the section is too short to reach the reading line.
+  const form = { fields: [{ id: 'notes', type: 'text', label: 'Anything I should know?', multiline: true }] };
+  app.runner.active.set('worker', { conversationId: 'work' });
+  const asked = await worker('PATCH', `/api/visuals/${visual.id}`, {
+    source: `## Decide {#decide}\n\nOne question.\n\n\`\`\`form\n${JSON.stringify(form)}\n\`\`\`\n`,
+  });
+  assert.equal(asked.body.version, 2, JSON.stringify(asked.body));
   app.runner.active.clear();
+  await until('the form', () => inFrame(`Boolean(document.querySelector('#section-decide textarea'))`));
   const scopes = `[...document.querySelectorAll('.visual-scope')].map((option) => option.textContent + (option.getAttribute('aria-pressed') === 'true' ? '*' : ''))`;
   const outline = (index) =>
     evaluate(`document.querySelectorAll('#visual-outline .visual-outline-item')[${index}].click()`);
   const sections = await evaluate(`document.querySelectorAll('#visual-outline .visual-outline-item').length`);
+  const place = `(() => { const { top } = document.getElementById('section-decide').getBoundingClientRect(); return { top, line: innerHeight * 0.35, height: innerHeight }; })()`;
 
-  // The last section is too short to reach the top of the frame; it is the one that is read all the same.
   await outline(sections - 1);
   await until('the last section as the section of the comment', async () =>
-    (await evaluate(scopes)).includes('Section “Broken”'),
+    (await evaluate(scopes)).includes('Section “Decide”'),
   );
   assert.equal(
-    await evaluate(`document.querySelector('#visual-outline [aria-current]').textContent`),
-    'Broken',
+    await evaluate(`document.querySelector('#visual-outline [aria-current] .visual-outline-title').textContent`),
+    'Decide',
     'the outline marks it',
   );
   await shot('1-last');
-  // A scroll by the user is the user's own, and moves the section again, once the scroll to the section has ended.
   await until('the end of the scroll', () =>
-    inFrame(`document.getElementById('section-broken').getBoundingClientRect().bottom <= innerHeight + 1`),
+    inFrame(`document.getElementById('section-decide').getBoundingClientRect().bottom <= innerHeight + 1`),
   );
+  const resting = await inFrame(place);
+  assert.ok(resting.top > resting.line, `the section cannot reach the reading line: ${JSON.stringify(resting)}`);
+
+  // Keys typed into the field of the section do not scroll the page, and do not move the section that is read.
+  await inFrame(`(() => {
+    const field = document.querySelector('#section-decide textarea');
+    field.focus();
+    for (const key of [' ', 'Home', 'End', 'ArrowUp'])
+      field.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+  })()`);
+  await sleep(300);
+  assert.ok((await evaluate(scopes)).includes('Section “Decide”'));
+
+  // A scroll without wheel, touch or key, as a drag of the scrollbar makes it, moves the section that is read while
+  // the requested section is still on the screen.
+  await inFrame(`window.scrollTo(0, scrollY - 120)`);
+  await until('the section before it', async () => (await evaluate(scopes)).includes('Section “Broken”'));
+  const above = await inFrame(place);
+  assert.ok(above.top < above.height, 'the requested section is still on the screen');
+  await outline(sections - 1);
+  await until('the last section again', async () => (await evaluate(scopes)).includes('Section “Decide”'));
+  await until('the end of the second scroll', () =>
+    inFrame(`document.getElementById('section-decide').getBoundingClientRect().bottom <= innerHeight + 1`),
+  );
+  // A scroll that leaves the section off the screen moves the section too.
   await inFrame(`window.scrollTo(0, 0)`);
   await until('the section at the top after the user scrolls up', async () =>
     (await evaluate(scopes)).includes('Section “Overview”'),
