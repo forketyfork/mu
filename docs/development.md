@@ -31,7 +31,7 @@ JSDOM cannot show what protects the dashboard from a [visual](visuals.md): the f
 npm run test:browser
 ```
 
-`CHROME` names another browser binary. With `SHOTS` set to a directory, the check saves screenshots of each step there. It is not part of `npm test`, which must not need a browser. The pre-commit hook runs it when a commit changes what it covers: `public/visual/`, `public/visuals-view.js`, `public/visual-comments.js`, `public/visual-answers.js`, `src/visual-format.mjs`, `src/browser-policy.mjs` (the policies and the list of files the frame may load), `tests/browser/` or `package-lock.json`. Such a commit therefore needs Google Chrome.
+`CHROME` names another browser binary. With `SHOTS` set to a directory, the check saves screenshots of each step there. It is not part of `npm test`, which must not need a browser. The pre-commit hook runs it when a commit changes what it covers: `public/visual/`, `public/visuals-view.js`, `public/visual-comments.js`, `public/visual-answers.js`, `src/visual-format.mjs`, `src/browser-policy.mjs` (the policies and the list of files the frame may load), `tests/browser/` or `package-lock.json`. Such a commit therefore needs Google Chrome. The fourth test also reads the look of the version buttons from `public/styles.css` and `public/index.html`, which do not start the check: the look of a button protects nothing, and a run with Chrome for every change of the dashboard's styles would cost more than it gives. A change there that breaks the test shows in the next commit that starts the check.
 
 ## Git hooks
 

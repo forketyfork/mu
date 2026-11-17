@@ -116,11 +116,16 @@ test('messages that arrive during a turn are delivered together in the next turn
   t.after(() => store.close());
   team(store);
   const { runner, sent, acknowledged } = harness(t, store, custom);
+  // The entry of a turn names the messages that the turn works on: every message of its batch.
+  const worked = [];
+  const started = runner.active.set.bind(runner.active);
+  runner.active.set = (id, entry) => {
+    worked.push(entry.messageIds);
+    return started(id, entry);
+  };
   const first = post(store, 'lead', '@worker HOLD-GATE first');
   runner.kick();
   await until(() => runner.active.get('worker')?.child);
-  // The entry of a turn names the messages that the turn works on.
-  assert.deepEqual(runner.active.get('worker').messageIds, [first.id]);
   const second = post(store, 'lead', '@worker second request');
   const third = post(store, 'reviewer', '@worker third request');
   runner.kick();
@@ -136,6 +141,7 @@ test('messages that arrive during a turn are delivered together in the next turn
   assert.ok(secondAt !== -1 && thirdAt > secondAt, burst.prompt);
   assert.ok(!burst.prompt.includes('HOLD-GATE first'));
   assert.deepEqual(acknowledged, [[first.id], [second.id, third.id]]);
+  assert.deepEqual(worked, [[first.id], [second.id, third.id]]);
   // An unaddressed reply reaches the sender of every message it answers.
   assert.deepEqual(
     sent.map(({ text }) => text),

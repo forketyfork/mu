@@ -442,10 +442,12 @@ export function createVisualsView({
         void load({ flash: true });
       // A comment changes on the version it belongs to, which may be an earlier one that the user looks at.
       // An answer changes on the newest version, and shows on every version that asks the same question.
+      // What the author works on ends with the turn's first write, which is a change of the visual.
       else if (
         visual.commentRevision !== open.data.commentRevision ||
         visual.answerRevision !== open.data.answerRevision ||
-        started
+        started ||
+        (open.data.working && visual.revision !== open.data.revision)
       )
         void load();
     },

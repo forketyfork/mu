@@ -473,6 +473,48 @@ test('the comments that the author works on are lit for as long as its turn runs
   assert.deepEqual(lit(), []);
 });
 
+test('the light on an earlier version that the user looks at goes out when the turn writes its version', async (t) => {
+  const visual = record({ version: 2, revision: 3 });
+  const onAll = comment('vc-0000000c', {
+    version: 1,
+    messageId: 7,
+    block: null,
+    quote: null,
+    sectionId: null,
+    sectionRev: null,
+  });
+  const first = versionOf(visual, 1, [section('a', 'a0')], { comments: [onAll] });
+  const state = (shown) => ({
+    ...withVisuals(shown),
+    agents: [{ ...initialState().agents[0], status: 'working', activeMessageId: 7 }],
+  });
+  const ui = await viewer(t, {
+    hash: `#visuals/${ID}/v1`,
+    visuals: [visual],
+    versions: { 1: { ...first, working: { turn: 7, comments: [onAll.id] } } },
+  });
+  ui.update(state(visual));
+  await settle();
+  ui.attach();
+  ui.fromFrame({ type: 'ready' });
+  const lit = () => ui.working.at(-1).targets.map((target) => target.id);
+  assert.deepEqual(lit(), [onAll.id]);
+
+  // The turn writes version 3. No comment and no answer changed, only the visual, and the turn goes on.
+  const asked = ui.asked.length;
+  const next = record({ version: 3, revision: 4 });
+  ui.served.versions[1] = { ...versionOf(next, 1, [section('a', 'a0')], { comments: [onAll] }), working: null };
+  ui.update(state(next));
+  await settle();
+  assert.equal(ui.asked.length, asked + 1);
+  assert.deepEqual(lit(), []);
+  assert.equal(ui.posted.at(-1).type, 'render', 'the content of the earlier version did not change');
+  // Without a light, a later change of the visual does not concern the earlier version.
+  ui.update(state(record({ version: 3, revision: 5 })));
+  await settle();
+  assert.equal(ui.asked.length, asked + 1);
+});
+
 test('a visual that is opened while its author works shows that at once', async (t) => {
   const visual = record();
   const onAll = comment('vc-0000000c', { messageId: 7, block: null, quote: null, sectionId: null, sectionRev: null });

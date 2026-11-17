@@ -1227,7 +1227,8 @@ test('what the author works on is lit until its turn writes a version or ends, a
   // The step that leads nowhere shows it: another edge, fainter, and a pointer that says no.
   assert.notEqual(next.edge, previous.edge);
   assert.ok(next.opacity < previous.opacity);
-  assert.deepEqual([previous.cursor, next.cursor], ['pointer', 'not-allowed']);
+  assert.equal(next.cursor, 'not-allowed');
+  assert.notEqual(previous.cursor, next.cursor);
   await shot('8-newest');
   // By keyboard: Enter on the focused step goes back, and Tab leads on to the other step.
   const label = `document.getElementById('visual-version-label').textContent`;

@@ -268,6 +268,11 @@ test('the dashboard reads which comments the author works on, until its turn wri
   // A draft, and a comment that the turn does not hold, are not worked on.
   await user('POST', comments, { version: 1, sectionId: 'steps', sectionRev: REV.steps, text: 'Later' });
   assert.deepEqual((await working()).comments, [onCode.id]);
+  // The turn writes another visual, and a second version of it: this one is still worked on.
+  const other = await worker('POST', '/api/visuals', { source: '# Another plan\n\nText.\n' });
+  assert.equal(other.status, 201, JSON.stringify(other.body));
+  assert.equal((await worker('PATCH', `/api/visuals/${other.body.id}`, { source: 'More text.\n' })).status, 200);
+  assert.deepEqual(await working(), { turn: onCode.messageId, comments: [onCode.id] });
 
   // The turn writes its version: from here the new version speaks, also when it names no comment.
   const patched = await worker('PATCH', path, { source: '## Steps {#steps}\n\n1. One\n2. Two\n' });
