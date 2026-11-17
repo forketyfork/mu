@@ -1,6 +1,6 @@
 # Visuals
 
-A visual is a document that an agent writes for you: a plan to approve, an explanation of a pull request, a design with diagrams. It has sections, highlighted code and Mermaid diagrams. The dashboard shows it beside its task, keeps every version, and redraws a section the moment the agent changes it. You comment on any part of it, and the agent that wrote it answers by changing that part.
+A visual is a document that an agent writes for you: a plan to approve, an explanation of a pull request, a design with diagrams. It has sections, highlighted code, Mermaid diagrams, animated explainers and questions that you answer in place. The dashboard shows it beside its task, keeps every version, and redraws a section the moment the agent changes it. You comment on any part of it, and the agent that wrote it answers by changing that part.
 
 Ask for one in plain words ("show me the plan as a visual", "explain this PR in a visual"). The lead tells the worker to write it; the agents learn the format from the visuals skill.
 
@@ -52,6 +52,18 @@ A visual can ask you questions: one of several options, several of them, a short
 
 Questions are answered on the newest version. An earlier version shows its questions with your answers and takes no change. An answer stays with its question: when the author changes other parts of the visual, or moves the question, your answer is still there; when the author changes the question itself, its help or the hint of an option included, it starts without an answer, and so does a question whose suggestion you kept when the author takes the suggestion away. The list of visuals shows for each visual how many questions wait for you.
 
+## Watch an explainer
+
+A visual can explain a process with a small animation: a picture of parts, such as services, stores and people, and steps that change it. The controls and the list of steps are under the picture; each step has a sentence that says what happens.
+
+- **Play** plays the steps one after the other and leaves time to read each sentence. **Pause** holds the picture where it is; at the end, **Replay** starts again.
+- The arrows play the next step and go back to the picture before the last one. A number in the list plays its step.
+- In a step, messages travel along the lines, parts appear and leave, and the parts that the step is about are marked, or everything else is dimmed.
+- If your system asks for reduced motion, each step shows its result at once.
+- Comment on an explainer like on a diagram: click the picture, or select words of a step.
+
+The picture has the colors of the theme and grows with the text size; one that is wider than the page scrolls sideways.
+
 ## Links and images
 
 A visual cannot load anything from the network. An image is shown only when the document carries it; a remote image is replaced by a note. A click on a link, in the text or in a diagram, does not navigate: the dashboard shows the address above the document and opens it in a new tab when you click **Open**.
@@ -60,7 +72,7 @@ A diagram or another block that cannot be drawn is replaced by the error and its
 
 ## How agents write visuals
 
-An agent writes one Markdown file and sends it with the CLI. The first line `# Title` names the visual, each `## Heading {#id}` starts a section, a fenced block with a language is highlighted code, a `mermaid` block is a diagram, and a `form` block asks questions:
+An agent writes one Markdown file and sends it with the CLI. The first line `# Title` names the visual, each `## Heading {#id}` starts a section, a fenced block with a language is highlighted code, a `mermaid` block is a diagram, a `scene` block is an animated explainer, and a `form` block asks questions:
 
 ````markdown
 # Move the session store to SQLite
@@ -74,6 +86,19 @@ flowchart LR
   Agent -->|patch| Service --> Store[(SQLite)]
 ```
 
+## What a write does {#write}
+
+```scene
+{ "nodes": [
+    { "id": "agent", "shape": "person", "at": [0, 0], "label": "Agent" },
+    { "id": "service", "at": [2, 0], "label": "Service" },
+    { "id": "store", "shape": "disk", "at": [4, 0], "label": "SQLite", "hidden": true } ],
+  "links": [ { "from": "agent", "to": "service" }, { "from": "service", "to": "store" } ],
+  "steps": [
+    { "caption": "The agent sends a patch.", "do": [ { "send": "agent-service", "label": "patch" } ] },
+    { "caption": "The service writes it in one transaction.", "do": [ { "show": "store" }, { "send": "service-store" } ] } ] }
+```
+
 ## Decide {#decide}
 
 ```form
@@ -84,6 +109,8 @@ flowchart LR
 ] }
 ```
 ````
+
+An explainer is a list of parts on a grid (`nodes`), the lines between them (`links`), and `steps`, each with a sentence and the actions that change the picture: `show`, `hide`, `highlight`, `focus`, `pulse`, `send` (a message travels along a line), `move` (a token goes to another place) and `set` (a new label or tone). The agent chooses no pixels, colors or timing. Mu plays every step when the visual is written and refuses an explainer that cannot play, with the step named.
 
 ```bash
 node src/cli.mjs visual create --file plan.md
@@ -98,7 +125,7 @@ node src/cli.mjs visual guide                                         # the visu
 
 Only the author changes a visual; you and the members of its conversation read it, and only you comment on it and answer its questions. A visual belongs to the conversation of the turn that created it and to that conversation's task. See the [CLI reference](cli.md#visuals) for every option, and `skills/visuals/SKILL.md` for the instructions the agents follow.
 
-Limits: 200 sections per visual, 128 KiB per section, and 1 MiB for all sections of one version together; 200 comments per version, each up to 4000 bytes, with a quote of up to 600 characters; 30 questions per form with up to 12 options each, 100 questions per version, and 2000 characters per text answer. Code is highlighted in Bash, C, C++, CSS, diff, Dockerfile, Go, INI and TOML, Java, JavaScript, JSON, Kotlin, Markdown, Python, Ruby, Rust, shell sessions, SQL, Swift, TypeScript, XML and HTML, and YAML; other languages are shown as plain code.
+Limits: 200 sections per visual, 128 KiB per section, and 1 MiB for all sections of one version together; 200 comments per version, each up to 4000 bytes, with a quote of up to 600 characters; 30 questions per form with up to 12 options each, 100 questions per version, and 2000 characters per text answer; 40 parts, 60 lines and 40 steps per explainer, on a grid of 12 columns and 8 rows. Code is highlighted in Bash, C, C++, CSS, diff, Dockerfile, Go, INI and TOML, Java, JavaScript, JSON, Kotlin, Markdown, Python, Ruby, Rust, shell sessions, SQL, Swift, TypeScript, XML and HTML, and YAML; other languages are shown as plain code.
 
 ## Where visuals are stored
 

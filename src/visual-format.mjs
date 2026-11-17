@@ -2,6 +2,11 @@
 // block with a registered info string is a rich block. These are pure text functions without Node or DOM APIs: the
 // service validates with them, and it serves this file to the visual frame, which renders with them, so the two
 // cannot disagree about where a section or a block ends. See "Visuals" in docs/architecture.md.
+import { parseScene } from './visual-scene.mjs';
+import { ID, isObject, onlyKeys, unseen } from './visual-spec.mjs';
+
+export { SCENE_LIMITS, parseScene, sceneStates, sceneVisible } from './visual-scene.mjs';
+export { unseen } from './visual-spec.mjs';
 
 export const LIMITS = Object.freeze({
   titleBytes: 160,
@@ -20,7 +25,7 @@ export const COMMENT_LIMITS = Object.freeze({
   perVersion: 200,
 });
 
-export const SECTION_ID = /^[a-z][a-z0-9-]{0,47}$/;
+export const SECTION_ID = ID;
 // The section that holds the text before the first heading.
 export const LEAD_SECTION = 'intro';
 
@@ -51,27 +56,6 @@ export const FIELD_TYPES = Object.freeze(['choice', 'multi', 'text', 'number', '
  * }} FormField
  */
 
-const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
-
-// Characters that a reader does not see: controls, format characters such as zero-width spaces, direction overrides
-// and tag characters, private-use characters, separators of lines, lone surrogates, and every code point that fonts
-// ignore. Text can hide in them, and some models read it. What goes into a chat message as the user's words, and
-// the words of a question, hold none of them, so the message says what the user saw.
-const UNSEEN = /[\p{Cc}\p{Cf}\p{Co}\p{Cs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u;
-// How emoji are written: a joiner between two pictographs, and a selector after a pictograph or in a keycap.
-const EMOJI_GLUE =
-  /(?<=\p{Extended_Pictographic}\uFE0F?)\u200D(?=\p{Extended_Pictographic})|(?<=\p{Extended_Pictographic})\uFE0F|(?<=[0-9#*])\uFE0F(?=\u20E3)/gu;
-/**
- * The first character of a text that a reader does not see, as `U+200B`, or null. A text that spans lines may hold
- * line breaks and tabs.
- * @param {string} text
- * @param {boolean} [lines]
- */
-export function unseen(text, lines = false) {
-  const plain = text.replace(EMOJI_GLUE, '');
-  const found = UNSEEN.exec(lines ? plain.replace(/[\n\t]/g, '') : plain);
-  return found && `U+${found[0].codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`;
-}
 const FIELD_KEYS = {
   choice: ['options', 'default'],
   multi: ['options', 'default'],
@@ -95,11 +79,7 @@ export function parseForm(text) {
   }
   if (!isObject(spec) || !Array.isArray(spec.fields))
     throw new Error('A form block is a JSON object with a list "fields"');
-  const only = (object, allowed, what) => {
-    const unknown = Object.keys(object).find((key) => !allowed.includes(key));
-    if (unknown !== undefined) throw new Error(`${what} has no property "${unknown}"; it takes ${allowed.join(', ')}`);
-  };
-  only(spec, ['fields'], 'A form');
+  onlyKeys(spec, ['fields'], 'A form');
   if (!spec.fields.length || spec.fields.length > FORM_LIMITS.fields)
     throw new Error(`A form has 1–${FORM_LIMITS.fields} fields`);
   const used = new Set();
@@ -115,7 +95,7 @@ export function parseForm(text) {
     if (used.has(raw.id)) fail('this ID is used twice in the form');
     used.add(raw.id);
     if (!FIELD_TYPES.includes(raw.type)) fail(`"type" is one of ${FIELD_TYPES.join(', ')}`);
-    only(raw, ['id', 'type', 'label', 'help', ...FIELD_KEYS[raw.type]], `${where}: a ${raw.type} field`);
+    onlyKeys(raw, ['id', 'type', 'label', 'help', ...FIELD_KEYS[raw.type]], `${where}: a ${raw.type} field`);
     const textOf = (value, name, max, { lines = false, needed = false } = {}) => {
       if (value === undefined && !needed) return undefined;
       const trimmed = typeof value === 'string' ? value.trim() : null;
@@ -146,7 +126,7 @@ export function parseForm(text) {
       field.options = raw.options.map((option, at) => {
         if (!isObject(option) || typeof option.id !== 'string' || !SECTION_ID.test(option.id))
           fail(`option ${at + 1} needs an "id" like a field's and a "label"`);
-        only(option, ['id', 'label', 'hint'], `${where}: option ${at + 1}`);
+        onlyKeys(option, ['id', 'label', 'hint'], `${where}: option ${at + 1}`);
         if (optionIds.has(option.id)) fail(`option ID ${option.id} is used twice`);
         optionIds.add(option.id);
         const hint = textOf(option.hint, `options[${at}].hint`, FORM_LIMITS.helpChars);
@@ -237,6 +217,11 @@ export const RICH_BLOCKS = {
   form: {
     validate(block) {
       parseForm(block.text);
+    },
+  },
+  scene: {
+    validate(block) {
+      parseScene(block.text);
     },
   },
 };

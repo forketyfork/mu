@@ -1258,3 +1258,190 @@ test('what the author works on is lit until its turn writes a version or ends, a
     [],
   );
 });
+
+test('an animated explainer plays its steps in the frame, and its labels stay text', async (t) => {
+  const { app, worker, visual, elsewhere, reached, logs, evaluate, inFrame, shot, viewport, reducedMotion } =
+    await opened(t, 'scenes-');
+  // The labels and the captions are the author's text, and try what a label can.
+  const hostile = '<img src=x onerror=window.pwned=5>';
+  const scene = {
+    title: 'How a comment becomes a new version',
+    nodes: [
+      { id: 'user', shape: 'person', at: [0, 0], label: 'User' },
+      { id: 'mu', at: [1.5, 0], label: 'Mu service', tone: 'accent' },
+      { id: 'agent', shape: 'pill', at: [3, 0], label: hostile },
+      { id: 'store', shape: 'disk', at: [1.5, 1.5], label: 'SQLite', hidden: true },
+      { id: 'gate', shape: 'diamond', at: [3, 1.5], label: 'Changed?' },
+      { id: 'draft', shape: 'token', at: 'user', label: 'draft' },
+    ],
+    links: [
+      { from: 'user', to: 'mu', label: 'comment' },
+      { from: 'mu', to: 'agent', label: 'message' },
+      { id: 'patch', from: 'agent', to: 'mu', label: 'patch', tone: 'good' },
+      { from: 'mu', to: 'store', dashed: true },
+      { from: 'agent', to: 'gate', arrow: 'none' },
+    ],
+    steps: [
+      { caption: 'The user sends a comment.', do: [{ send: 'user-mu', label: 'comment' }, { highlight: 'mu' }] },
+      {
+        caption: `Mu passes it to the author. <b onmouseover=window.pwned=6>bold</b><img src=${elsewhere}/scene.png>`,
+        do: [{ send: 'mu-agent', label: '<svg onload=pwned=7>' }, { focus: ['agent', 'mu-agent'] }],
+      },
+      {
+        caption: 'The author patches one section.',
+        do: [
+          { send: 'patch', back: false, tone: 'good' },
+          { show: 'store' },
+          { set: 'store', label: 'version 2', tone: 'good' },
+          { move: 'draft', to: 'store', together: true },
+        ],
+      },
+      { caption: 'The old version keeps its comments.', do: [{ pulse: ['store', 'mu-store'] }, { hide: 'draft' }] },
+    ],
+  };
+  app.runner.active.set('worker', { conversationId: 'work' });
+  const explained = await worker('PATCH', `/api/visuals/${visual.id}`, {
+    source: `## Explain {#explain}\n\nPlay it.\n\n\`\`\`scene\n${JSON.stringify(scene)}\n\`\`\`\n`,
+  });
+  assert.equal(explained.body.version, 2, JSON.stringify(explained.body));
+  app.runner.active.clear();
+
+  const part = (id) => `document.querySelector('.visual-scene [data-part="${id}"]')`;
+  const facts = `(() => {
+    const scene = document.querySelector('.visual-scene');
+    const of = (id) => scene.querySelector('[data-part="' + id + '"]');
+    return {
+      progress: scene.querySelector('.scene-progress').textContent,
+      play: scene.querySelector('.scene-play').textContent,
+      current: [...scene.querySelectorAll('.scene-step')].findIndex((step) => step.classList.contains('current')),
+      played: scene.querySelectorAll('.scene-step.played').length,
+      hidden: [...scene.querySelectorAll('[data-part].hidden')].map((item) => item.dataset.part),
+      lit: [...scene.querySelectorAll('[data-part].lit')].map((item) => item.dataset.part),
+      dimmed: scene.querySelectorAll('[data-part].dimmed').length,
+      store: [of('store').dataset.tone, of('store').textContent],
+      draft: of('draft').getAttribute('transform'),
+      messages: scene.querySelectorAll('.scene-message').length,
+      styled: scene.querySelectorAll('.scene-picture [style]').length,
+    };
+  })()`;
+  const press = (selector) => inFrame(`document.querySelector('.visual-scene ${selector}').click()`);
+  await until('the scene', () => inFrame(`Boolean(document.querySelector('.visual-scene .scene-picture'))`));
+  await inFrame(`document.querySelector('.visual-scene').scrollIntoView()`);
+  await shot('1-start');
+
+  // Markup in a label or a caption is text.
+  assert.equal(await inFrame(`document.querySelector('.visual-scene :is(img, b, script, a, foreignObject)')`), null);
+  assert.equal(await inFrame(`${part('agent')}.textContent`), '<img src=xonerror=windo…', 'cut to the shape');
+  assert.deepEqual(
+    await inFrame(`[...document.querySelectorAll('.scene-caption')].map((caption) => caption.textContent)`),
+    scene.steps.map((step) => step.caption),
+  );
+  const start = await inFrame(facts);
+  assert.deepEqual(start, {
+    progress: '4 steps',
+    play: 'Play',
+    current: -1,
+    played: 0,
+    hidden: ['mu-store', 'store'],
+    lit: [],
+    dimmed: 0,
+    store: ['plain', 'SQLite'],
+    draft: start.draft,
+    messages: 0,
+    styled: 0,
+  });
+  assert.equal(await inFrame(`getComputedStyle(${part('store')}).display`), 'none');
+
+  // One step: the message travels on the timeline of the library, and the step ends in its state.
+  await press('.scene-next');
+  await until('the message on its way', async () => (await inFrame(facts)).messages === 1);
+  const [first, second] = [
+    await inFrame(`document.querySelector('.scene-message').getAttribute('transform')`),
+    await sleep(150).then(() => inFrame(`document.querySelector('.scene-message')?.getAttribute('transform')`)),
+  ];
+  assert.notEqual(first, second, 'the message moves');
+  await until('the end of step 1', async () => (await inFrame(facts)).played === 1);
+  assert.deepEqual(await inFrame(facts), { ...start, progress: 'Step 1 of 4', current: 0, played: 1, lit: ['mu'] });
+  await shot('2-step-1');
+
+  // Play goes on by itself; Pause holds the picture where it is.
+  await press('.scene-play');
+  await until('the message of step 2', async () => (await inFrame(facts)).messages === 1);
+  assert.equal(await inFrame(`document.querySelector('.scene-message').textContent`), '<svg onload=pwned=7>');
+  await press('.scene-play');
+  const held = await inFrame(`document.querySelector('.scene-message').getAttribute('transform')`);
+  await shot('3-paused');
+  await sleep(400);
+  assert.equal(await inFrame(`document.querySelector('.scene-message').getAttribute('transform')`), held);
+  assert.equal((await inFrame(facts)).play, 'Play');
+  await press('.scene-play');
+  await until('the end of the scene', async () => (await inFrame(facts)).play === 'Replay', 30_000);
+  const end = await inFrame(facts);
+  assert.deepEqual(end, {
+    ...start,
+    progress: 'Step 4 of 4',
+    play: 'Replay',
+    current: 3,
+    played: 4,
+    hidden: ['draft'],
+    store: ['good', 'version 2'],
+    draft: end.draft,
+  });
+  assert.notEqual(end.draft, start.draft, 'the token moved');
+  await shot('4-end');
+
+  // Back shows the state before the last step; a number plays its step from the state before it.
+  await press('.scene-back');
+  assert.deepEqual(await inFrame(facts), {
+    ...end,
+    progress: 'Step 3 of 4',
+    play: 'Play',
+    current: 2,
+    played: 3,
+    hidden: [],
+  });
+  await press('.scene-step:nth-child(2) .scene-jump');
+  assert.deepEqual(
+    [(await inFrame(facts)).current, (await inFrame(facts)).store, (await inFrame(facts)).hidden],
+    [1, ['plain', 'SQLite'], ['mu-store', 'store']],
+  );
+  await until('the focus of step 2', async () => (await inFrame(facts)).played === 2);
+  const focused = await inFrame(facts);
+  assert.equal(focused.dimmed, 9, 'everything but the two parts in focus');
+  await shot('5-focus');
+
+  // A reader who asked for less motion gets the result of a step at once.
+  await reducedMotion(true);
+  await until('the wish for less motion', () => inFrame(`matchMedia('(prefers-reduced-motion: reduce)').matches`));
+  await press('.scene-next');
+  assert.deepEqual(
+    [(await inFrame(facts)).progress, (await inFrame(facts)).store, (await inFrame(facts)).messages],
+    ['Step 3 of 4', ['good', 'version 2'], 0],
+  );
+
+  await viewport(390, 844);
+  await until('the narrow layout', () => inFrame(`innerWidth < 500`));
+  assert.equal(
+    await inFrame(`document.documentElement.scrollWidth <= innerWidth`),
+    true,
+    'no sideways scroll of the page',
+  );
+  assert.equal(
+    await inFrame(
+      `(() => { const stage = document.querySelector('.scene-stage'); return stage.scrollWidth > stage.clientWidth; })()`,
+    ),
+    true,
+    'the picture scrolls in its own box',
+  );
+  await inFrame(`document.querySelector('.visual-scene').scrollIntoView()`);
+  await shot('6-narrow');
+
+  assert.equal(await inFrame(`window.pwned ?? null`), null);
+  assert.equal(await evaluate(`window.pwned ?? null`), null);
+  assert.deepEqual(reached, []);
+  // The browser stopped nothing that the scene, its renderer or the animation library did, and none of them failed.
+  assert.deepEqual(
+    logs.filter((line) => /scene|anime|\[exception\]/.test(line)),
+    [],
+  );
+});

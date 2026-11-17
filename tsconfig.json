@@ -13,6 +13,7 @@
     "incremental": true,
     "tsBuildInfoFile": "node_modules/.cache/tsc/tsbuildinfo",
     "paths": {
+      "/vendor/anime.js": ["./node_modules/animejs/dist/modules/index.d.ts"],
       "/vendor/marked.js": ["./node_modules/marked/lib/marked.d.ts"],
       "/vendor/purify.js": ["./node_modules/dompurify/dist/purify.es.d.mts"],
       "/vendor/highlight/core.js": ["./node_modules/highlight.js/lib/core.d.ts"],
@@ -22,7 +23,8 @@
       "/visual/anchor.js": ["./public/visual/anchor.js"],
       "/visual/marks.js": ["./public/visual/marks.js"],
       "/visual/sheen.js": ["./public/visual/sheen.js"],
-      "/visual/form.js": ["./public/visual/form.js"]
+      "/visual/form.js": ["./public/visual/form.js"],
+      "/visual/scene.js": ["./public/visual/scene.js"]
     }
   },
   "include": ["src", "scripts", "tests", "public", "*.mjs"]

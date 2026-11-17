@@ -4,11 +4,21 @@
 // docs/architecture.md.
 import { marked } from '/vendor/marked.js';
 import DOMPurify from '/vendor/purify.js';
-import { COMMENT_LIMITS, FORM_LIMITS, codeLanguage, parseBlocks, parseForm } from '/visual/format.js';
+import {
+  COMMENT_LIMITS,
+  FORM_LIMITS,
+  codeLanguage,
+  parseBlocks,
+  parseForm,
+  parseScene,
+  sceneStates,
+  sceneVisible,
+} from '/visual/format.js';
 import { locate } from '/visual/anchor.js';
 import { createForms } from '/visual/form.js';
 import { createMarks } from '/visual/marks.js';
 import { createRenderer, visualMarkdown } from '/visual/render.js';
+import { createMotion, createScenes } from '/visual/scene.js';
 import { createSheen } from '/visual/sheen.js';
 
 const root = document.documentElement;
@@ -75,12 +85,28 @@ async function mermaid(figure, block) {
 
 const forms = createForms({ document, parseForm, answerChars: FORM_LIMITS.answerChars, tell });
 
+const lessMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+let scenes = null;
+async function scene(figure, block) {
+  scenes ??= import('/vendor/anime.js').then(({ createTimeline }) =>
+    createScenes({
+      document,
+      parseScene,
+      sceneStates,
+      sceneVisible,
+      motion: createMotion({ createTimeline }),
+      reducedMotion: () => lessMotion.matches,
+    }),
+  );
+  (await scenes).render(figure, block);
+}
+
 const renderer = createRenderer({
   document,
   parseBlocks,
   markdownHtml: (source) => visualMarkdown(source, { parse: marked.parse, sanitize: DOMPurify.sanitize }),
   highlight,
-  richBlocks: { mermaid, form: forms.render },
+  richBlocks: { mermaid, form: forms.render, scene },
   onProblems: (problems) => tell({ type: 'problems', problems }),
 });
 

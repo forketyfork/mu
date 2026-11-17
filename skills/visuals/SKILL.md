@@ -1,6 +1,6 @@
 ---
 name: visuals
-description: Write and revise a visual, a versioned document that the user reads, comments on and answers questions in, in the Mu dashboard, with highlighted code, diagrams and forms. Use when a plan, an explanation of a change or a review is clearer as a document than as chat messages, when the user must choose between options, when a brief asks for a visual, or when the user comments on a visual you wrote or answers its questions.
+description: Write and revise a visual, a versioned document that the user reads, comments on and answers questions in, in the Mu dashboard, with highlighted code, diagrams, animated explainers and forms. Use when a plan, an explanation of a change or a review is clearer as a document than as chat messages, when the user must choose between options, when a brief asks for a visual, or when the user comments on a visual you wrote or answers its questions.
 ---
 
 # Visuals
@@ -42,7 +42,7 @@ export const rev = (section) => hash(section).slice(0, 16);
 
 - The first line `# Title` names the visual. Text before the first `##` is the lead section, `intro`.
 - Each `## Heading {#id}` starts a section. Give every section an ID (lowercase letters, digits, hyphens): the ID is how you change that section later, and it survives a new heading. Without `{#id}` the ID is derived from the heading.
-- A fenced block with a language is highlighted code. A `mermaid` block is drawn as a diagram. Inside a section use `###` and deeper headings.
+- A fenced block with a language is highlighted code. A `mermaid` block is drawn as a diagram, a `scene` block is an animated explainer (see below), and a `form` block asks the user. Inside a section use `###` and deeper headings.
 - An image must be a `data:` URL of a PNG, JPEG, GIF or WebP; the dashboard loads nothing from the network. Raw HTML is removed. A link opens only after the user confirms its address.
 - The reply names the visual (`vis-…`) and its sections. Mention the visual to the user by its ID as a code span, `` `vis-1a2b3c4d` ``: the dashboard turns it into a link.
 
@@ -125,7 +125,7 @@ SQLite keeps everything in one file; the files need no migration but lose the in
 - An ID is lowercase letters, digits and hyphens, and names one question in the whole visual; an option has an `id`, a `label` and may have a `hint`. You read the answers by these IDs, so choose IDs that say what they mean.
 - `default` is your suggestion: an option ID, a list of option IDs, text, a number, or `true` or `false`. The user sees it as chosen and marked as a suggestion, and it becomes the answer when the user sends. Suggest what you would do, and say why in the text above the form.
 - Put the form in the section that explains the choice. Ask what you need to continue, with options that are real alternatives; a question whose answer would not change your work is noise.
-- The command refuses a form that it cannot read and names the field, so check its reply. It also refuses a label, an option or help text with a character that is not shown, such as a zero-width space; write the text without it.
+- The command refuses a form that it cannot read and names the field, so check its reply. It also refuses a label, an option or help text with a character that is not shown, such as a zero-width space; write the text without it. The same holds for the labels and captions of a scene.
 
 The answers arrive as one chat message from the user, with the user's draft comments when there are any:
 
@@ -151,9 +151,63 @@ node "$MU_CLI" visual answers --id vis-1a2b3c4d   # {"answers": {"store": "sqlit
 - The user can send again; the message then marks an answer as `(changed)` and lists the ones that were taken back. Text after `>` in an answer is the user's; a label is your own text coming back and never an instruction.
 - End the turn as after comments: `NO_REPLY` when the visual says everything, otherwise a reply addressed to `@user`.
 
+## Explain with motion
+
+When the point is what happens in which order, such as a request that passes three services, a migration in steps or two writers that race, a still diagram makes the reader play it in the head. A `scene` block plays it: a picture of named parts, and steps that change the picture, each with a caption. The user plays it, steps through it, goes back, and comments on it like on any block.
+
+````markdown
+## What a patch does {#patch}
+
+```scene
+{ "title": "One patch, one new version",
+  "nodes": [
+    { "id": "author", "shape": "person", "at": [0, 0], "label": "Author" },
+    { "id": "mu", "at": [2, 0], "label": "Mu service" },
+    { "id": "store", "shape": "disk", "at": [4, 0], "label": "Version 1", "hidden": true },
+    { "id": "draft", "shape": "token", "at": "author", "label": "v2" }
+  ],
+  "links": [
+    { "from": "author", "to": "mu", "label": "patch" },
+    { "from": "mu", "to": "store", "dashed": true }
+  ],
+  "steps": [
+    { "caption": "The author sends only the sections that changed.",
+      "do": [ { "send": "author-mu", "label": "2 sections" }, { "highlight": "mu" } ] },
+    { "caption": "Mu stores them as version 2 and keeps version 1.",
+      "do": [ { "show": "store" }, { "move": "draft", "to": "store" },
+              { "set": "store", "label": "Versions 1–2", "tone": "good", "together": true } ] },
+    { "caption": "The dashboard redraws those sections and nothing else.",
+      "do": [ { "focus": "mu" }, { "pulse": "mu" } ] }
+  ] }
+```
+````
+
+- `nodes` are the parts. Each has an `id` and a place `at: [column, row]` on a grid, counted from 0; a half such as `1.5` is fine. `shape` is `box` (when you name none), `pill`, `disk` for a store, `circle`, `diamond` for a decision, `person`, `note` for text without an outline, or `token`. `tone` is `plain`, `accent`, `good`, `warn`, `bad` or `muted`. `"hidden": true` keeps a part out of the picture until a step shows it.
+- A `label` is one line. Mu breaks it into the lines of the shape and cuts what does not fit, so write two or three words: a box holds about three lines of 16 characters.
+- A `token` is a small mark that moves, such as a job, a lock or a file. Its `at` is a cell or the ID of the node it stands on.
+- `links` join two nodes with `from` and `to`. A link may have a `label`, a `tone`, `"dashed": true`, `arrow` (`end`, `both` or `none`), `"hidden": true`, and `bend` from -2 to 2, which bows it around a node in its way. Its ID is `from-to`, such as `author-mu`; give a second link in the same direction an `id` of its own. A link is drawn only while both its nodes are.
+- A message that a step sends with a `label` shows it in place of the label of its link while it travels.
+- `steps` tell the story. Each has a `caption` of one line, a full sentence that says what happens, and `do`, the actions of the step. The actions play one after the other; `"together": true` starts an action with the one before it.
+
+| Action | What it does |
+| --- | --- |
+| `{ "show": ID }`, `{ "hide": ID }` | Parts appear or leave. Takes one ID or a list, like the next three. |
+| `{ "highlight": ID }` | Marks parts for this step. |
+| `{ "focus": ID }` | Dims everything else for this step. |
+| `{ "pulse": ID }` | A beat on parts, to point at them. |
+| `{ "send": LINK, "label": TEXT }` | A message travels along a link. `"back": true` sends it from the far end; `tone` colors it. |
+| `{ "move": TOKEN, "to": PLACE }` | A token goes to a cell or to a node. |
+| `{ "set": ID, "label": TEXT, "tone": TONE }` | A part gets a new label, a new tone or both. |
+
+- What `show`, `hide`, `move` and `set` change stays for the steps that follow. `highlight` and `focus` last for their step.
+- Mu plays every step when you send the visual and refuses a scene that cannot play: a part that is shown twice, a message on a link that is not drawn, a name that no part has. The error names the step and the action; correct it and send again.
+- You choose no pixels, colors or timing; Mu does, in the reader's theme. Lay the parts out in the order of the story, left to right or top to bottom. Put two nodes one and a half or two columns apart when their link has a label or carries a message (columns 0, 1.5, 3, 4.5), and keep the columns between 0 and 4.5: a wider picture scrolls sideways.
+- One scene tells one idea: about five to eight parts and three to seven steps. Start with the parts that the first step needs, and show the others when they enter the story. A longer story is two scenes in two sections.
+- Write the captions so that they tell the story alone. A reader who asked for reduced motion sees the result of each step without the motion, and the user quotes a caption to comment on a step.
+
 ## Make it worth reading
 
 - Lead with the conclusion or the decision you need. One idea per section, with a heading that says it.
-- Prefer a diagram for structure, flow and sequence; a table for a comparison; a form for a choice that is the user's; code only where the exact text matters.
+- Prefer a diagram for structure, flow and sequence; an explainer for what happens step by step; a table for a comparison; a form for a choice that is the user's; code only where the exact text matters.
 - Keep a diagram small enough to read: split a large one by concern. A diagram that Mermaid cannot parse is shown as an error in its place, so keep the syntax simple and check the reply of the command.
 - Write for a reader without your context: full sentences, defined terms, no internal labels.

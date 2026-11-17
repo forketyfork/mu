@@ -549,6 +549,287 @@ textarea.form-input {
   cursor: pointer;
 }
 
+/* An animated explainer. The picture is drawn in units of its own, which grow with the reader's text size. */
+.visual-scene {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12px);
+  text-align: left;
+}
+
+.scene-title {
+  color: var(--markdown-body-h1-ink);
+  font-weight: var(--font-weight-650);
+}
+
+.scene-stage {
+  overflow-x: auto;
+  text-align: center;
+  scrollbar-width: thin;
+}
+
+/* The renderer gives the picture its width, and the least width at which its labels can be read; a picture that
+   is wider than the page scrolls sideways. */
+.scene-picture {
+  max-width: 100%;
+  height: auto;
+}
+
+/* The tone of a part is the color of its edge, which its lines take as the current color, and a fill. */
+.scene-node,
+.scene-link {
+  color: var(--muted);
+  transition:
+    opacity var(--duration-0-2s) var(--motion-easing),
+    color var(--duration-0-2s) var(--motion-easing);
+}
+
+.visual-scene [data-tone='accent'] {
+  color: var(--accent);
+}
+
+.visual-scene [data-tone='good'] {
+  color: var(--green);
+}
+
+.visual-scene [data-tone='warn'] {
+  color: var(--amber);
+}
+
+.visual-scene [data-tone='bad'] {
+  color: var(--red);
+}
+
+.visual-scene [data-tone='muted'] {
+  color: var(--line);
+}
+
+.scene-node.hidden,
+.scene-link.hidden {
+  display: none;
+}
+
+.scene-node.dimmed,
+.scene-link.dimmed {
+  opacity: 0.25;
+}
+
+.scene-body {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.scene-shape {
+  fill: var(--main-pane-surface-4);
+  stroke: currentcolor;
+  stroke-width: 1.6;
+  transition:
+    fill var(--duration-0-2s) var(--motion-easing),
+    stroke var(--duration-0-2s) var(--motion-easing),
+    stroke-width var(--duration-0-2s) var(--motion-easing);
+}
+
+[data-tone='accent'] > .scene-body > .scene-shape {
+  fill: var(--accent-soft);
+}
+
+[data-tone='good'] > .scene-body > .scene-shape {
+  fill: var(--working-icon-surface);
+}
+
+[data-tone='warn'] > .scene-body > .scene-shape {
+  fill: var(--attention-icon-surface);
+}
+
+[data-tone='bad'] > .scene-body > .scene-shape {
+  fill: var(--error-notice-surface);
+}
+
+.scene-shape.scene-rim {
+  fill: none;
+}
+
+.shape-token .scene-shape {
+  fill: currentcolor;
+  stroke: var(--surface);
+}
+
+.scene-node.lit .scene-shape {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+/* The renderer sets the size of the text, in the units of the picture. */
+.scene-label,
+.scene-link-label {
+  fill: var(--ink);
+  font-family: var(--font-body);
+  dominant-baseline: central;
+  transition: fill var(--duration-0-2s) var(--motion-easing);
+}
+
+.shape-note .scene-label,
+[data-tone='muted'] .scene-label {
+  fill: var(--muted);
+}
+
+.shape-note .scene-label {
+  font-style: italic;
+}
+
+/* The text beside a token and on a link stands on the picture, so it carries an edge in the color under it. */
+.shape-token .scene-label,
+.scene-link-label {
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-linejoin: round;
+  stroke-width: 4;
+}
+
+.scene-link-label {
+  fill: var(--muted);
+}
+
+.scene-link-line {
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-width: 1.6;
+  transition:
+    stroke var(--duration-0-2s) var(--motion-easing),
+    stroke-width var(--duration-0-2s) var(--motion-easing);
+}
+
+.scene-link.dashed .scene-link-line {
+  stroke-dasharray: 6 5;
+}
+
+.scene-link-head {
+  fill: currentcolor;
+  transition: fill var(--duration-0-2s) var(--motion-easing);
+}
+
+.scene-link.lit .scene-link-line {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.scene-link.lit .scene-link-head,
+.scene-link.lit .scene-link-label {
+  fill: var(--accent);
+}
+
+.scene-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8px);
+  cursor: default;
+}
+
+.scene-controls button,
+.scene-jump {
+  border: 1px solid var(--line);
+  border-radius: var(--border-radius-7px);
+  background: var(--main-pane-surface-4);
+  color: inherit;
+  font: inherit;
+  font-size: var(--font-size-15px);
+  line-height: var(--line-height-1-4);
+  cursor: pointer;
+}
+
+.scene-controls button {
+  min-width: 2.4em;
+  padding: var(--space-4px) var(--space-12px);
+}
+
+.scene-controls .scene-play {
+  min-width: 5.5em;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: var(--font-weight-650);
+}
+
+.scene-controls button:hover:not(:disabled),
+.scene-jump:hover {
+  border-color: var(--accent);
+}
+
+.scene-controls button:focus-visible,
+.scene-jump:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.scene-controls button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.scene-progress {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--font-size-13px);
+}
+
+/* The captions of all steps: what the explainer says, also for a reader who plays nothing. */
+.scene-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2px);
+  max-height: 15em;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  cursor: text;
+  scrollbar-width: thin;
+}
+
+.scene-step {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-10px);
+  padding: var(--space-4px) var(--space-8px);
+  border-left: 3px solid transparent;
+  border-radius: var(--border-radius-5px);
+  color: var(--muted);
+  font-size: var(--font-size-15px);
+  overflow-wrap: anywhere;
+  transition:
+    color var(--duration-0-2s) var(--motion-easing),
+    background var(--duration-0-2s) var(--motion-easing);
+}
+
+.scene-step.played {
+  color: inherit;
+}
+
+.scene-step.current {
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.scene-jump {
+  flex: none;
+  min-width: 1.9em;
+  padding: 0 var(--space-4px);
+  color: var(--muted);
+  font-size: var(--font-size-13px);
+  text-align: center;
+}
+
+.scene-step.current .scene-jump {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .visual-scene * {
+    transition: none;
+  }
+}
+
 /* What the user's comments are about. The dashboard names the ranges; the frame paints them. */
 ::highlight(comment-answered) {
   text-decoration: underline dotted var(--green);

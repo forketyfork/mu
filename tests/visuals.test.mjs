@@ -9,6 +9,7 @@ import { main } from '../src/cli.mjs';
 import {
   CODE_LANGUAGES,
   LIMITS,
+  RICH_BLOCKS,
   documentSource,
   parseBlocks,
   parseDocument,
@@ -408,7 +409,15 @@ test('the frame page is sandboxed without network, and only its own files answer
     assert.equal(response.status, 200, asset);
     assert.equal(response.headers.get('access-control-allow-origin'), '*', asset);
   }
-  for (const asset of ['/visual/format.js', '/vendor/marked.js', '/vendor/purify.js'])
+  for (const asset of [
+    '/visual/format.js',
+    '/visual/visual-scene.mjs',
+    '/visual/visual-spec.mjs',
+    '/visual/scene.js',
+    '/vendor/marked.js',
+    '/vendor/purify.js',
+    '/vendor/anime.js',
+  ])
     assert.equal((await fetch(`${url}${asset}`, { headers: crossSite })).status, 200, asset);
 
   // The dashboard may embed only Mu's own pages, which also limits where a frame can navigate itself.
@@ -471,7 +480,10 @@ test('the frame gets every file its code imports, as a module, and no other file
     '/vendor/mermaid/chunks/mermaid.esm.min/%2e%2e/%2e%2e/mermaid.js',
     '/vendor/highlight/lib/core.js',
     '/vendor/highlight/zig.js',
-    '/vendor/anime.js',
+    '/vendor/anime.umd.js',
+    '/vendor/anime/modules/index.js',
+    '/visual/visuals.mjs',
+    '/visual/server.mjs',
   ]) {
     assert.equal((await get(path)).status, 403, `${path} from the frame`);
     assert.notEqual((await get(path, {})).status, 200, `${path} from the dashboard`);
@@ -488,6 +500,22 @@ test('the CLI prints the visuals skill without a service, and the role files poi
   assert.match(skill, /^---\nname: visuals\ndescription: .+\n---\n/);
   for (const role of ['worker', 'team-lead'])
     assert.match(await readFile(join(ROOT, `skills/${role}/SKILL.md`), 'utf8'), /visual guide/, role);
+});
+
+test('the examples of a visual in the skill and in the guide are visuals that the service takes', async () => {
+  const types = new Set();
+  for (const path of ['skills/visuals/SKILL.md', 'docs/visuals.md']) {
+    const text = await readFile(join(ROOT, path), 'utf8');
+    const examples = [...text.matchAll(/^````markdown\n([\s\S]*?)\n````$/gm)].map(([, example]) => example);
+    assert.ok(examples.length, path);
+    for (const example of examples)
+      for (const section of parseDocument(example).sections) {
+        assert.doesNotThrow(() => validateSection(section), path);
+        for (const block of parseBlocks(section.body)) types.add(block.type);
+      }
+  }
+  // Every type of block has an example, so a change of its format that the examples do not follow fails here.
+  assert.deepEqual([...types].sort(), ['markdown', ...Object.keys(RICH_BLOCKS)].sort());
 });
 
 test('the CLI writes, changes and reads back a visual as Markdown', async (t) => {

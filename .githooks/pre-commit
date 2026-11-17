@@ -1,7 +1,7 @@
 #!/bin/sh
 # What only a real browser can check: the sandbox and the policies of the visual frame. Read the list of staged files
 # before the git variables are unset, because a commit of named paths has its index in one of them.
-browser_check=$(git diff --cached --name-only | grep -E '^(public/visual/|public/visuals-view\.js$|public/visual-comments\.js$|public/visual-answers\.js$|src/visual-format\.mjs$|src/browser-policy\.mjs$|tests/browser/|package-lock\.json$)')
+browser_check=$(git diff --cached --name-only | grep -E '^(public/visual/|public/visuals-view\.js$|public/visual-comments\.js$|public/visual-answers\.js$|src/visual-(format|scene|spec)\.mjs$|src/browser-policy\.mjs$|tests/browser/|package-lock\.json$)')
 # git exports GIT_DIR and similar variables to hooks; a test that runs git would otherwise act on
 # this repository instead of its own scratch repository.
 unset $(git rev-parse --local-env-vars)

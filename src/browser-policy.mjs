@@ -24,9 +24,14 @@ const FRAME_ASSETS = Object.freeze({
   '/visual/marks.js': { file: 'public/visual/marks.js' },
   '/visual/sheen.js': { file: 'public/visual/sheen.js' },
   '/visual/form.js': { file: 'public/visual/form.js' },
+  '/visual/scene.js': { file: 'public/visual/scene.js' },
   '/visual/format.js': { file: 'src/visual-format.mjs' },
+  // The format imports its parts by their file names.
+  '/visual/visual-spec.mjs': { file: 'src/visual-spec.mjs' },
+  '/visual/visual-scene.mjs': { file: 'src/visual-scene.mjs' },
   '/vendor/marked.js': { file: 'node_modules/marked/lib/marked.esm.js' },
   '/vendor/purify.js': { file: 'node_modules/dompurify/dist/purify.es.mjs' },
+  '/vendor/anime.js': { file: 'node_modules/animejs/dist/bundles/anime.esm.min.js' },
   '/vendor/highlight/core.js': { file: 'node_modules/highlight.js/lib/core.js', commonJs: true },
   ...Object.fromEntries(
     CODE_LANGUAGES.map((language) => [
