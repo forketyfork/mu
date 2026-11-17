@@ -22,6 +22,8 @@ Run `node src/cli.mjs init` in the Mu checkout before the first start. It create
 
 ### Upgrade the role files
 
+The whole update, with the steps before and after this one, is in [Update Mu](update.md).
+
 A new version of Mu can ship new role files. Check whether the home is current with `node src/cli.mjs service`: each entry under `home.defaults` is `current`, `missing`, `outdated`, `edited`, or a merge state such as `mergeable` or `conflict`.
 
 Run `node src/cli.mjs init` to upgrade. A role file you did not edit is replaced. A role file you edited is merged with the new version. When the merge has a conflict, `init` leaves the file unchanged: resolve the conflict in the file yourself, then run `node src/cli.mjs init --accept skills/team-lead/SKILL.md` (or the worker's path) to take the current shipped version as the new merge base.

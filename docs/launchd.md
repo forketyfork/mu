@@ -55,6 +55,8 @@ After you change `PATH`, the Node.js installation or a recorded variable, uninst
 
 ## Restart
 
+[Update Mu](update.md) shows where the restart belongs in an update.
+
 Run `node src/cli.mjs restart`. The lead can run it too.
 
 1. Mu first compares the installed packages with `package-lock.json`, then starts the checkout's current code on a separate port, with a copy of the database. If the packages differ or that start fails, nothing is restarted and the command shows the reason, including when the Node.js binary cannot be started. After a merge that changed the dependencies, run `npm ci` in the checkout, then `restart` again. Mu starts the check from the stable package-manager path, so a Node.js upgrade after the service started does not break it.

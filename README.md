@@ -91,6 +91,7 @@ Then give the lead its first job. Decisions that wait for you appear at the top 
 | --- | --- |
 | [Configuration](docs/configuration.md) | Mu's home directory, `config.json` keys, environment variables |
 | [Running Mu](docs/operations.md) | Start and stop, the chat server, recovery after a failure, a fresh start, troubleshooting |
+| [Update Mu](docs/update.md) | Move an existing installation to the latest version, in a terminal or under launchd |
 | [Run Mu as a launchd agent](docs/launchd.md) | Start Mu at login and restart it automatically |
 | [The dashboard](docs/dashboard.md) | Chats, tasks and verification, the waiting list, the focus list, transcripts, visuals, the brag doc, reading settings |
 | [Visuals](docs/visuals.md) | Documents with diagrams and highlighted code that agents write for you: reading them, versions, how agents write them |
