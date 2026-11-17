@@ -40,7 +40,7 @@ Each preview is a short excerpt. Click it to open the whole demo, about a minute
 
 **Code review.** A reviewer explains a pull request with its real diff. Comment on one line, and the reply arrives as a new section.
 
-[![Code review: a short excerpt of the video](docs/videos/code-review.webp)]([https://github.com/forketyfork/mu/raw/main/docs/videos/code-review-full.webp](https://github.com/user-attachments/assets/2748e448-d99b-4fa6-b2c6-193597c25c5a))
+[![Code review: a short excerpt of the video](docs/videos/code-review.webp)](https://github.com/user-attachments/assets/2748e448-d99b-4fa6-b2c6-193597c25c5a)
 
 **Questions in the plan.** Answer the agent’s questions in the document; the plan follows your choices, and the answers reach the agent in one message.
 
