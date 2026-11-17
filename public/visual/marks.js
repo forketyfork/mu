@@ -110,12 +110,25 @@ export function createMarks({ document, window, container, limits, tell }) {
   window.addEventListener('scroll', schedule, { passive: true });
   window.addEventListener('resize', schedule);
 
+  // A click on a line or a diagram offers a comment that no selection stands behind, so the next click elsewhere has
+  // to end the offer. The event whose handler made the offer is kept, because the click on the line also reaches
+  // the document.
+  let clickOffer = false;
+  let offeredBy = null;
+  document.addEventListener('click', (event) => {
+    if (!clickOffer || event === offeredBy) return;
+    clickOffer = false;
+    told = null;
+    report();
+  });
+
   // A click on marked text names its comment; a click on a diagram or another drawn block offers a comment on it.
   container.addEventListener('click', (event) => {
     // A line number of a patch offers a comment on its line; with the keyboard, the click has no place on the screen.
     const gutter = /** @type {HTMLElement | null} */ (/** @type {Element} */ (event.target).closest?.('.patch-gutter'));
     if (gutter) {
       lineChosen(gutter);
+      offeredBy = event;
       return;
     }
     if (!document.getSelection().isCollapsed) return;
@@ -148,6 +161,8 @@ export function createMarks({ document, window, container, limits, tell }) {
     });
     // The click ended whatever was selected; that end is not news after this.
     told = JSON.stringify(null);
+    clickOffer = true;
+    offeredBy = event;
   });
 
   function lineChosen(gutter) {
@@ -155,7 +170,12 @@ export function createMarks({ document, window, container, limits, tell }) {
     const figure = /** @type {HTMLElement | null} */ (gutter.closest('.visual-patch'));
     const section = /** @type {HTMLElement | null} */ (figure?.closest('.visual-section'));
     if (!row || !figure || !section || section.parentElement !== container) return;
-    const { left, top, right, bottom } = row.getBoundingClientRect();
+    // The button of the offer goes under the line, at its code: the hand is on the number, and the numbers of the
+    // lines below stay free to press. A patch that is scrolled sideways shows the code from the edge of its box.
+    const { top, bottom } = row.getBoundingClientRect();
+    const view = /** @type {HTMLElement} */ (gutter.closest('.patch-scroll')).getBoundingClientRect();
+    const code = /** @type {HTMLElement} */ (row.querySelector('.patch-code')).getBoundingClientRect();
+    const left = Math.min(Math.max(code.left, view.left), view.right);
     tell({
       type: 'selection',
       target: {
@@ -165,9 +185,10 @@ export function createMarks({ document, window, container, limits, tell }) {
         quote: null,
         line: { path: row.dataset.path, side: gutter.dataset.side, number: Number(gutter.dataset.number) },
       },
-      rect: { left, top, right, bottom },
+      rect: { left, top, right: left, bottom },
     });
     told = JSON.stringify(null);
+    clickOffer = true;
   }
 
   // Code that is highlighted and a diagram that is drawn replace the text nodes that a mark stands on.

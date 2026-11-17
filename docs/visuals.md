@@ -27,7 +27,7 @@ Each turn in which the agent changes a visual makes one new version. The header 
 
 Tell the author what to change, at the place where you read it. The comments are on the right of the document.
 
-- **Select text** and click **Comment** beside the selection. A selection can cover several paragraphs of one section, and works in code and in tables. **Click a diagram** to comment on it as a block, and **click a line number** of a code change to comment on that line.
+- **Select text** and click **Comment** beside the selection. A selection can cover several paragraphs of one section, and works in code and in tables. **Click a diagram** to comment on it as a block, and **click a line number** of a code change to comment on that line; the **Comment** button then appears under that line. A click anywhere else takes the button back.
 - The buttons above the field say what the comment is about: the selected text, the line or the block, the section you are reading, or the whole visual. The section you are reading is the one you chose in the outline, also when it is too near the end of the page to scroll to the top. A comment that you save, as a draft or as a message, uses up its selection: the buttons then name the section you are reading.
 - Type what you want, or click a ready request: **Simpler**, **More detail**, **Example**, **Shorter**, **Why?**.
 - **Send now** sends the comment to the author at once (also Ctrl or ⌘ + Enter). **Save draft** keeps it; only you see a draft, and you can edit, send or delete it. **Send all** sends every draft of the version in one message, so the author answers them in one turn.

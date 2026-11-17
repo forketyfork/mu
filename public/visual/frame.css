@@ -903,12 +903,13 @@ textarea.form-input {
   opacity: 0.16;
 }
 
-/* The light: a band as wide as the target, which enters at the left and leaves at the right. */
+/* The light: a band as wide as the target, which enters at the left and leaves at the right. The band is soft at both
+   ends, so it moves evenly and the next one follows at once: an easing would leave it slow and unseen at the edges. */
 .working-sheen::after {
   background: linear-gradient(90deg, transparent 0%, var(--accent) 50%, transparent 100%);
   opacity: 0.2;
   transform: translateX(-100%);
-  animation: working-sweep calc(var(--duration-1-5s) * 1.8) var(--motion-easing) infinite;
+  animation: working-sweep calc(var(--duration-1-5s) * 4 / 3) linear infinite;
 }
 
 .working-sheen.text::after {
@@ -930,7 +931,6 @@ textarea.form-input {
     transform: translateX(-100%);
   }
 
-  70%,
   100% {
     transform: translateX(100%);
   }

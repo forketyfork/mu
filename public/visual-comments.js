@@ -497,6 +497,11 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
     field().focus();
     sendMarks();
   });
+  // The offer is for the click that made it: a click anywhere else in the dashboard takes it back. A click in the frame
+  // reaches the frame's own document, which tells the end of the offer.
+  document.addEventListener('click', (event) => {
+    if (!$('visual-comment-bubble').contains(/** @type {Node} */ (event.target))) hideBubble();
+  });
   $('visual-comments-send-all').addEventListener('click', () => void act(() => send()));
 
   return {

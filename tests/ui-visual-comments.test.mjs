@@ -157,6 +157,23 @@ test('a click on a line number of a patch makes a comment on that line', async (
   assert.deepEqual(ui.scopes(), ['Line src/a.js:12 (old)*', 'Section “a”', 'Whole visual']);
 });
 
+test('a click elsewhere in the dashboard takes the offer to comment back, and the click on the offer takes it', async (t) => {
+  const ui = await commenting(t);
+  ui.fromFrame({ type: 'selection', target: ON_LINE, rect: RECT });
+  assert.equal(ui.$('#visual-comment-bubble').hidden, false);
+  ui.click('#visual-comments-list');
+  assert.equal(ui.$('#visual-comment-bubble').hidden, true);
+  // The line stays what the comment field is about until the frame says that it ended.
+  assert.deepEqual(ui.scopes(), ['Line src/a.js:12*', 'Section “a”', 'Whole visual']);
+  ui.fromFrame({ type: 'selection', target: null });
+  assert.equal(ui.$('#visual-comment-bubble').hidden, true);
+  assert.deepEqual(ui.scopes(), ['Whole visual*']);
+  ui.fromFrame({ type: 'selection', target: ON_LINE, rect: RECT });
+  assert.equal(ui.$('#visual-comment-bubble').hidden, false);
+  ui.click('#visual-comment-bubble');
+  assert.deepEqual(ui.scopes(), ['Line src/a.js:12*', 'Section “a”', 'Whole visual']);
+});
+
 test('a comment that is saved uses up the selection it was written on, as a draft and as a message', async (t) => {
   const ui = await commenting(t);
   ui.fromFrame({ type: 'active', sectionId: 'a' });

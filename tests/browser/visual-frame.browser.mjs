@@ -1108,6 +1108,25 @@ test('what the author works on is lit until its turn writes a version or ends, a
     seen.add((await inFrame(lights))[0].band);
     return seen.size > 2;
   });
+  // Waves follow one another calmly, with no long dark wait: the band's glow is out of its place for a short while only.
+  const gap = await inFrame(`(() => {
+    const light = document.querySelector('.working-sheen.section');
+    const width = light.getBoundingClientRect().width;
+    const animation = light.getAnimations({ subtree: true }).find((item) => item.animationName === 'working-sweep');
+    const cycle = animation.effect.getComputedTiming().duration;
+    animation.pause();
+    let longest = 0, run = 0;
+    for (let at = 0; at < cycle; at += 10) {
+      animation.currentTime = at;
+      const shift = Math.abs(new DOMMatrix(getComputedStyle(light, '::after').transform).m41);
+      run = shift >= width * 0.75 ? run + 10 : 0;
+      longest = Math.max(longest, run);
+    }
+    animation.play();
+    return { cycle, longest };
+  })()`);
+  assert.ok(gap.cycle >= 1500, `the motion is calm: ${JSON.stringify(gap)}`);
+  assert.ok(gap.longest <= 600, `the wait between two waves is short: ${JSON.stringify(gap)}`);
   // It takes no click and no selection from what it lies on.
   assert.equal(
     await inFrame(`(() => {
@@ -1570,6 +1589,49 @@ test('a patch is drawn as text with line numbers, and a click on a number commen
     return offered[0] === 'Line src/store.mjs:12*' || Promise.reject(new Error(JSON.stringify(offered)));
   });
   await shot('2-line');
+  // The button waits right under the line that was pressed, at its code, where the hand is.
+  const under = await evaluate(`(() => {
+    const frame = document.querySelector('iframe').getBoundingClientRect();
+    const bubble = document.getElementById('visual-comment-bubble');
+    const { left, top } = bubble.getBoundingClientRect();
+    return { hidden: bubble.hidden, left: left - frame.left, top: top - frame.top };
+  })()`);
+  const line = await inFrame(`(() => {
+    const row = document.querySelector('.patch-line[data-path="src/store.mjs"][data-new="12"]');
+    const code = row.querySelector('.patch-code').getBoundingClientRect();
+    return { left: code.left, bottom: row.getBoundingClientRect().bottom };
+  })()`);
+  assert.equal(under.hidden, false);
+  assert.ok(Math.abs(under.left - line.left) <= 2, JSON.stringify({ under, line }));
+  assert.ok(Math.abs(under.top - line.bottom) <= 2, JSON.stringify({ under, line }));
+  // A press anywhere else takes the offer back, in the frame and outside it.
+  const away = await inFrame(`(() => {
+    const { right, top } = document.querySelector('.visual-section').getBoundingClientRect();
+    return { x: right + 8, y: top + 8 };
+  })()`);
+  const frame = await evaluate(
+    `(() => { const { left, top } = document.querySelector('iframe').getBoundingClientRect(); return { left, top }; })()`,
+  );
+  const elsewhere = { x: frame.left + away.x, y: frame.top + away.y };
+  await mouse('mousePressed', elsewhere);
+  await mouse('mouseReleased', elsewhere);
+  await until('the offer to be taken back', () => evaluate(`document.getElementById('visual-comment-bubble').hidden`));
+  await mouse('mousePressed', at);
+  await mouse('mouseReleased', at);
+  await until('the offer on line 12 again', () => evaluate(`!document.getElementById('visual-comment-bubble').hidden`));
+  const field = await evaluate(
+    `(() => { const { left, top, width } = document.getElementById('visual-composer-text').getBoundingClientRect(); return { x: left + width / 2, y: top + 8 }; })()`,
+  );
+  await mouse('mousePressed', field);
+  await mouse('mouseReleased', field);
+  await until('the offer to be taken back by a press outside the frame', () =>
+    evaluate(`document.getElementById('visual-comment-bubble').hidden`),
+  );
+  await mouse('mousePressed', at);
+  await mouse('mouseReleased', at);
+  await until('the offer on line 12 once more', () =>
+    evaluate(`!document.getElementById('visual-comment-bubble').hidden`),
+  );
   await evaluate(`document.getElementById('visual-comment-bubble').click()`);
   await evaluate(`(() => {
     const field = document.getElementById('visual-composer-text');
