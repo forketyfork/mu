@@ -24,8 +24,7 @@ Each preview is a short excerpt. Click it to open the whole demo, about a minute
 
 **Launch a task.** Ask the lead for a change with Cmd+L. It opens a room, creates a task and starts a worker, and you watch the worker’s messages arrive.
 
-
-[![Launch a task: a short excerpt of the video](https://github.com/user-attachments/assets/0a68a309-6dee-467f-8bfe-9ddb3ef82b28)]([https://github.com/forketyfork/mu/raw/main/docs/videos/launch-a-task-full.webp](https://github.com/user-attachments/assets/0a68a309-6dee-467f-8bfe-9ddb3ef82b28))
+[![Launch a task: a short excerpt of the video](docs/videos/launch-a-task.webp)](https://github.com/forketyfork/mu/raw/main/docs/videos/launch-a-task-full.webp)
 
 **Task and agent views.** A task’s status, result and workers, an agent’s model, context and spend, and marking the finished task verified.
 
