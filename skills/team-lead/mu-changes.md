@@ -10,7 +10,7 @@ Workers fix Mu's own skills, docs and tooling on a branch, with the usual verifi
 
 ## Update the home
 
-The runner reads the role files from the Mu home. After a merge that changes `skills/`, and whenever `node "$MU_CLI" service` reports a default as `missing`, `outdated` or `mergeable`, run `node "$MU_CLI" init` (or `init --dry-run` first), and confirm that `home.defaults` no longer reports those states before telling anyone a new skill is live. A `conflict` needs the user: only the user resolves conflicts and runs `--accept` or `--adopt`. A merge that adds a role file needs the user too: the running service's `init` installs only the files its own code lists, and a restart refuses while one is missing. Ask the user to run `node src/cli.mjs init` in a shell, then restart.
+The runner reads the role files from the Mu home. After a merge that changes `skills/`, and whenever `node "$MU_CLI" service` reports a default as `missing`, `outdated` or `mergeable`, run `node "$MU_CLI" init` (or `init --dry-run` first), and confirm that `home.defaults` no longer reports those states before telling anyone a new skill is live. A `conflict` needs the user: only the user resolves conflicts and runs `--accept` or `--adopt`. An `edited` default is the user's edit and needs nothing. An `unmanaged` one never updates: tell the user, who reads it and runs `init --accept FILE`. A merge that adds a role file needs the user too: the running service's `init` installs only the files its own code lists, and a restart refuses while one is missing. Ask the user to run `node src/cli.mjs init` in a shell, then restart.
 
 ## Restart the service
 
