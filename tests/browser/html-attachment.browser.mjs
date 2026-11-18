@@ -312,10 +312,18 @@ test('an HTML attachment runs in its sandboxed frame without reaching Mu, the da
   await until('the trap page', trapSession);
   const inTrap = async (expression) => evaluate(expression, await trapSession());
   await typeKeys(browser, sessionId, 'into-page');
-  await until('the keys in the page it was given to', async () => await inTrap(`window.captured`));
+  await until('the keys in the page it was given to', async () => (await inTrap(`window.captured`)) === 'into-page');
+  await until('the page reporting them', async () => (await evaluate(`window.leaked`)) === 'into-page');
   // It got its page once, however often it asks.
   assert.equal(await inTrap(`window.copies`), 0);
 
+  // The page takes the keyboard back every 50 ms, and Mu stops it for that. The user's click and keys must not race that
+  // grab, or what they do is up to Chrome: a key on its way to the frame when Mu removes it is never answered (the
+  // `Input.dispatchKeyEvent` hangs forever), and a grab that lands around the click can leave the page with the keys
+  // while the message box is the dashboard's active element, so nothing stops it. So the page is held off from
+  // grabbing until the keys are typed, and the 150 ms let a grab that it made before reach the browser.
+  await inTrap(`window.held = true`);
+  await sleep(150);
   await clickAt(
     browser,
     sessionId,
@@ -325,6 +333,8 @@ test('an HTML attachment runs in its sandboxed frame without reaching Mu, the da
   );
   await evaluate(`window.leaked = ''`);
   await typeKeys(browser, sessionId, 'typed-after');
+  assert.equal(await evaluate(`document.getElementById('message-input').value`), 'typed-after');
+  await inTrap(`window.held = false`);
   await until('the page stopped', () => evaluate(`${trap}.classList.contains('stopped')`));
   assert.deepEqual(
     await evaluate(`({
@@ -578,7 +588,7 @@ test('a page that the user left right after Run does not get the keyboard when i
   assert.equal(await inFrame(`window.keys`), '');
 });
 
-// It takes the keyboard every 50 ms, records the keys it gets, and asks for its page again and again.
+// It takes the keyboard every 50 ms unless `held` is set, records the keys it gets, and asks for its page again and again.
 const TRAP = `<!doctype html><title>Trap</title><input id="field">
 <script>
   window.trap = true;
@@ -590,7 +600,7 @@ const TRAP = `<!doctype html><title>Trap</title><input id="field">
     window.captured += event.key;
     parent.postMessage({ type: 'key', key: event.key }, '*');
   }, true);
-  setInterval(() => { window.focus(); field.focus(); }, 50);
+  setInterval(() => { if (!window.held) { window.focus(); field.focus(); } }, 50);
 </script>`;
 
 /** Keys as a user types them: the browser sends each to the frame that has the focus. */
