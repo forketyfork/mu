@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { createApp, ROOT } from '../src/server.mjs';
-import { answerText } from '../src/choices.mjs';
+import { answerText, splitChoices } from '../src/choices.mjs';
+import { readTurn, turnReply } from '../src/adapters.mjs';
 import { mentions } from '../src/store.mjs';
 import { offlinePricing } from './offline-pricing.mjs';
 import { userHeaders } from './identity-fixture.mjs';
@@ -180,4 +181,98 @@ test('the answer quotes the last line of the question, without fences, quote mar
   assert.deepEqual(mentions(quoted), []);
   const long = answerText(question('x'.repeat(300)), 'Yes', true);
   assert.equal(long, `> Re: \`#5\` ${'x'.repeat(199)}…\n\nYes`);
+});
+
+test('a final reply offers choices on a last line `Choices: A | B`', () => {
+  assert.deepEqual(splitChoices('Merge it now?\nChoices: Merge | Wait'), {
+    text: 'Merge it now?',
+    choices: ['Merge', 'Wait'],
+  });
+  // Blank lines above, trailing space and CRLF line ends belong to the framing, not to the choices.
+  assert.deepEqual(splitChoices('Report.\n\nMerge it now?\n\nChoices:   Merge|  Wait  \r'), {
+    text: 'Report.\n\nMerge it now?',
+    choices: ['Merge', 'Wait'],
+  });
+  assert.deepEqual(splitChoices('Which?\nChoices: A | B | C | D | E | F').choices, ['A', 'B', 'C', 'D', 'E', 'F']);
+  // A fence that was closed above does not hide the line.
+  assert.deepEqual(splitChoices('Run:\n```sh\nnpm test\n```\nChoices: Yes | No').choices, ['Yes', 'No']);
+  assert.deepEqual(splitChoices('Run:\n~~~\n```\n~~~\nChoices: Yes | No').choices, ['Yes', 'No']);
+});
+
+test('a reply that merely looks like it offers choices stays text', () => {
+  const plain = [
+    // Quoted, indented, bulleted, emphasised or in inline code: not the bare last line.
+    'Write the last line like this:\n\n`Choices: Yes | No`',
+    'Write it like this:\n> Choices: Yes | No',
+    'Write it like this:\n    Choices: Yes | No',
+    'Write it like this:\n- Choices: Yes | No',
+    'Ok?\n**Choices:** Yes | No',
+    'Ok?\nchoices: Yes | No',
+    'Ok?\nChoices:Yes | No',
+    // The line is not last, or is only part of a sentence.
+    'Choices: Yes | No\nWhat now?',
+    'Ok? Choices: Yes | No',
+    'Ok?\nChoices: Yes | No.\nThanks',
+    // In a code block, closed or not, with either fence character and a longer closing fence.
+    'Write:\n```\nChoices: Yes | No',
+    'Write:\n```md\nChoices: Yes | No\n```',
+    'Write:\n~~~\nChoices: Yes | No',
+    'Write:\n````\n```\nChoices: Yes | No',
+    'Write:\n   ```\nChoices: Yes | No',
+    // No words above it.
+    'Choices: Yes | No',
+    '\n\nChoices: Yes | No\n',
+    'NO_REPLY\nChoices: Yes | No',
+  ];
+  for (const text of plain) assert.deepEqual(splitChoices(text), { text }, JSON.stringify(text));
+});
+
+test('a last line that validChoices refuses is text, not a half-offered list', () => {
+  const refused = [
+    'Ok?\nChoices: Yes',
+    'Ok?\nChoices: Yes |',
+    'Ok?\nChoices: Yes | | No',
+    'Ok?\nChoices: Yes | yes',
+    'Ok?\nChoices: 1 | 2 | 3 | 4 | 5 | 6 | 7',
+    `Ok?\nChoices: Yes | ${'x'.repeat(61)}`,
+    'Ok?\nChoices: Yes | Ask @worker',
+    'Ok?\nChoices: Yes | N\u200Bo',
+  ];
+  for (const text of refused) assert.deepEqual(splitChoices(text), { text }, JSON.stringify(text));
+});
+
+test('every runner format takes the choices off the final reply, and NO_REPLY keeps its meaning', () => {
+  const reply = '@user Merge it now?\nChoices: Merge | Wait';
+  const expected = { text: '@user Merge it now?', choices: ['Merge', 'Wait'] };
+  const claude = JSON.stringify({ type: 'result', session_id: 's', is_error: false, result: reply });
+  const codex = [
+    { type: 'thread.started', thread_id: 's' },
+    { type: 'item.completed', item: { type: 'agent_message', text: reply } },
+  ]
+    .map((event) => JSON.stringify(event))
+    .join('\n');
+  const pi = [
+    { type: 'session', id: 's' },
+    {
+      type: 'message_end',
+      message: { role: 'assistant', content: [{ type: 'text', text: reply }], stopReason: 'stop' },
+    },
+  ]
+    .map((event) => JSON.stringify(event))
+    .join('\n');
+  for (const [format, stdout] of [
+    ['claude', claude],
+    ['codex', codex],
+    ['pi', pi],
+  ]) {
+    assert.deepEqual(turnReply(format, readTurn(format, stdout)), { ...expected, sessionId: 's' }, format);
+  }
+  assert.deepEqual(turnReply('text', { stdout: `${reply}\n` }), { ...expected, sessionId: null });
+  // A trailing NO_REPLY line is dropped first, so the choices line is the last line again.
+  assert.deepEqual(turnReply('text', { stdout: `${reply}\n\nNO_REPLY\n` }).choices, ['Merge', 'Wait']);
+  // NO_REPLY alone, or above a choices line, is not a reply with choices.
+  assert.deepEqual(turnReply('text', { stdout: 'NO_REPLY\n' }), { text: 'NO_REPLY', sessionId: null });
+  assert.equal(turnReply('text', { stdout: 'NO_REPLY\nChoices: A | B' }).choices, undefined);
+  // A reply without the line has no `choices` key at all.
+  assert.equal(Object.hasOwn(turnReply('text', { stdout: 'Done.' }), 'choices'), false);
 });

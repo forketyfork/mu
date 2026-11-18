@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
+import { splitChoices } from './choices.mjs';
 import { privateUserPaths, sandboxPi } from './sandbox.mjs';
 
 // Adapters whose CLI takes a model per process; other adapters reject a per-agent model.
@@ -318,14 +319,20 @@ export function readTurn(format, stdout) {
   return parseEvents(format, stdout).reduce((turn, event) => foldTurn(format, turn, event), emptyTurn());
 }
 
+// The reply of a turn: its text, or NO_REPLY, and the choices that a last line `Choices: A | B` offers.
+function finalReply(text, sessionId) {
+  const body = withoutNoReply(text);
+  return { ...(body ? splitChoices(body) : { text: NO_REPLY }), sessionId };
+}
+
 export function turnReply(format, turn) {
   if (format === 'text') {
     if (!turn.stdout.trim()) throw new Error('Custom adapter produced no final response; return text or NO_REPLY');
-    return { text: withoutNoReply(turn.stdout) || NO_REPLY, sessionId: null };
+    return finalReply(turn.stdout, null);
   }
   if (turn.failure) throw new Error(turn.failure);
   if (!turn.text.trim()) throw new Error(`${format} produced no final response`);
-  return { text: withoutNoReply(turn.text) || NO_REPLY, sessionId: turn.sessionId };
+  return finalReply(turn.text, turn.sessionId);
 }
 
 export function parseUsage(format, stdout) {

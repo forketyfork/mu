@@ -383,6 +383,7 @@ export class Runner {
       conversationId,
       text: reply,
       autoRouted: routed.length > 0,
+      ...(parsed.choices && { choices: parsed.choices }),
       sessionId: parsed.sessionId,
       status: taskStatus === 'working' ? 'idle' : taskStatus,
       completedAt: new Date().toISOString(),
@@ -500,7 +501,10 @@ export class Runner {
       );
     const sent =
       result.text !== NO_REPLY
-        ? await this.chat.send(agent.id, result.text, result.conversationId, { autoRouted: Boolean(result.autoRouted) })
+        ? await this.chat.send(agent.id, result.text, result.conversationId, {
+            autoRouted: Boolean(result.autoRouted),
+            ...(result.choices && { choices: result.choices }),
+          })
         : null;
     // A posted reply is acknowledged even when a stop or shutdown arrived during the send, so that resuming does not post it again;
     // a stopped agent keeps its status.

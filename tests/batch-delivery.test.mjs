@@ -435,6 +435,58 @@ test('the runner posts a Claude report that a later NO_REPLY response would have
   assert.deepEqual(acknowledged, [[request.id]]);
 });
 
+test('the runner posts the choices of a final reply with the message, after the routing mention', async (t) => {
+  const store = new Store();
+  t.after(() => store.close());
+  team(store);
+  store.updateAgent('worker', { adapter: 'claude' });
+  const { runner, sent, acknowledged } = harness(t, store, {});
+  runner.execute = async () => readTurn('claude', claudeEvents('PR is green. Merge it now?\nChoices: Merge | Wait'));
+  const request = post(store, 'lead', '@worker open the PR');
+  runner.kick();
+  await until(() => !pendingIds(store).length && !runner.active.size);
+  assert.deepEqual(sent, [{ from: 'worker', text: '@lead\n\nPR is green. Merge it now?', conversationId: 'room-a' }]);
+  const message = store.messages(1, 'room-a').at(-1);
+  assert.deepEqual(message.choices, ['Merge', 'Wait']);
+  assert.equal(message.autoRouted, true);
+  assert.deepEqual(acknowledged, [[request.id]]);
+});
+
+test('a final reply that only quotes a choices line is posted as written, without choices', async (t) => {
+  const store = new Store();
+  t.after(() => store.close());
+  team(store);
+  store.updateAgent('worker', { adapter: 'claude' });
+  const { runner, sent } = harness(t, store, {});
+  const quoting = 'Write the last line as\n\n```\nChoices: Yes | No\n```';
+  runner.execute = async () => readTurn('claude', claudeEvents(quoting));
+  post(store, 'lead', '@worker how do I offer choices?');
+  runner.kick();
+  await until(() => !pendingIds(store).length && !runner.active.size);
+  assert.deepEqual(sent, [{ from: 'worker', text: `@lead\n\n${quoting}`, conversationId: 'room-a' }]);
+  assert.equal(store.messages(1, 'room-a').at(-1).choices, undefined);
+});
+
+test('a saved reply keeps its choices when delivery fails and is tried again', async (t) => {
+  const store = new Store();
+  t.after(() => store.close());
+  team(store);
+  store.updateAgent('worker', { adapter: 'claude' });
+  let failing = true;
+  const { runner } = harness(t, store, {}, { failSend: () => failing });
+  runner.execute = async () => readTurn('claude', claudeEvents('Merge it now?\nChoices: Merge | Wait'));
+  post(store, 'lead', '@worker open the PR');
+  runner.kick();
+  await until(() => store.agent('worker').status === 'error');
+  await settled(runner);
+  assert.deepEqual(store.agent('worker').pendingResult.choices, ['Merge', 'Wait']);
+  failing = false;
+  store.updateAgent('worker', { status: 'idle' });
+  runner.kick();
+  await until(() => !store.agent('worker').pendingResult && !runner.active.size);
+  assert.deepEqual(store.messages(1, 'room-a').at(-1).choices, ['Merge', 'Wait']);
+});
+
 test('a burst reply keeps the single-message routing rules for each message it answers', async (t) => {
   const store = new Store();
   t.after(() => store.close());
