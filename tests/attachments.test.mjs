@@ -32,7 +32,11 @@ test('an attachment is checked before Mu keeps it, and every refusal says why', 
   refused({ ...pong, html: ' \n' }, /must contain HTML/);
   refused({ ...pong, html: 42 }, /must contain HTML/);
   refused({ ...pong, html: '<p>\uD800</p>' }, /valid Unicode/);
-  refused({ ...pong, html: '<p>\0</p>' }, /NUL/);
+  refused({ ...pong, html: '<p>\0</p>' }, /control character U\+0000/);
+  refused({ ...pong, html: '<p>\x1b]52;c;cHduZWQ=\x07</p>' }, /control character U\+001B/);
+  refused({ ...pong, html: '<p>\x9b2J</p>' }, /control character U\+009B/);
+  refused({ ...pong, html: '<p>\x7f</p>' }, /control character U\+007F/);
+  assert.ok(validateAttachment({ ...pong, html: '<pre>\ta\r\n\fb</pre>' }));
   refused({ ...pong, html: 'é'.repeat(MAX_HTML_BYTES / 2 + 1) }, /at most 256 KiB; this one has 262146 bytes/);
   assert.equal(validateAttachment({ ...pong, html: 'a'.repeat(MAX_HTML_BYTES) }).html.length, MAX_HTML_BYTES);
 });

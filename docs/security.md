@@ -90,9 +90,10 @@ An [HTML attachment](dashboard.md#chat) is a page an agent wrote, with its own s
 - It runs only after you click **Run**, in a sandboxed frame with an opaque origin: it has no credential, storage or cookies, cannot read the dashboard or Mu's API, and cannot open popups, submit forms or navigate the dashboard.
 - Its policy allows no requests: no fetch, sockets or beacons, and no image, style, font or script from another address. Its own media are `data:` URLs.
 - The dashboard draws the title, the author and the controls outside the frame, and takes from the frame only a request for its page and a height, which it bounds.
+- It gets the keyboard only when you click it. A page that takes the keyboard by itself is stopped, and the focus returns to where you were typing.
 - Only members of the message's conversation, and you, can read the page through the API.
 
-Two channels stay open while a page runs, because no browser policy governs them: WebRTC, which can reach a STUN or TURN server on any host, and the name lookup and connection that the browser makes before it refuses a navigation to another host. A running page can therefore send what it holds, its own text and what you type into it, to a host it chooses. It holds nothing of Mu's. The decisions are in [Architecture](architecture.md#html-attachments).
+Two channels stay open while a page runs, because no browser policy governs them: WebRTC, which can reach a STUN or TURN server on any host, and the name lookup and connection that the browser makes for a link hint or before it refuses a navigation to another host. A running page can therefore send what it holds, its own text and what you type into it after you gave it the keyboard, to a host it chooses. It holds nothing of Mu's. This was measured in Chrome, which runs the frame in a process of its own; other browsers were not measured. The decisions are in [Architecture](architecture.md#html-attachments).
 
 ## Model evals
 

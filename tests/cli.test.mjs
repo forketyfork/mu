@@ -75,7 +75,12 @@ test('chat messages preserve identity and mention text', async (t) => {
 
 test('say --html sends a page file as the attachment of the message, and attachment reads it back', async (t) => {
   const page = '<!doctype html><title>Pong</title><p>é</p>';
-  const { calls, env } = await fixture(t, { type: 'html', title: 'pong', bytes: 44, html: page });
+  // One answer for both requests: a posted message names its attachment, and the attachment holds its page.
+  const { calls, env } = await fixture(t, {
+    id: 12,
+    attachment: { type: 'html', title: 'pong', bytes: 44 },
+    html: page,
+  });
   const dir = await shortTempDir(t, 'cli-html');
   const file = join(dir, 'pong.html');
   await writeFile(file, page);
@@ -103,6 +108,14 @@ test('say --html sends a page file as the attachment of the message, and attachm
   await assert.rejects(main(['say', '--title', 'Pong', 'No page'], env), /--title names an --html attachment/);
   await assert.rejects(main(['say', '--html', join(dir, 'missing.html'), 'Gone'], env), /ENOENT/);
   assert.equal(calls.length, before);
+});
+
+test('say --html fails when the service posted the message without its page', async (t) => {
+  // An older service answers with the message and no attachment.
+  const { env } = await fixture(t, { id: 9, text: 'Play', conversationId: 'common' });
+  const file = join(await shortTempDir(t, 'cli-html-old'), 'pong.html');
+  await writeFile(file, '<p>pong</p>');
+  await assert.rejects(main(['say', '--html', file, 'Play'], env), /#9 without its HTML attachment.*Restart Mu/);
 });
 
 test('self-registration works when the shell already contains the new identity', async (t) => {

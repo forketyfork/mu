@@ -487,6 +487,11 @@ export async function main(
         method: 'POST',
         body: { from, conversationId, text: required(text, 'message text'), ...(attachment && { attachment }) },
       });
+      // A service started before attachments existed posts the text and drops the page without an error.
+      if (attachment && !sent.attachment)
+        throw new Error(
+          `Mu posted message #${sent.id} without its HTML attachment: the running service is older than this CLI. Restart Mu, then send the page again.`,
+        );
       // A managed turn also posts its final text to its own conversation. The turn prompt says so, but a context
       // compaction in the middle of the turn drops the prompt, and the agent then answers twice: with this message and
       // with its final text. The note reaches the agent after the compaction, at the moment it could repeat itself.

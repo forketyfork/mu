@@ -340,4 +340,94 @@ test('an HTML attachment runs in its sandboxed frame without reaching Mu, the da
   await inFrame(`location.href = ${JSON.stringify(`${elsewhere}/navigate`)}`);
   await sleep(1000);
   assert.deepEqual(reached, [], 'the other server got nothing');
+
+  // A page that takes the keyboard by itself would get what the user types into the dashboard. It has the keyboard
+  // while the user gave it, and Mu stops it when it takes it back from the message box.
+  const trapped = await worker('POST', '/api/messages', {
+    conversationId: 'work',
+    text: 'Type here.',
+    attachment: { type: 'html', title: 'Trap', html: TRAP },
+  });
+  const trap = `document.querySelector('[data-attachment="${trapped.body.id}"]')`;
+  await until('the second attachment', () => evaluate(`Boolean(${trap})`));
+  const centerOf = (selector) =>
+    evaluate(
+      `(() => { const box = ${selector}.getBoundingClientRect(); return { x: box.x + box.width / 2, y: box.y + box.height / 2 }; })()`,
+    );
+  await evaluate(`${trap}.scrollIntoView()`);
+  // The page reports each key it gets, so that a key it took from the message box shows.
+  await evaluate(
+    `window.leaked = ''; addEventListener('message', (event) => { if (event.data?.type === 'key') window.leaked += event.data.key; })`,
+  );
+  await clickAt(browser, sessionId, await centerOf(`${trap}.querySelector('.message-attachment-run')`));
+  const trapSession = async () => {
+    for (const [session] of [...sessions].filter(([, info]) => info.type === 'iframe'))
+      if (await evaluate(`Boolean(window.trap)`, session).catch(() => false)) return session;
+    return null;
+  };
+  await until('the trap page', trapSession);
+  const inTrap = async (expression) => evaluate(expression, await trapSession());
+  await typeKeys(browser, sessionId, 'into-page');
+  await until('the keys in the page it was given to', async () => await inTrap(`window.captured`));
+  // It got its page once, however often it asks.
+  assert.equal(await inTrap(`window.copies`), 0);
+
+  await clickAt(
+    browser,
+    sessionId,
+    await evaluate(
+      `(() => { const box = document.getElementById('message-input').getBoundingClientRect(); return { x: box.x + box.width / 2, y: box.y + box.height / 2 }; })()`,
+    ),
+  );
+  await evaluate(`window.leaked = ''`);
+  await typeKeys(browser, sessionId, 'typed-after');
+  await until('the page stopped', () => evaluate(`${trap}.classList.contains('stopped')`));
+  assert.deepEqual(
+    await evaluate(`({
+      composer: document.getElementById('message-input').value,
+      active: document.activeElement.id,
+      frame: Boolean(${trap}.querySelector('iframe')),
+      note: ${trap}.querySelector('.message-attachment-error').textContent,
+      run: Boolean(${trap}.querySelector('.message-attachment-run')),
+      leaked: window.leaked,
+    })`),
+    {
+      composer: 'typed-after',
+      active: 'message-input',
+      frame: false,
+      note: 'Mu stopped this page because it took the keyboard without your click.',
+      run: true,
+      leaked: '',
+    },
+  );
 });
+
+// It takes the keyboard every 50 ms, records the keys it gets, and asks for its page again and again.
+const TRAP = `<!doctype html><title>Trap</title><input id="field">
+<script>
+  window.trap = true;
+  window.copies = 0;
+  addEventListener('message', (event) => { if (event.data?.type === 'page') window.copies += 1; });
+  for (let i = 0; i < 50; i += 1) parent.postMessage({ type: 'ready' }, '*');
+  window.captured = '';
+  addEventListener('keydown', (event) => {
+    window.captured += event.key;
+    parent.postMessage({ type: 'key', key: event.key }, '*');
+  }, true);
+  setInterval(() => { window.focus(); field.focus(); }, 50);
+</script>`;
+
+/** Keys as a user types them: the browser sends each to the frame that has the focus. */
+async function typeKeys(browser, sessionId, text) {
+  for (const key of text) {
+    await browser.send('Input.dispatchKeyEvent', { type: 'keyDown', key, text: key }, sessionId);
+    await browser.send('Input.dispatchKeyEvent', { type: 'keyUp', key }, sessionId);
+  }
+}
+
+/** A real click, with the pointer moved there first, as a user's. */
+async function clickAt(browser, sessionId, { x, y }) {
+  await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }, sessionId);
+  for (const type of ['mousePressed', 'mouseReleased'])
+    await browser.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 }, sessionId);
+}

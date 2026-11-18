@@ -3031,8 +3031,34 @@ button.task-result {
   color: var(--status-error-ink);
 }
 
-.message-attachment.failed .message-attachment-error {
+.message-attachment.failed .message-attachment-error,
+.message-attachment.stopped .message-attachment-error {
   display: block;
+}
+
+.message-attachment-stage {
+  position: relative;
+}
+
+.message-attachment:popover-open .message-attachment-stage {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+/* Over a page that does not have the keyboard: a click here gives it, and the click does not reach the page. */
+.message-attachment-shield {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
+
+.message-attachment-shield:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .message-attachment.failed .message-attachment-frame {

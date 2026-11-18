@@ -17,13 +17,24 @@ const MAX_HEIGHT = 640;
 export function createAttachments({ document, window, request }) {
   /** Message ID → the figure whose frame runs that message's page. @type {Map<number, HTMLElement>} */
   const running = new Map();
-  /** @type {WeakMap<HTMLElement, { message: any, frame: HTMLIFrameElement | null, height: string }>} */
+  /**
+   * The parts of each figure: its message, and while it runs, its frame, the shield over the frame, the height its
+   * page reported, and whether the frame got its page since Mu last loaded it.
+   * @type {WeakMap<HTMLElement, { message: any, frame: HTMLIFrameElement | null, shield: HTMLButtonElement | null, height: string, served: boolean }>}
+   */
   const parts = new WeakMap();
   /** @type {Map<number, Promise<string>>} */
   const pages = new Map();
   // The messages whose page the user ran since the dashboard loaded. A figure drawn again for one of them, after a
   // switch to another conversation and back, runs without another click.
   const ran = new Set();
+  // The figure whose page the user gave the keyboard to, and the dashboard element that had the focus last.
+  /** @type {HTMLElement | null} */
+  let engaged = null;
+  /** @type {HTMLElement | null} */
+  let lastFocus = null;
+  /** @type {ReturnType<typeof setInterval> | null} */
+  let watch = null;
 
   const node = (tag, className, text) => {
     const element = document.createElement(tag);
@@ -57,23 +68,112 @@ export function createAttachments({ document, window, request }) {
       `The attachment could not be loaded: ${error.message}`;
   };
 
-  function start(figure) {
+  function startBox(figure) {
+    const { message } = parts.get(figure);
+    const waiting = node('div', 'message-attachment-start');
+    const run = node('button', 'button secondary message-attachment-run', 'Run');
+    run.type = 'button';
+    run.setAttribute('aria-label', `Run the HTML page ${message.attachment.title} from ${message.from}`);
+    run.addEventListener('click', () => start(figure, true));
+    waiting.append(
+      run,
+      node(
+        'span',
+        'message-attachment-note',
+        `A page that ${message.from} wrote. It runs in a sandbox without access to Mu or your sign-in.`,
+      ),
+    );
+    return waiting;
+  }
+
+  /**
+   * Runs the page of the figure. With `keyboard`, the user asked for it, and the page gets the keyboard.
+   * @param {HTMLElement} figure
+   * @param {boolean} keyboard
+   */
+  function start(figure, keyboard) {
     const part = parts.get(figure);
     ran.add(part.message.id);
+    figure.classList.remove('stopped');
     figure.classList.add('running');
-    figure.querySelector('.message-attachment-start').remove();
+    figure.querySelector('.message-attachment-start')?.remove();
     for (const control of figure.querySelectorAll('.message-attachment-bar button'))
       /** @type {HTMLButtonElement} */ (control).hidden = false;
+    const stage = node('div', 'message-attachment-stage');
     const frame = document.createElement('iframe');
     frame.className = 'message-attachment-frame';
     frame.title = `HTML attachment ${part.message.attachment.title} from ${part.message.from}`;
     frame.setAttribute('sandbox', 'allow-scripts');
+    frame.setAttribute('allow', "picture-in-picture 'none'");
     frame.setAttribute('loading', 'lazy');
     frame.referrerPolicy = 'no-referrer';
+    // Tab passes over the page; the shield is the way in by keyboard.
+    frame.tabIndex = -1;
     frame.src = ATTACHMENT_PAGE;
-    figure.append(frame);
-    part.frame = frame;
+    const shield = /** @type {HTMLButtonElement} */ (node('button', 'message-attachment-shield'));
+    shield.type = 'button';
+    shield.setAttribute('aria-label', `Use the page ${part.message.attachment.title}`);
+    shield.title = 'Click to use the page';
+    shield.addEventListener('click', () => engage(figure));
+    stage.append(frame, shield);
+    figure.append(stage);
+    Object.assign(part, { frame, shield, served: false });
     running.set(part.message.id, figure);
+    watch ??= setInterval(guard, 200);
+    if (keyboard) engage(figure);
+  }
+
+  // The user gives the page the keyboard: the shield over it goes away until the focus leaves it.
+  function engage(figure) {
+    if (engaged && engaged !== figure) disengage();
+    const part = parts.get(figure);
+    engaged = figure;
+    part.shield.hidden = true;
+    part.frame.focus();
+  }
+
+  function disengage() {
+    const shield = engaged && parts.get(engaged)?.shield;
+    if (shield) shield.hidden = false;
+    engaged = null;
+  }
+
+  /**
+   * Ends the page of the figure and says why; the user can run it again.
+   * @param {HTMLElement} figure
+   * @param {string} reason
+   */
+  function stop(figure, reason) {
+    const part = parts.get(figure);
+    if (figure.matches(':popover-open')) setExpanded(figure, false);
+    if (engaged === figure) engaged = null;
+    part.frame?.closest('.message-attachment-stage')?.remove();
+    Object.assign(part, { frame: null, shield: null, height: '', served: false });
+    running.delete(part.message.id);
+    ran.delete(part.message.id);
+    figure.classList.remove('running');
+    figure.classList.add('stopped');
+    for (const control of figure.querySelectorAll('.message-attachment-bar button'))
+      /** @type {HTMLButtonElement} */ (control).hidden = true;
+    figure.querySelector('.message-attachment-bar').after(startBox(figure));
+    figure.querySelector('.message-attachment-error').textContent = reason;
+  }
+
+  // A page may have the keyboard only after the user gave it: a page that takes the focus itself would get what the
+  // user types into the dashboard. Such a page is stopped, and the focus goes back where it was. The window's blur
+  // reports a frame that takes the focus from the dashboard; the poll, one that takes it from another frame.
+  function guard() {
+    const active = document.activeElement;
+    const thief = [...running.values()].find((figure) => figure !== engaged && parts.get(figure).frame === active);
+    if (thief) {
+      const back = engaged ? parts.get(engaged).frame : lastFocus;
+      stop(thief, 'Mu stopped this page because it took the keyboard without your click.');
+      if (back?.isConnected) back.focus();
+    } else if (engaged && (!engaged.isConnected || parts.get(engaged).frame !== active)) disengage();
+    if (!running.size && watch) {
+      clearInterval(watch);
+      watch = null;
+    }
   }
 
   // In the larger view the frame fills the popover; back in the message it takes the height its page reported.
@@ -108,29 +208,19 @@ export function createAttachments({ document, window, request }) {
       restart,
       expand,
     );
-    const waiting = node('div', 'message-attachment-start');
-    const run = node('button', 'button secondary message-attachment-run', 'Run');
-    run.type = 'button';
-    run.setAttribute('aria-label', `Run the HTML page ${title} from ${message.from}`);
-    run.addEventListener('click', () => start(figure));
-    waiting.append(
-      run,
-      node(
-        'span',
-        'message-attachment-note',
-        `A page that ${message.from} wrote. It runs in a sandbox without access to Mu or your sign-in.`,
-      ),
-    );
     restart.addEventListener('click', () => {
-      const frame = parts.get(figure).frame;
-      if (frame) frame.src = ATTACHMENT_PAGE;
+      const part = parts.get(figure);
+      if (!part.frame) return;
+      part.served = false;
+      part.frame.src = ATTACHMENT_PAGE;
+      engage(figure);
     });
     expand.addEventListener('click', () => setExpanded(figure, !figure.matches(':popover-open')));
     figure.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && figure.matches(':popover-open')) setExpanded(figure, false);
     });
-    figure.append(bar, waiting, node('p', 'message-attachment-error'));
-    parts.set(figure, { message, frame: null, height: '' });
+    parts.set(figure, { message, frame: null, shield: null, height: '', served: false });
+    figure.append(bar, startBox(figure), node('p', 'message-attachment-error'));
     return figure;
   }
 
@@ -148,7 +238,7 @@ export function createAttachments({ document, window, request }) {
       if (previous && previous !== figure && previous.isConnected && 'moveBefore' in figure.parentElement) {
         figure.parentElement.moveBefore(previous, figure);
         figure.remove();
-      } else if (ran.has(part.message.id)) start(figure);
+      } else if (ran.has(part.message.id)) start(figure, false);
     }
     for (const [id, figure] of running) if (!figure.isConnected) running.delete(id);
   }
@@ -171,17 +261,27 @@ export function createAttachments({ document, window, request }) {
     for (const [id, figure] of running) if (!figure.isConnected) running.delete(id);
   }
 
-  // Each message is matched to its frame by the window it came from; anything else in it is ignored.
+  document.addEventListener('focusin', (event) => {
+    const target = /** @type {HTMLElement} */ (event.target);
+    if (target.tagName !== 'IFRAME') lastFocus = target;
+    guard();
+  });
+  window.addEventListener('blur', guard);
+  window.addEventListener('focus', guard);
+
+  // Each message is matched to its frame by the window it came from; anything else in it is ignored. A frame gets its
+  // page once per load that Mu started, so a page cannot make the dashboard copy it again and again.
   window.addEventListener('message', (event) => {
     const figure = [...running.values()].find((item) => parts.get(item).frame?.contentWindow === event.source);
     if (!figure || typeof event.data !== 'object' || event.data === null) return;
     const part = parts.get(figure);
-    if (event.data.type === 'ready')
+    if (event.data.type === 'ready' && !part.served) {
+      part.served = true;
       page(part.message.id).then(
-        (html) => part.frame.contentWindow?.postMessage({ type: 'page', html }, '*'),
+        (html) => part.frame?.contentWindow?.postMessage({ type: 'page', html }, '*'),
         (error) => fail(figure, error),
       );
-    else if (event.data.type === 'size' && Number.isFinite(event.data.height)) {
+    } else if (event.data.type === 'size' && Number.isFinite(event.data.height)) {
       part.height = `${Math.round(Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, event.data.height)))}px`;
       if (!figure.matches(':popover-open')) part.frame.style.height = part.height;
     }

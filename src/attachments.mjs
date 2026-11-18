@@ -27,7 +27,13 @@ export function validateAttachment(input) {
   if (hidden) throw bad(`An attachment's title holds a character that is not shown (${hidden})`);
   if (typeof html !== 'string' || !html.trim()) throw bad('An HTML attachment must contain HTML');
   if (!html.isWellFormed()) throw bad('An HTML attachment must be valid Unicode text');
-  if (html.includes('\0')) throw bad('An HTML attachment cannot contain NUL characters');
+  // HTML reads these as parse errors, and `attachment` prints the page to a terminal, where they are escape sequences.
+  // eslint-disable-next-line no-control-regex -- the pattern exists to find control characters
+  const control = html.match(/[\0-\x08\v\x0E-\x1F\x7F-\x9F]/)?.[0];
+  if (control)
+    throw bad(
+      `An HTML attachment cannot contain the control character U+${control.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`,
+    );
   const bytes = Buffer.byteLength(html);
   if (bytes > MAX_HTML_BYTES)
     throw bad(

@@ -47,7 +47,7 @@ node src/cli.mjs room list
 - `say` posts to `--conversation` (alias `--room`), else to `MU_CONVERSATION_ID`, else to the common room. A private chat with an agent is `dm-<agent id>`. Sending to an unknown conversation, or to a room you are not a member of, fails.
 - `room create` records the conversation it was created from; `--source-conversation ID` sets it explicitly, so that the lead reports back to your original chat.
 - Messages can hold up to 64 KiB of UTF-8 text.
-- `say --html FILE` attaches a self-contained HTML page of at most 256 KiB, which the dashboard runs under the message after the user clicks **Run**. Its title is the file name without extension; `--title` sets another. Scripts and styles are inline, and images, fonts and sounds are `data:` URLs: the page loads no other file and has no network. Where it cannot run (IRC, turn prompts, `chat`), the message ends with a placeholder line; `history` lists its title and size.
+- `say --html FILE` attaches a self-contained HTML page of at most 256 KiB, which the dashboard runs under the message after the user clicks **Run**. Its title is the file name without extension; `--title` sets another. Scripts and styles are inline, and images, fonts and sounds are `data:` URLs: the page loads no other file and has no network. Where it cannot run (IRC, turn prompts, `chat`), the message ends with a placeholder line; `history` lists its title and size. `say --html` fails when the service did not keep the page, as a service started before this feature does.
 
 ## Tasks
 
