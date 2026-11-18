@@ -5,16 +5,14 @@ import { EventEmitter } from 'node:events';
 const parseData = (row) => JSON.parse(/** @type {string} */ (row.data));
 
 export const STATUSES = ['idle', 'working', 'blocked', 'done', 'stopped', 'error'];
-// Code spans, emails and scoped package names such as @scope/pkg are not mentions.
+// A mention in prose: what comes before it, then the name. Emails and scoped package names such as @scope/pkg are
+// not mentions.
+export const MENTION = /(^|[^\w@/])@([a-z][a-z0-9-]{0,23})(?![a-z0-9-]|\/[\w@.-])/gi;
+// Code spans and code blocks are not prose.
+export const CODE = /(```|~~~)[\s\S]*?(?:\1|$)|(`+)[\s\S]*?\2/g;
 export function mentions(text) {
-  const prose = text.replace(/(```|~~~)[\s\S]*?(?:\1|$)/g, ' ').replace(/(`+)[\s\S]*?\1/g, ' ');
-  return [
-    ...new Set(
-      [...prose.matchAll(/(?:^|[^\w@/])@([a-z][a-z0-9-]{0,23})(?![a-z0-9-]|\/[\w@.-])/gi)].map((match) =>
-        match[1].toLowerCase(),
-      ),
-    ),
-  ];
+  const prose = text.replace(CODE, ' ');
+  return [...new Set([...prose.matchAll(MENTION)].map((match) => match[2].toLowerCase()))];
 }
 
 // The kinds of record a `change` event can name. The dashboard stream sends only the records a change names, so a

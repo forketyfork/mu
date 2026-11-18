@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { createApp, ROOT } from '../src/server.mjs';
 import { answerText } from '../src/choices.mjs';
+import { mentions } from '../src/store.mjs';
 import { offlinePricing } from './offline-pricing.mjs';
 import { userHeaders } from './identity-fixture.mjs';
 import { freePort, shortTempDir, temporaryMuHome } from './isolation.mjs';
@@ -173,6 +174,10 @@ test('the answer quotes the last line of the question, without fences, quote mar
     answerText(question('> > Ask @worker-one or email a@b.c?'), 'Yes', true),
     '> Re: `#5` Ask worker-one or email a@b.c?\n\nYes',
   );
+  // Only what counts as a mention loses its @: a scoped package and a handle in code read as written.
+  const quoted = answerText(question('Ask @worker-one: install @scope/package, or ping `@lead` (@all)?'), 'Yes', true);
+  assert.equal(quoted, '> Re: `#5` Ask worker-one: install @scope/package, or ping `@lead` (all)?\n\nYes');
+  assert.deepEqual(mentions(quoted), []);
   const long = answerText(question('x'.repeat(300)), 'Yes', true);
   assert.equal(long, `> Re: \`#5\` ${'x'.repeat(199)}…\n\nYes`);
 });
