@@ -650,13 +650,17 @@ export class Runner {
       // Claude Code's cross-session messaging takes user messages from anyone who reads its socket and
       // token from a process environment, so it is off, and a messaging socket the service inherited is not passed on.
       // The launchd job's variables stay with the service, so that a Mu instance a turn starts is not taken for the job.
+      // The model evals' credentials (MU_EVAL_*) are for their containers only.
       const {
         MU_TOKEN: _token,
         MU_TOKEN_FILE: _tokenFile,
         CLAUDE_CODE_MESSAGING_SOCKET: _socket,
         CLAUDE_CODE_MESSAGING_TOKEN: _messagingToken,
         ...inherited
-      } = withoutVariables(process.env, LAUNCHD_VARIABLES);
+      } = withoutVariables(process.env, [
+        ...LAUNCHD_VARIABLES,
+        ...Object.keys(process.env).filter((name) => name.startsWith('MU_EVAL_')),
+      ]);
       const child = spawn(command.command, command.args, {
         cwd: agent.cwd,
         detached: true,

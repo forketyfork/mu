@@ -24,8 +24,15 @@ export function evalCommand(target, remaining, env = process.env) {
         : []),
       '-c',
       'approval_policy="never"',
-      '-c',
-      'features.shell_tool=false',
+      // A case is answered from the prompt alone, as Claude and pi answer it without tools. Web search could look up a
+      // public answer key, and the spend of a sub-agent thread is not in the rollout that Mu prices.
+      ...[
+        'features.shell_tool=false',
+        'web_search="disabled"',
+        'features.multi_agent=false',
+        'features.goals=false',
+        'features.view_image=false',
+      ].flatMap((setting) => ['-c', setting]),
       'exec',
       ...modelArgs(target),
       '--sandbox',
@@ -68,10 +75,17 @@ export function resultFromStream(adapter, stdout) {
     .split('\n')
     .filter((line) => line.trim())
     .map((line) => JSON.parse(line));
+  let costError = null;
   if (adapter === 'pi') {
     const messages = events.filter((event) => event.type === 'message_end' && event.message?.role === 'assistant');
     if (messages.some(({ message }) => !Number.isFinite(message.usage?.cost?.total))) costUsd = null;
     if (messages.some(({ message }) => !Number.isSafeInteger(message.usage?.totalTokens))) tokens = null;
+    // pi prices a model that its catalog lists without a cost at zero; a call with tokens cannot have been free.
+    const unpriced = messages.find(({ message }) => message.usage?.cost?.total === 0 && message.usage?.totalTokens > 0);
+    if (unpriced) {
+      costUsd = null;
+      costError = `pi has no price for ${unpriced.message.provider}/${unpriced.message.model}`;
+    }
   }
   if (adapter === 'claude') {
     const results = events.filter((event) => event.type === 'result');
@@ -89,7 +103,19 @@ export function resultFromStream(adapter, stdout) {
         0,
       );
   }
-  return { error, reply, observedModel: usage.model, costUsd, tokens, sessionId: turn.sessionId };
+  return { error, reply, observedModel: usage.model, costUsd, tokens, sessionId: turn.sessionId, costError };
+}
+
+// A harness that is killed, by the timeout or a signal, may have a model call in flight whose spend it never reported.
+export function harnessResult(adapter, error, stdout, stderr) {
+  const result = resultFromStream(adapter, stdout);
+  if (!error) return result;
+  result.error = `Harness exited ${error.code ?? error.signal}: ${stderr.trim().slice(-1200) || result.error || 'no diagnostic'}`;
+  if (error.killed || error.signal) {
+    result.costUsd = null;
+    result.costError = 'The harness was stopped before it finished, so a call it had started may be unpriced';
+  }
+  return result;
 }
 
 async function main() {
@@ -115,10 +141,7 @@ async function main() {
       { cwd: '/tmp/work', encoding: 'utf8', timeout: 240000, killSignal: 'SIGKILL', maxBuffer: 4 * 1024 * 1024 },
       (error, stdout, stderr) => {
         try {
-          const parsed = resultFromStream(target.adapter, stdout);
-          if (error)
-            parsed.error = `Harness exited ${error.code ?? error.signal}: ${stderr.trim().slice(-1200) || parsed.error || 'no diagnostic'}`;
-          resolve(parsed);
+          resolve(harnessResult(target.adapter, error, stdout, stderr));
         } catch (failure) {
           reject(failure);
         }
@@ -129,7 +152,8 @@ async function main() {
     });
     child.stdin.end(prompt);
   });
-  if (target.adapter === 'codex' && result.sessionId) {
+  // Codex is priced from its rollout's calls, so a killed harness, whose spend is unknown, is not priced at all.
+  if (target.adapter === 'codex' && result.sessionId && !result.costError) {
     try {
       const facts = await new CodexRollouts().read(result.sessionId);
       Object.assign(result, { observedModel: facts.model, calls: facts.calls });

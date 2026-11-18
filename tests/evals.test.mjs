@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { createApp, ROOT } from '../src/server.mjs';
 import { createEvals } from '../src/evals.mjs';
 import { grade, loadCases } from '../src/eval-cases.mjs';
-import { evalCommand, resultFromStream } from '../src/eval-driver.mjs';
+import { evalCommand, harnessResult, resultFromStream } from '../src/eval-driver.mjs';
 import { Store } from '../src/store.mjs';
 import { freePort, shortTempDir, temporaryMuHome } from './isolation.mjs';
 import { offlinePricing } from './offline-pricing.mjs';
@@ -182,6 +182,15 @@ test('subprocess flags, reported spend and token accounting reflect each adapter
   const codex = command('codex', 'exact-id');
   assert.ok(codex.includes('model_reasoning_effort=high'));
   assert.equal(codex[codex.indexOf('-m') + 1], 'exact-id');
+  // Observed in Codex 0.169.0: without these, a case is offered web search, sub-agents, goals and image viewing.
+  for (const setting of [
+    'features.shell_tool=false',
+    'web_search="disabled"',
+    'features.multi_agent=false',
+    'features.goals=false',
+    'features.view_image=false',
+  ])
+    assert.equal(codex[codex.indexOf(setting) - 1], '-c', setting);
   const gateway = evalCommand({ adapter: 'codex', model: 'exact-id', effort: 'medium' }, 0.25, {
     OPENAI_BASE_URL: 'http://model-gateway/v1',
     CODEX_API_KEY: 'fixture',
@@ -211,6 +220,39 @@ test('subprocess flags, reported spend and token accounting reflect each adapter
     resultFromStream('codex', '{"type":"turn.failed","error":{"message":"provider refused"}}').error,
     'provider refused',
   );
+});
+
+const piStream = (...costs) =>
+  [
+    { type: 'session', version: 3, id: 'pi-eval', timestamp: '2026-11-18T00:00:00.000Z', cwd: '/tmp/work' },
+    { type: 'agent_start' },
+    ...costs.map((total) => ({
+      type: 'message_end',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: '{}' }],
+        provider: 'gateway',
+        model: 'some-model',
+        usage: { input: 50, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: 60, cost: { total } },
+        stopReason: 'stop',
+      },
+    })),
+    { type: 'agent_end', messages: [] },
+  ]
+    .map((event) => JSON.stringify(event))
+    .join('\n');
+
+test('pi spend for a model without a price, and the spend of a killed harness, are unknown, never zero', () => {
+  assert.equal(resultFromStream('pi', piStream(0.004, 0.002)).costUsd, 0.006);
+  const unpriced = resultFromStream('pi', piStream(0.004, 0));
+  assert.equal(unpriced.costUsd, null);
+  assert.match(unpriced.costError, /no price for gateway\/some-model/);
+  const killed = harnessResult('pi', { killed: true, signal: 'SIGKILL' }, piStream(0.01), '');
+  assert.equal(killed.costUsd, null);
+  assert.match(killed.error, /Harness exited SIGKILL/);
+  assert.match(killed.costError, /stopped before it finished/);
+  const failed = harnessResult('claude', { code: 1 }, '', 'refused');
+  assert.match(failed.error, /Harness exited 1: refused/);
 });
 
 test('eval HTTP endpoints require the user even to read, reject stale selections, and never expose the key in the catalog', async (t) => {
@@ -254,4 +296,25 @@ test('eval HTTP endpoints require the user even to read, reject stale selections
   const { id } = await response.json();
   await until('persisted result', async () => (await (await api(`/runs/${id}`, user)).json()).status === 'complete');
   assert.equal((await (await api('/runs', user)).json())[0].costUsd, 0.2);
+});
+
+test('a brief check matches whole words and phrases, not parts of other words', () => {
+  const item = {
+    checks: [
+      {
+        label: 'Named facts without jargon',
+        type: 'brief',
+        field: 'summary',
+        maxWords: 30,
+        require: ['Chrome', 'port', 'wait', 'times out'],
+        forbid: ['IPC'],
+      },
+    ],
+  };
+  const score = (summary) => grade(item, JSON.stringify({ summary })).earned;
+  assert.equal(score('Chrome exits, the port never opens, and the wait times out.'), 1);
+  assert.equal(score('CHROME exits; the PORT never opens; the WAIT Times  Out.'), 1);
+  assert.equal(score('Chrome reports at once instead of after it awaits a timeout; support times out.'), 0);
+  assert.equal(score('Chrome exits, the port never opens, and the wait times out over RPC/IPC.'), 0);
+  assert.equal(score('Chrome exits, the port never opens, and the wait times out over the ipcMain bridge.'), 1);
 });

@@ -1,10 +1,13 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
+// A container gets only what the service's environment sets explicitly for evaluations: MU_EVAL_<NAME> becomes <NAME>
+// for Claude and Codex, and MU_EVAL_PI_<PROVIDER>_API_KEY becomes <PROVIDER>_API_KEY for pi. The service's own
+// credentials, such as a key or login exported for the user's CLIs, never reach a case.
 const providerEnv = {
   claude: ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_BASE_URL'],
   codex: ['CODEX_API_KEY', 'OPENAI_API_KEY', 'OPENAI_BASE_URL'],
-  pi: ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'OPENROUTER_API_KEY', 'GROQ_API_KEY', 'XAI_API_KEY'],
+  pi: [],
 };
 
 function docker(args, { env, input = '', signal = undefined, timeout = 20000 }) {
@@ -62,19 +65,17 @@ export function containerRunner(env, pricing) {
         '--name',
         name,
       ];
-      const runtimeEnv = { ...env };
       if (target.adapter === 'pi' && env.MU_EVAL_PI_MODELS_JSON) args.push('--env', 'MU_EVAL_PI_MODELS_JSON');
-      for (const key of keys) {
-        const value =
-          (target.adapter === 'pi' ? env[`MU_EVAL_PI_${key}`] : undefined) ?? env[`MU_EVAL_${key}`] ?? env[key];
-        if (value) {
-          runtimeEnv[key] = value;
-          args.push('--env', key);
-        }
-      }
+      const forwarded = Object.fromEntries(
+        keys
+          .map((key) => [key, env[target.adapter === 'pi' ? `MU_EVAL_PI_${key}` : `MU_EVAL_${key}`]])
+          .filter(([, value]) => value),
+      );
+      for (const key of Object.keys(forwarded)) args.push('--env', key);
+      const runtimeEnv = { ...env, ...forwarded };
       function redact(text) {
-        for (const key of keys)
-          if (!key.endsWith('URL') && runtimeEnv[key]) text = text.replaceAll(runtimeEnv[key], '[redacted]');
+        for (const [key, value] of Object.entries(forwarded))
+          if (!key.endsWith('URL')) text = text.replaceAll(value, '[redacted]');
         return text;
       }
       try {

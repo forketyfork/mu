@@ -570,7 +570,7 @@ test("a sandboxed worker cannot take a running agent's turn credential", { skip:
 });
 
 // Claude Code accepts user messages on a socket named, with its token, in the environment of every process it starts.
-test('a turn environment holds no credential, prompt or Claude messaging socket, and turns Claude messaging off', async (t) => {
+test('a turn environment holds no credential, eval key, prompt or Claude messaging socket, and turns Claude messaging off', async (t) => {
   const script = join(await temp(t, 'env'), 'env.mjs');
   await writeFile(script, 'for await (const _ of process.stdin); console.log(JSON.stringify(process.env));');
   const { app } = await team(t, await freePort(), { custom: { probe: { command: process.execPath, args: [script] } } });
@@ -580,9 +580,15 @@ test('a turn environment holds no credential, prompt or Claude messaging socket,
     CLAUDE_CODE_MESSAGING_SOCKET: '/tmp/cc-socks/1.sock',
     CLAUDE_CODE_MESSAGING_TOKEN: 'inherited',
     MU_TOKEN: 'inherited',
+    MU_EVAL_ANTHROPIC_API_KEY: 'evaluation-only',
   });
   t.after(() => {
-    for (const name of ['CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN', 'MU_TOKEN'])
+    for (const name of [
+      'CLAUDE_CODE_MESSAGING_SOCKET',
+      'CLAUDE_CODE_MESSAGING_TOKEN',
+      'MU_TOKEN',
+      'MU_EVAL_ANTHROPIC_API_KEY',
+    ])
       if (saved[name] === undefined) delete process.env[name];
       else process.env[name] = saved[name];
   });
@@ -596,7 +602,12 @@ test('a turn environment holds no credential, prompt or Claude messaging socket,
     await new Promise((resolve) => setTimeout(resolve, 20));
   const env = JSON.parse(reply.text);
   assert.equal(env.CLAUDE_CODE_HARBOR_KITE, '0');
-  for (const name of ['CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN', 'MU_TOKEN'])
+  for (const name of [
+    'CLAUDE_CODE_MESSAGING_SOCKET',
+    'CLAUDE_CODE_MESSAGING_TOKEN',
+    'MU_TOKEN',
+    'MU_EVAL_ANTHROPIC_API_KEY',
+  ])
     assert.equal(env[name], undefined, name);
   assert.match(env.MU_TOKEN_FILE, /credentials\/peer$/);
   assert.ok(env.MU_PROMPT, 'a custom adapter still gets the prompt');

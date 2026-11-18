@@ -127,16 +127,24 @@ export const caseInfo = ({ id, title, skill, digest, weight }) => ({ id, title, 
 export const casePrompt = ({ prompt }) =>
   `${prompt}\n\nReturn one JSON object, without a Markdown fence or commentary.`;
 
+// A whole word or phrase, ignoring case and the amount of space between its words: "port" is not in "support".
+function mentions(field, phrase) {
+  const words = phrase
+    .trim()
+    .split(/\s+/)
+    .map((word) => RegExp.escape(word));
+  return new RegExp(`(?<![\\p{L}\\p{N}])${words.join('\\s+')}(?![\\p{L}\\p{N}])`, 'iu').test(field);
+}
+
 function checkField(check, answer) {
   if (!object(answer) || !Object.hasOwn(answer, check.field)) return false;
   const field = answer[check.field];
   if (check.type === 'equals') return isDeepStrictEqual(field, check.value);
   if (check.type === 'brief') {
     if (!text(field) || field.trim().split(/\s+/).length > check.maxWords) return false;
-    const words = field.toLowerCase();
     return (
-      check.require.every((word) => words.includes(word.toLowerCase())) &&
-      !check.forbid.some((word) => words.includes(word.toLowerCase()))
+      check.require.every((phrase) => mentions(field, phrase)) &&
+      !check.forbid.some((phrase) => mentions(field, phrase))
     );
   }
   if (check.type === 'cli-regression') {

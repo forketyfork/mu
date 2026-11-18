@@ -83,6 +83,14 @@ A [visual](visuals.md) is written by an agent and shown in the dashboard, and an
 
 A flaw in a rendering library would give script inside that frame, which can read the visual it shows and draw inside its own rectangle, and nothing more. The decisions are in [Architecture](architecture.md#visuals).
 
+## Model evals
+
+A [model eval](evals.md) sends a case prompt to a model provider from a container, not from an agent. Only you can start one or read its results; agents get no eval API.
+
+- Each case runs in a new container from an image that you built: read-only, with no host directory, no capabilities, a fixed unprivileged user and limits on processes, memory and CPU. The harness gets no tools, so a model answers from the prompt alone. Answer keys and scoring stay in the service and never run code from a reply.
+- A container gets only the provider settings that the service's environment names for evaluations, `MU_EVAL_<NAME>` (for pi, `MU_EVAL_PI_<PROVIDER>_API_KEY`), and only those of the selected harness. The service's own keys and logins never reach it, and agent turns never get an `MU_EVAL_` variable. Docker passes each value by name, and a forwarded key that shows up in a reply or an error is replaced with `[redacted]`.
+- The container can reach the network, so a private case's prompt goes to the provider of the selected model. Use a key that is scoped to evaluations.
+
 ## The chat server
 
 The IRC server does not authenticate clients or nicknames. Mu therefore records only the messages that it sent itself and ignores everything that other IRC clients post. Any local process can read the common channel. Use the dashboard or the CLI to take part.
@@ -93,4 +101,4 @@ Every API request needs a credential. The service also rejects requests whose `H
 
 ## Outbound requests
 
-Mu itself makes one kind of outbound request: it downloads a model price list from GitHub to compute Codex spend. Set `pricing.enabled` to `false` to stop it; see [Spend](dashboard.md#spend). The agents' CLIs connect to their model providers as they normally do.
+Mu itself makes one kind of outbound request: it downloads a model price list from GitHub to compute Codex spend. Set `pricing.enabled` to `false` to stop it; see [Spend](dashboard.md#spend). The agents' CLIs connect to their model providers as they normally do, and so do the CLIs in eval containers.
