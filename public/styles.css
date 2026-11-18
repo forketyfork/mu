@@ -553,14 +553,19 @@ p {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: var(--space-16px);
   padding: 0 var(--space-34px);
   position: relative;
   z-index: 4;
 }
 
+/* The breadcrumb gives way first: its names are cut with an ellipsis, so the controls on the right keep their size
+   and the bar never grows wider than the window. */
 .breadcrumb {
   display: flex;
   align-items: center;
+  min-width: 0;
+  white-space: nowrap;
   gap: var(--space-15px);
   color: var(--breadcrumb-ink);
   font-size: var(--font-size-15px);
@@ -570,6 +575,17 @@ p {
   color: var(--breadcrumb-strong-ink);
   font-size: var(--font-size-16px);
   font-weight: var(--font-weight-550);
+}
+
+.breadcrumb > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.breadcrumb > .workspace-icon,
+.breadcrumb-slash {
+  flex: none;
 }
 
 .workspace-icon {
@@ -591,6 +607,7 @@ p {
 
 .topbar-right {
   display: flex;
+  flex: none;
   align-items: center;
   gap: var(--space-22px);
 }
@@ -641,6 +658,7 @@ p {
   font-size: var(--font-size-14px);
   font-weight: var(--font-weight-500);
   color: var(--archive-toggle-ink);
+  white-space: nowrap;
 }
 
 .status-dot {
@@ -3489,6 +3507,14 @@ kbd {
     padding: 0 var(--space-24px);
   }
 
+  .topbar-right {
+    gap: var(--space-14px);
+  }
+
+  .user-avatar {
+    display: none;
+  }
+
   .main-pane,
   .brag-pane,
   .visuals-index {
@@ -3695,6 +3721,17 @@ kbd {
   }
 }
 
+@media (width <= 760px) {
+  .breadcrumb strong,
+  .breadcrumb-slash {
+    display: none;
+  }
+
+  #new-agent .button-label {
+    display: none;
+  }
+}
+
 @media (width <= 600px) {
   .topbar {
     height: 72px;
@@ -3707,12 +3744,6 @@ kbd {
 
   .breadcrumb strong {
     font-size: var(--font-size-15px);
-  }
-
-  .breadcrumb-slash,
-  .breadcrumb > span:last-child,
-  .user-avatar {
-    display: none;
   }
 
   .archive-toggle {
@@ -4000,6 +4031,18 @@ kbd {
   }
 
   .composer-hint-instruction {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* Only the dot tells the connection at this width; the words stay for assistive technology. */
+@media (width <= 480px) {
+  #connection-label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -4395,6 +4438,18 @@ kbd {
 .eval-pane > section,
 #eval-comparison {
   margin-top: var(--space-16px);
+}
+
+/* Drawn with the borders of the other panels, not the browser's. */
+.eval-pane fieldset {
+  padding: var(--space-12px) var(--space-16px);
+  border: 1px solid var(--line);
+  border-radius: var(--border-radius-10px);
+}
+
+.eval-pane legend {
+  padding: 0 var(--space-8px);
+  color: var(--muted);
 }
 
 .eval-controls {

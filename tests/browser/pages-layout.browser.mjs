@@ -211,3 +211,56 @@ test('visuals are cards in the columns of the task cards, each with its task ins
   assert.equal(new Set(narrow.map((card) => card.left)).size, 1, JSON.stringify(narrow));
   await shot('visuals-cards-500');
 });
+
+test('the top bar fits the window at every width, and its controls stay in reach', async (t) => {
+  const seed = await seeded(t);
+  const { evaluate, viewport, shot, open } = await openedDashboard(t, seed);
+  const bar = `(() => {
+    const bar = document.querySelector('.topbar');
+    const box = (selector) => {
+      const element = document.querySelector(selector);
+      const rect = element.getBoundingClientRect();
+      return { shown: rect.width > 0, inside: rect.left >= 0 && rect.right <= innerWidth };
+    };
+    return {
+      barOverflow: bar.scrollWidth - bar.clientWidth,
+      pageOverflow: document.documentElement.scrollWidth - innerWidth,
+      newAgent: box('#new-agent'),
+      archived: box('.archive-toggle'),
+      connection: box('#connection-badge'),
+      connectionText: document.getElementById('connection-label').textContent,
+      newAgentName: document.getElementById('new-agent').getAttribute('aria-label'),
+    };
+  })()`;
+  for (const width of [1500, 1100, 900, 760, 700, 650, 600, 500, 390, 360])
+    for (const page of ['workspace', 'evals', 'visuals']) {
+      await viewport(width, 700);
+      await open(page);
+      const measured = await evaluate(bar);
+      const where = `${page} at ${width}: ${JSON.stringify(measured)}`;
+      assert.equal(measured.barOverflow, 0, where);
+      assert.equal(measured.pageOverflow, 0, where);
+      for (const control of ['newAgent', 'archived', 'connection'])
+        assert.deepEqual(measured[control], { shown: true, inside: true }, `${control}: ${where}`);
+      assert.equal(measured.connectionText, 'Connected locally', where);
+      if (page === 'evals' && [700, 390].includes(width)) await shot(`topbar-${width}`);
+    }
+  assert.equal(await evaluate(`document.getElementById('new-agent').getAttribute('aria-label')`), 'New agent');
+});
+
+test('the work samples of Model evals are framed like the other panels', async (t) => {
+  const seed = await seeded(t);
+  const { evaluate, open } = await openedDashboard(t, seed);
+  await open('evals');
+  const frame = await evaluate(`(() => {
+    const fieldset = getComputedStyle(document.querySelector('#eval-form fieldset'));
+    const panel = document.createElement('div');
+    panel.style.border = '1px solid var(--line)';
+    document.body.append(panel);
+    const line = getComputedStyle(panel).borderTopColor;
+    panel.remove();
+    return { color: fieldset.borderTopColor, line, style: fieldset.borderTopStyle };
+  })()`);
+  assert.equal(frame.style, 'solid');
+  assert.equal(frame.color, frame.line, JSON.stringify(frame));
+});
