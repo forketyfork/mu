@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 // for Claude and Codex, and MU_EVAL_PI_<PROVIDER>_API_KEY becomes <PROVIDER>_API_KEY for pi. The service's own
 // credentials, such as a key or login exported for the user's CLIs, never reach a case.
 const providerEnv = {
-  claude: ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_BASE_URL'],
+  claude: ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL'],
   codex: ['CODEX_API_KEY', 'OPENAI_API_KEY', 'OPENAI_BASE_URL'],
   pi: [],
 };
