@@ -241,22 +241,12 @@
     left: calc(var(--space-72px) + var(--space-8px));
     width: min(340px, calc(100vw - var(--space-72px) - var(--space-24px)));
   }
-
-  .mention-popover {
-    left: calc(var(--space-72px) + var(--space-8px));
-    width: min(420px, calc(100vw - var(--space-72px) - var(--space-24px)));
-  }
 }
 
 @media (width <= 880px) {
   .reader-settings-popover {
     left: calc(var(--space-64px) + var(--space-8px));
     width: min(340px, calc(100vw - var(--space-64px) - var(--space-24px)));
-  }
-
-  .mention-popover {
-    left: calc(var(--space-64px) + var(--space-8px));
-    width: min(420px, calc(100vw - var(--space-64px) - var(--space-24px)));
   }
 }
 
@@ -474,6 +464,20 @@ p {
 .mention-popover:popover-open {
   display: grid;
   gap: var(--space-12px);
+}
+
+@media (width <= 1060px) {
+  .mention-popover {
+    left: calc(var(--space-72px) + var(--space-8px));
+    width: min(420px, calc(100vw - var(--space-72px) - var(--space-24px)));
+  }
+}
+
+@media (width <= 880px) {
+  .mention-popover {
+    left: calc(var(--space-64px) + var(--space-8px));
+    width: min(420px, calc(100vw - var(--space-64px) - var(--space-24px)));
+  }
 }
 
 .mention-header {
