@@ -95,9 +95,13 @@ test('a resumed session gets the full skill once and a short reference afterward
   const first = await turn(claudeTurn({ context: 40000 }));
   assert.ok(first.startsWith('---\nname: worker'));
   assert.match(first, new RegExp(`Mu's projects and local clones are listed in ${home}/projects\\.md`));
+  const sections = `The sections of your worker skill are the other files in ${home}/skills/worker; read one when the skill names its situation.`;
+  assert.ok(first.includes(sections), 'the full skill names where its sections are');
+  assert.ok(!first.includes('Your skill files changed'), 'a new session has read nothing earlier');
   const second = await turn(claudeTurn({ context: 52000 }));
   assert.ok(!second.includes(SKILL_MARKER));
   assert.match(second, /^Your worker skill is unchanged since an earlier turn of this session gave you its full text/);
+  assert.ok(second.includes(sections), 'the short reference names them too');
   assert.match(second, /Incoming chat message #2 from the user \(@user\)/);
 });
 
@@ -120,6 +124,30 @@ test('a changed skill, a new native session, or another conversation gets the fu
     createdBy: 'user',
   });
   assert.match(await turn(claudeTurn({ context: 30000 }), 'task-room'), /Edited instructions/);
+});
+
+test('a changed section counts as a changed skill, and the session is told to read its sections again', async (t) => {
+  const { home, turn } = await setup(t);
+  await turn(claudeTurn({ context: 40000 }));
+  const section = join(home, 'skills/worker/review-loop.md');
+  await writeFile(section, `${await readFile(section, 'utf8')}\nEdited section.\n`);
+  const changed = await turn(claudeTurn({ context: 50000 }));
+  assert.ok(changed.startsWith('---\nname: worker'), 'the skill text again, not the short reference');
+  assert.match(
+    changed,
+    /Your skill files changed since this session last read them: read again any section you follow\./,
+  );
+  assert.ok(!changed.includes('Edited section'), 'a section is read on demand, never put into the prompt');
+  assert.match(await turn(claudeTurn({ context: 60000 })), /^Your worker skill is unchanged/);
+});
+
+test('a missing section fails the turn like a missing skill', async (t) => {
+  const { home, prompts, store, turn } = await setup(t);
+  await rm(join(home, 'skills/worker/handoff.md'));
+  await turn(claudeTurn());
+  assert.equal(prompts.length, 0);
+  assert.equal(store.agent('worker').status, 'error');
+  assert.match(store.agent('worker').lastError, /handoff\.md/);
 });
 
 test('a missing home skill fails the turn instead of falling back to the checkout', async (t) => {

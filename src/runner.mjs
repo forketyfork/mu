@@ -5,6 +5,7 @@ import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { NO_REPLY, commandFor, emptyTurn, foldTurn, muCommand, turnReply } from './adapters.mjs';
 import { MAX_MESSAGE_BYTES } from './chat.mjs';
+import { DEFAULTS } from './home.mjs';
 import { memoryPrompt, readLeadMemoryIndex } from './memory.mjs';
 import { mentions } from './store.mjs';
 import { CodexRollouts } from './codex-rollout.mjs';
@@ -37,6 +38,28 @@ const MAX_CARRIED_DIRECT_MESSAGE_CHARS = 400;
 const describeMessages = (ids) =>
   ids.length === 1 ? `message #${ids[0]}` : `messages ${ids.map((id) => '#' + id).join(', ')}`;
 const senderName = (from) => (from === 'user' ? 'the user (@user)' : '@' + from);
+// The role's files are the home defaults under skills/<skill>/: SKILL.md, which every new session gets in its prompt,
+// and the sections, which the agent reads when the skill says. A missing one fails the turn: init installs them all.
+// The SKILL.md record keeps the skill's name as its key, as before sections existed.
+async function readRoleFiles(home, skillName) {
+  const prefix = `skills/${skillName}/`;
+  const files = [];
+  for (const path of DEFAULTS.filter((name) => name.startsWith(prefix))) {
+    const text = await readFile(join(home, path), 'utf8');
+    const file = path.slice(prefix.length);
+    files.push({
+      key: file === 'SKILL.md' ? skillName : `${skillName}/${file}`,
+      path: join(home, path),
+      text,
+      hash: createHash('sha256').update(text).digest('hex'),
+    });
+  }
+  return files;
+}
+const roleFilesHash = (files) =>
+  createHash('sha256')
+    .update(files.map((file) => `${file.key}\0${file.hash}`).join('\n'))
+    .digest('hex');
 const QUIET_WORKER_STATUSES = new Set(['idle', 'done', 'stopped']);
 
 function quietActiveTasks(context, agents) {
@@ -231,15 +254,18 @@ export class Runner {
     }
     agent = { ...agent, sessionId: sessionFor(agent, conversationId) };
     const skillName = agent.role === 'lead' ? 'team-lead' : 'worker';
-    const skillPath = join(this.home, 'skills', skillName, 'SKILL.md');
-    const skillText = await readFile(skillPath, 'utf8');
-    const skillHash = createHash('sha256').update(skillText).digest('hex');
-    await this.noticeRoleFileChange(skillName, skillPath, skillHash);
+    const skillDir = join(this.home, 'skills', skillName);
+    const skillPath = join(skillDir, 'SKILL.md');
+    const roleFiles = await readRoleFiles(this.home, skillName);
+    const skillText = roleFiles.find((file) => file.path === skillPath).text;
+    // One hash covers the skill and its sections: the agent reads a section on demand, so a changed section must
+    // count as a changed skill, or a session that read the old section would keep following it.
+    const skillHash = roleFilesHash(roleFiles);
+    await this.noticeRoleFileChange(skillName, roleFiles);
     // A resumed session keeps the skill text from an earlier turn, so repeating it on every turn only grows the context.
     const delivered = agent.skillDelivered?.[conversationId];
-    const skillKnown = Boolean(
-      agent.sessionId && delivered?.sessionId === agent.sessionId && delivered.hash === skillHash,
-    );
+    const sameSession = Boolean(agent.sessionId && delivered?.sessionId === agent.sessionId);
+    const skillKnown = sameSession && delivered.hash === skillHash;
     const contextBefore =
       agent.usage?.[conversationId]?.sessionId === agent.sessionId
         ? (agent.usage[conversationId].contextTokens ?? null)
@@ -262,9 +288,10 @@ export class Runner {
       agent.role === 'lead' && conversationId === 'dm-lead' && batch.some((item) => item.from === 'user')
         ? openWaitingCards(this.leadTaskContext())
         : '';
+    const sections = `The sections of your ${skillName} skill are the other files in ${skillDir}; read one when the skill names its situation.\n`;
     const skill = skillKnown
-      ? `Your ${skillName} skill is unchanged since an earlier turn of this session gave you its full text; keep following it. If that text is no longer in your context, read ${skillPath}.\n`
-      : skillText;
+      ? `Your ${skillName} skill is unchanged since an earlier turn of this session gave you its full text; keep following it. If that text is no longer in your context, read ${skillPath}. ${sections}`
+      : `${skillText}\n${sections}${sameSession ? 'Your skill files changed since this session last read them: read again any section you follow.\n' : ''}`;
     const assignment =
       agent.conversationId === conversationId
         ? agent.task || '(assigned in chat)'
@@ -382,17 +409,25 @@ export class Runner {
   }
   // A role file is a prompt for every agent of its role, including unsandboxed ones, so each change gets one notice
   // for the user: a planted change and a forgotten init both show up. It mentions no agent, so it wakes none.
-  // A notice that cannot be posted gives the record back, so that the next turn tries again.
-  async noticeRoleFileChange(skillName, skillPath, hash) {
-    const { changed, previous } = this.store.observeRoleFile(skillName, hash);
-    if (!changed) return;
+  // A notice that cannot be posted gives the records back, so that the next turn tries again.
+  async noticeRoleFileChange(skillName, roleFiles) {
+    const changed = [];
+    for (const file of roleFiles) {
+      const { changed: fileChanged, previous } = this.store.observeRoleFile(file.key, file.hash);
+      if (fileChanged) changed.push({ ...file, previous });
+    }
+    if (!changed.length) return;
     let notice;
     try {
-      const { mtime } = await stat(skillPath);
-      notice = `@user Mu runtime: the ${skillName} role file ${skillPath} changed; it was last modified at ${mtime.toISOString()}. Agents with that role follow the new text from their next turn. If neither you nor init changed it, inspect the file.`;
+      const modified = [];
+      for (const file of changed) modified.push((await stat(file.path)).mtime.toISOString());
+      notice =
+        changed.length === 1
+          ? `@user Mu runtime: the ${skillName} role file ${changed[0].path} changed; it was last modified at ${modified[0]}. Agents with that role follow the new text from their next turn. If neither you nor init changed it, inspect the file.`
+          : `@user Mu runtime: the ${skillName} role files ${changed.map((file, index) => `${file.path} (last modified at ${modified[index]})`).join(', ')} changed. Agents with that role follow the new text from their next turn. If neither you nor init changed them, inspect the files.`;
       await this.chat.send('system', notice, 'common');
     } catch (error) {
-      this.store.restoreRoleFile(skillName, hash, previous);
+      for (const file of changed) this.store.restoreRoleFile(file.key, file.hash, file.previous);
       if (notice === undefined) throw error;
       console.error(
         `Could not post the role file notice in common; the next turn tries again: ${error.message}\n${notice}`,

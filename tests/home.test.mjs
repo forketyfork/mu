@@ -61,7 +61,7 @@ test('first install creates private role files and seed files at paths with spac
   const home = await temporaryHome(t, 'home with spaces');
   const root = await sourceRoot(t, 'source with spaces');
   const first = await initializeHome({ home, root });
-  assert.equal(first.actions.filter(({ action }) => action === 'install').length, 2);
+  assert.equal(first.actions.filter(({ action }) => action === 'install').length, DEFAULTS.length);
   assert.equal(await readFile(join(home, DEFAULTS[0]), 'utf8'), await readFile(join(root, DEFAULTS[0]), 'utf8'));
   assert.equal(
     await readFile(join(home, 'projects.md'), 'utf8'),

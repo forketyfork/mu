@@ -812,6 +812,27 @@ test('a changed role file gets one notice for the user that wakes no agent', asy
   assert.equal(notices().length, 2);
 });
 
+test('a section is a role file too, and files that changed together get one notice', async (t) => {
+  const { home, turn, notices } = await noticeSetup(t);
+  await turn();
+  const section = join(home, 'skills/worker/review-loop.md');
+  await writeFile(section, `${await readFile(section, 'utf8')}\nPlanted line.\n`);
+  await turn();
+  assert.match(notices()[0].text, new RegExp(`^@user Mu runtime: the worker role file ${section} changed;`));
+  const skill = join(home, 'skills/worker/SKILL.md');
+  for (const file of [skill, section]) await writeFile(file, `${await readFile(file, 'utf8')}\nAnother line.\n`);
+  await turn();
+  await turn();
+  assert.equal(notices().length, 2);
+  assert.match(
+    notices()[1].text,
+    new RegExp(
+      `^@user Mu runtime: the worker role files ${skill} \\(last modified at [^)]+\\), ${section} \\(last modified at [^)]+\\) changed\\.`,
+    ),
+  );
+  assert.match(notices()[1].text, /If neither you nor init changed them, inspect the files\.$/);
+});
+
 test('a notice that could not be posted is posted on the next turn', async (t) => {
   const { home, turn, notices, failures } = await noticeSetup(t);
   await turn();

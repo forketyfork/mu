@@ -128,6 +128,6 @@ Instead of a lead that Mu runs, you can be in the lead's seat with an interactiv
 
    > Read the skill file named by MU_LEAD_SKILL and act as my team lead. Delegate all investigation, implementation, testing, and review to workers. Use Mu chat for coordination, and keep checking your inbox while the team is active.
 
-The role file tells it to read `memory/lead/MEMORY.md` in the Mu home at the start; Mu does not put the memory into an interactive lead's prompt.
+The skill's `manual.md` section, beside `SKILL.md`, tells it to read `memory/lead/MEMORY.md` in the Mu home at the start; Mu does not put the memory into an interactive lead's prompt.
 
 An interactive agent receives messages only while it runs `node "$MU_CLI" inbox --wait 25` in a loop; Mu cannot type into its terminal. Stopping it in Mu does not close its terminal. See [Manual agents](cli.md#manual-agents) for the inbox commands.

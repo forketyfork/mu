@@ -6,7 +6,7 @@ Mu keeps everything that is yours or that changes at run time outside the Git ch
 
 | Path | Contents | Who changes it |
 | --- | --- | --- |
-| `skills/team-lead/SKILL.md`, `skills/worker/SKILL.md` | The **role files**: the instructions every lead and every worker follows | `init`, and you if you want to change the instructions |
+| `skills/team-lead/`, `skills/worker/` | The **role files**: the instructions every lead and every worker follows. Each role's `SKILL.md` is the part every session gets; the other files are its sections, which the agent reads when `SKILL.md` names their situation | `init`, and you if you want to change the instructions |
 | `projects.md` | Your list of projects: where each one is and what it is | You. The lead reads it to choose where a worker runs; it never writes it |
 | `memory/lead/` | The lead's memory: `MEMORY.md` is the index, and each fact is one Markdown file | The lead, and you; see [The lead](lead.md#memory) |
 | `config.json` | Mu's configuration, described below | You |
@@ -16,7 +16,7 @@ Set `MU_HOME` to use another directory. It must be outside the Mu checkout. `MU_
 
 ### Create the home
 
-Run `node src/cli.mjs init` in the Mu checkout before the first start. It creates the home, copies the two role files from `skills/` in the checkout, and creates `projects.md`, `memory/lead/MEMORY.md` and `config.json` (a copy of `mu.config.example.json`). Directories get mode 0700 and files mode 0600, so only your user can read them. Mu does not start when a role file is missing or the home is invalid.
+Run `node src/cli.mjs init` in the Mu checkout before the first start. It creates the home, copies the role files from `skills/team-lead/` and `skills/worker/` in the checkout, and creates `projects.md`, `memory/lead/MEMORY.md` and `config.json` (a copy of `mu.config.example.json`). Directories get mode 0700 and files mode 0600, so only your user can read them. Mu does not start when a role file is missing or the home is invalid.
 
 `init` never overwrites `projects.md`, `MEMORY.md` or `config.json`: they are yours after the first run.
 
@@ -26,7 +26,7 @@ The whole update, with the steps before and after this one, is in [Update Mu](up
 
 A new version of Mu can ship new role files. Check whether the home is current with `node src/cli.mjs service`: each entry under `home.defaults` is `current`, `missing`, `outdated`, `edited`, or a merge state such as `mergeable` or `conflict`.
 
-Run `node src/cli.mjs init` to upgrade. A role file you did not edit is replaced. A role file you edited is merged with the new version. When the merge has a conflict, `init` leaves the file unchanged: resolve the conflict in the file yourself, then run `node src/cli.mjs init --accept skills/team-lead/SKILL.md` (or the worker's path) to take the current shipped version as the new merge base.
+Run `node src/cli.mjs init` to upgrade. A role file you did not edit is replaced. A role file you edited is merged with the new version. When the merge has a conflict, `init` leaves the file unchanged: resolve the conflict in the file yourself, then run `node src/cli.mjs init --accept skills/team-lead/SKILL.md` (or the path of that file) to take the current shipped version as the new merge base.
 
 Other options:
 

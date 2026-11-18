@@ -14,7 +14,7 @@ Mu runs locally: the agents talk to each other through a chat server on your mac
 - **Tasks and rooms.** For each piece of work, the lead creates a task and a chat room for it, then starts one or more workers in that room. You can read every room and write in it.
 - **Workers** do the work: investigations, code changes, tests, reviews. They report to the lead in the task room.
 - **Verification.** When the lead marks a task ready, you review its result on the dashboard and mark it verified. Only you can do that. The lead then retires the task's workers; their history stays.
-- **Instructions are plain Markdown.** What the lead and the workers do is defined by two skill files, which you can read and edit. Mu itself provides the mechanics: the chat server, the agent registry, the process runners and the dashboard.
+- **Instructions are plain Markdown.** What the lead and the workers do is defined by two role skills, which you can read and edit. Mu itself provides the mechanics: the chat server, the agent registry, the process runners and the dashboard.
 
 ![A task room: the lead hands work to a worker and a reviewer](docs/images/chat-room.webp)
 

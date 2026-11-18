@@ -11,7 +11,22 @@ const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 const MANIFEST_VERSION = 1;
 
-export const DEFAULTS = Object.freeze(['skills/team-lead/SKILL.md', 'skills/worker/SKILL.md']);
+// The role files: each role's SKILL.md, which a session gets in its prompt, and the sections beside it, which the
+// agent reads when the skill names their situation.
+export const DEFAULTS = Object.freeze([
+  'skills/team-lead/SKILL.md',
+  'skills/team-lead/dream.md',
+  'skills/team-lead/focus.md',
+  'skills/team-lead/harnesses.md',
+  'skills/team-lead/housekeeping.md',
+  'skills/team-lead/manual.md',
+  'skills/team-lead/memory.md',
+  'skills/team-lead/mu-changes.md',
+  'skills/worker/SKILL.md',
+  'skills/worker/handoff.md',
+  'skills/worker/manual.md',
+  'skills/worker/review-loop.md',
+]);
 
 export const SEEDS = Object.freeze({
   'projects.md': '# Projects\n\nList the project checkouts and local clones used by this Mu home.\n',

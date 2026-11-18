@@ -15,7 +15,7 @@ Mu keeps your agents, tasks, chats and settings in the [Mu home](configuration.m
 | --- | --- | --- |
 | Code of the service and the CLI, and the dashboard files | The checkout | `git pull`, then a restart |
 | Dependencies | `node_modules/` in the checkout | `npm ci` |
-| The two role files, `skills/team-lead/SKILL.md` and `skills/worker/SKILL.md` | The Mu home | `node src/cli.mjs init` |
+| The role files, `skills/team-lead/*.md` and `skills/worker/*.md` | The Mu home | `node src/cli.mjs init` |
 | The visuals skill, `skills/visuals/SKILL.md` | The checkout | The `git pull` alone: `node src/cli.mjs visual guide` prints the file of the checkout, and the home holds no copy |
 | `projects.md`, `memory/`, `config.json`, `data/` | The Mu home | You and Mu; an update never rewrites them |
 
@@ -82,6 +82,8 @@ The agent definition runs `src/server.mjs` of your checkout, so a `git pull` cha
 
    The lead can run `restart` too, and does so after it merged a change to Mu with your standing permission.
 
+   If the restart refuses because a role file is missing, the update adds one: the old service's `init` does not know it, and the new code does not start without it. Bring the home up to date with `init` in your shell first, then restart.
+
 3. [Bring the Mu home up to date](#bring-the-mu-home-up-to-date), after the restart: the new role files can name commands that only the new code has.
 4. [Check the result](#check-the-result).
 
@@ -147,7 +149,7 @@ The lead can run `init` and `init --dry-run` through the service. You can ask it
    node src/cli.mjs init --accept skills/worker/SKILL.md
    ```
 
-   `--accept` changes no content. It records the current shipped version as the base of the next merge, so your file counts as `edited` and later updates merge against the new base. It needs the path of a role file, relative to the home: `skills/team-lead/SKILL.md` or `skills/worker/SKILL.md`. Run it once per file.
+   `--accept` changes no content. It records the current shipped version as the base of the next merge, so your file counts as `edited` and later updates merge against the new base. It needs the path of a role file, relative to the home, such as `skills/team-lead/SKILL.md` or `skills/worker/review-loop.md`. Run it once per file.
 
 4. Run `node src/cli.mjs init` again to update the rest.
 
