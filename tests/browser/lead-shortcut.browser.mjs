@@ -143,6 +143,15 @@ test('Cmd+L or Ctrl+L takes the user to the composer of the lead chat from every
   assert.equal((await where()).view, 'Overview');
   await press();
   assert.deepEqual({ ...(await where()), draft: undefined }, { ...lead, draft: undefined });
+  // The message reaches the chat on the event stream, and the composer empties when the reply to the send arrives. Which
+  // comes first is up to the network and the load, so the reply is held back to make the dashboard take them in the order
+  // that a busy machine can give.
+  await evaluate(`const send = window.fetch;
+    window.fetch = async (...args) => {
+      const response = await send(...args);
+      if (String(args[0]).includes('/api/messages')) await new Promise((resolve) => setTimeout(resolve, 400));
+      return response;
+    }`);
   await type('Check the failing build');
   await enter();
   await until('the message in the chat', () =>
@@ -150,7 +159,7 @@ test('Cmd+L or Ctrl+L takes the user to the composer of the lead chat from every
       `[...document.querySelectorAll('#messages .message')].some((item) => item.textContent.includes('Check the failing build'))`,
     ),
   );
-  assert.equal((await where()).draft, '', 'the sent text left the composer');
+  await until('the sent text to leave the composer', async () => (await where()).draft === '');
   assert.ok(
     app.store
       .messages(50, 'dm-lead')

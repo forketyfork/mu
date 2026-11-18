@@ -43,6 +43,8 @@ A fourth check, `tests/browser/unread-persist.browser.mjs`, covers the unread ma
 
 A fifth check, `tests/browser/visual-author-wake.browser.mjs`, retires the worker that wrote a visual, then comments on it: the note that the author is stopped before anything is typed, the author that the send wakes, the section that its answer changes and flashes, and the note about a failed author, whose comment goes to the lead. It runs with the others.
 
+Write each assertion of a browser check after the condition it depends on, not after a different event that usually comes with it (use `until` from `tests/browser/support.mjs`). The dashboard learns of one change from two channels: a message reaches the chat on the event stream, while the composer empties when the reply to the send arrives, and under load either may come first. The check of the shortcut holds the reply back to make that order certain. These checks also run beside other test runs, so a fixed sleep is a guess about the machine; use one only to show that something did not happen.
+
 ## Git hooks
 
 `npm ci` (or `npm install`) sets `core.hooksPath` to the tracked `.githooks` directory. The `pre-commit` hook runs `npm run check` and then `npm test`, which takes about fifteen seconds and needs a running Docker daemon. For a commit that changes the visual frame or the mention list of the message box it also runs [the browser check](#the-visual-frame-in-a-real-browser). The setting is in the repository's shared configuration, so it applies to every worktree. `npm ci` writes it only when it is not already `.githooks`, so it also works where Git configuration is read-only, as in a Codex agent's turn.
