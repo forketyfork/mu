@@ -189,6 +189,7 @@ test('an HTML attachment runs in its sandboxed frame without reaching Mu, the da
     const frame = figure.querySelector('iframe');
     return {
       sandbox: frame.getAttribute('sandbox'),
+      allow: frame.getAttribute('allow'),
       title: figure.querySelector('.message-attachment-title').textContent,
       size: figure.querySelector('.message-attachment-size').textContent,
       height: frame.getBoundingClientRect().height,
@@ -197,6 +198,7 @@ test('an HTML attachment runs in its sandboxed frame without reaching Mu, the da
     };
   })()`);
   assert.equal(shown.sandbox, 'allow-scripts');
+  assert.equal(shown.allow, "autoplay; picture-in-picture 'none'", 'the frame is given no other capability');
   assert.equal(shown.title, 'Pong');
   assert.match(shown.size, /^\d+\.\d KiB$/);
   assert.equal(shown.height, pageHeight);
