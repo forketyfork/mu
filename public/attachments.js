@@ -25,9 +25,6 @@ export function createAttachments({ document, window, request }) {
   const parts = new WeakMap();
   /** @type {Map<number, Promise<string>>} */
   const pages = new Map();
-  // The messages whose page the user ran since the dashboard loaded. A figure drawn again for one of them, after a
-  // switch to another conversation and back, runs without another click.
-  const ran = new Set();
   // The figure whose page the user gave the keyboard to, and the dashboard element that had the focus last.
   /** @type {HTMLElement | null} */
   let engaged = null;
@@ -74,7 +71,7 @@ export function createAttachments({ document, window, request }) {
     const run = node('button', 'button secondary message-attachment-run', 'Run');
     run.type = 'button';
     run.setAttribute('aria-label', `Run the HTML page ${message.attachment.title} from ${message.from}`);
-    run.addEventListener('click', () => start(figure, true));
+    run.addEventListener('click', () => start(figure));
     waiting.append(
       run,
       node(
@@ -87,13 +84,11 @@ export function createAttachments({ document, window, request }) {
   }
 
   /**
-   * Runs the page of the figure. With `keyboard`, the user asked for it, and the page gets the keyboard.
+   * Runs the page of the figure on the user's click, and gives it the keyboard.
    * @param {HTMLElement} figure
-   * @param {boolean} keyboard
    */
-  function start(figure, keyboard) {
+  function start(figure) {
     const part = parts.get(figure);
-    ran.add(part.message.id);
     figure.classList.remove('stopped');
     figure.classList.add('running');
     figure.querySelector('.message-attachment-start')?.remove();
@@ -120,7 +115,7 @@ export function createAttachments({ document, window, request }) {
     Object.assign(part, { frame, shield, served: false });
     running.set(part.message.id, figure);
     watch ??= setInterval(guard, 200);
-    if (keyboard) engage(figure);
+    engage(figure);
   }
 
   // The user gives the page the keyboard: the shield over it goes away until the focus leaves it.
@@ -150,7 +145,6 @@ export function createAttachments({ document, window, request }) {
     part.frame?.closest('.message-attachment-stage')?.remove();
     Object.assign(part, { frame: null, shield: null, height: '', served: false });
     running.delete(part.message.id);
-    ran.delete(part.message.id);
     figure.classList.remove('running');
     figure.classList.add('stopped');
     for (const control of figure.querySelectorAll('.message-attachment-bar button'))
@@ -227,7 +221,8 @@ export function createAttachments({ document, window, request }) {
   /**
    * Gives the figures in `container` that have no frame yet the frame of their message. A figure whose message has a
    * frame running elsewhere in the page is replaced by that figure, moved without reloading, so a rebuilt chat does
-   * not restart its pages. One whose page the user ran before starts again; the others wait for Run.
+   * not restart its pages. The others wait for Run, also after a switch to another conversation and back: a page
+   * that runs without the user's click, and focuses itself on load as keyboard games do, would be stopped for it.
    * @param {HTMLElement} container
    */
   function settle(container) {
@@ -238,7 +233,7 @@ export function createAttachments({ document, window, request }) {
       if (previous && previous !== figure && previous.isConnected && 'moveBefore' in figure.parentElement) {
         figure.parentElement.moveBefore(previous, figure);
         figure.remove();
-      } else if (ran.has(part.message.id)) start(figure, false);
+      }
     }
     for (const [id, figure] of running) if (!figure.isConnected) running.delete(id);
   }

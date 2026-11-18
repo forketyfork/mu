@@ -313,10 +313,14 @@ test('an HTML attachment runs in its sandboxed frame without reaching Mu, the da
   assert.equal(await evaluate(`document.querySelectorAll('.message-attachment iframe').length`), 1);
   assert.equal(await inFrame(`window.boot`), boot, 'the rebuild did not restart the page');
 
-  // A page that the user ran starts again when its conversation is shown again, without another click.
+  // Back in its conversation after another one, the page waits for Run again.
   await evaluate(`document.querySelector('#conversation-list [data-conversation="dm-worker"]').click()`);
   await until('the other conversation', () => evaluate(`!document.querySelector('.message-attachment')`));
   await evaluate(`document.querySelector('#conversation-list [data-conversation="work"]').click()`);
+  await until('the attachment again', () => evaluate(`Boolean(document.querySelector('.message-attachment-run'))`));
+  await sleep(500);
+  assert.equal(await evaluate(`document.querySelectorAll('.message-attachment iframe').length`), 0);
+  await run();
   await until('the page running again', async () => {
     const now = await inFrame(`window.boot ?? null`).catch(() => null);
     return now !== null && now !== boot;
