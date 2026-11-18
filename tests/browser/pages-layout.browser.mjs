@@ -279,3 +279,40 @@ test('the work samples of Model evals are framed like the other panels', async (
   assert.equal(frame.style, 'solid');
   assert.equal(frame.color, frame.line, JSON.stringify(frame));
 });
+
+test('the chat and the visual viewer fill exactly the height under the header, whatever its height', async (t) => {
+  const seed = await seeded(t);
+  const { evaluate, viewport, shot } = await openedDashboard(t, seed);
+  const where = `(() => {
+    const pane = [...document.querySelectorAll('.workspace-content > *')].find((element) => !element.hidden);
+    const header = document.querySelector('.topbar').getBoundingClientRect();
+    return {
+      pane: pane.id,
+      header: Math.round(header.height),
+      top: Math.round(pane.getBoundingClientRect().top - header.bottom),
+      strip: Math.round(innerHeight - pane.getBoundingClientRect().bottom),
+      pageScrolls: document.documentElement.scrollHeight > innerHeight,
+    };
+  })()`;
+  const viewable = seed.visuals[0].id;
+  for (const width of [1500, 1100, 880, 700, 600, 500, 390])
+    for (const [name, hash, shown] of [
+      ['chat', '#team-chat', 'team-chat'],
+      ['viewer', `#visuals/${viewable}`, 'visuals'],
+    ]) {
+      await viewport(width, 800);
+      await evaluate(`location.hash = ${JSON.stringify(hash)}`);
+      await until(`the ${name}`, () =>
+        evaluate(
+          `!document.getElementById('${shown}').hidden && (${name === 'viewer'} ? !document.getElementById('visual-viewer').hidden : true)`,
+        ),
+      );
+      await sleep(400);
+      const measured = await evaluate(where);
+      const label = `${name} at ${width}: ${JSON.stringify(measured)}`;
+      assert.equal(measured.top, 0, label);
+      assert.equal(measured.strip, 0, `no strip under the pane: ${label}`);
+      assert.equal(measured.pageScrolls, false, label);
+      if (width === 700) await shot(`${name}-height-700`);
+    }
+});

@@ -2471,8 +2471,14 @@ button.task-result {
   font-size: var(--font-size-16px);
 }
 
-.chat-pane {
+/* The chat and the viewer of a visual scroll their own panes, so they need a height under the header; the other pages
+   scroll with the document. The header is 86, 76 and 72 px high by width, and the same steps are repeated below. */
+.chat-pane,
+.visuals-pane:has(.visual-viewer:not([hidden])) {
   height: calc(100dvh - 86px);
+}
+
+.chat-pane {
   min-height: 520px;
   position: relative;
   background: var(--chat-pane-surface);
@@ -3690,8 +3696,12 @@ kbd {
     margin-right: var(--space-24px);
   }
 
-  .chat-pane {
+  .chat-pane,
+  .visuals-pane:has(.visual-viewer:not([hidden])) {
     height: calc(100dvh - 76px);
+  }
+
+  .chat-pane {
     min-height: 420px;
   }
 
@@ -3903,7 +3913,8 @@ kbd {
     min-height: calc(100dvh - 72px);
   }
 
-  .chat-pane {
+  .chat-pane,
+  .visuals-pane:has(.visual-viewer:not([hidden])) {
     height: calc(100dvh - 72px);
   }
 
@@ -4647,11 +4658,6 @@ kbd {
   flex-direction: column;
   min-width: 0;
   background: var(--main-pane-surface-4);
-}
-
-/* The viewer scrolls its own panes, so it needs a height; the list scrolls with the page like the others. */
-.visuals-pane:has(.visual-viewer:not([hidden])) {
-  height: calc(100dvh - 86px);
 }
 
 /* Cards flow in columns like the task and agent lists, and look like the task cards. */
