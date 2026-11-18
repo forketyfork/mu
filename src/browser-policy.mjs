@@ -12,11 +12,18 @@ export const PAGE_POLICY =
 const FRAME_PAGE = '/visual/frame.html';
 export const FRAME_POLICY =
   "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox allow-scripts";
-// Every file the frame loads, by its URL path; the frame gets no other file. highlight.js publishes its core as
-// CommonJS only, so that file is served inside a module wrapper.
-/** @type {Readonly<Record<string, { file: string, page?: boolean, commonJs?: boolean }>>} */
+// The page that runs an HTML attachment of a chat message, which is agent code by design. It runs the page's inline
+// scripts and styles, and nothing in the policy allows a connection, a frame, a form or a remote image, font or sound.
+// See "HTML attachments" in docs/architecture.md.
+const ATTACHMENT_PAGE = '/attachment/frame.html';
+export const ATTACHMENT_POLICY =
+  "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox allow-scripts";
+// Every file the frames load, by its URL path; a frame gets no other file. A page carries its own policy. highlight.js
+// publishes its core as CommonJS only, so that file is served inside a module wrapper.
+/** @typedef {{ file: string, policy?: string, commonJs?: boolean }} FrameAsset */
+/** @type {Readonly<Record<string, FrameAsset>>} */
 const FRAME_ASSETS = Object.freeze({
-  [FRAME_PAGE]: { file: 'public/visual/frame.html', page: true },
+  [FRAME_PAGE]: { file: 'public/visual/frame.html', policy: FRAME_POLICY },
   '/visual/frame.css': { file: 'public/visual/frame.css' },
   '/visual/frame.js': { file: 'public/visual/frame.js' },
   '/visual/render.js': { file: 'public/visual/render.js' },
@@ -41,13 +48,17 @@ const FRAME_ASSETS = Object.freeze({
       { file: `node_modules/highlight.js/es/languages/${language}.js` },
     ]),
   ),
+  [ATTACHMENT_PAGE]: { file: 'public/attachment/frame.html', policy: ATTACHMENT_POLICY },
+  '/attachment/frame.js': { file: 'public/attachment/frame.js' },
 });
+// The directories of public/ that hold frame files: they answer only at the paths listed above.
+export const FRAME_DIRECTORIES = Object.freeze(['visual', 'attachment']);
 // Mermaid loads the code of a diagram type when a diagram first needs it, from files it names itself.
 const MERMAID_FILE = /^\/vendor\/mermaid\/(mermaid\.esm\.min\.mjs|chunks\/mermaid\.esm\.min\/[A-Za-z0-9_-]+\.mjs)$/;
 /**
  * The file that answers a request of the frame for `pathname`, or null: the frame gets no other file.
  * @param {string} pathname
- * @returns {{ file: string, page?: boolean, commonJs?: boolean } | null}
+ * @returns {FrameAsset | null}
  */
 export function frameAssetOf(pathname) {
   if (Object.hasOwn(FRAME_ASSETS, pathname)) return FRAME_ASSETS[pathname];

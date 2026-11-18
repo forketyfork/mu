@@ -75,6 +75,9 @@ export class Store extends EventEmitter {
       CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, transport_id TEXT UNIQUE NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS inbox (agent_id TEXT NOT NULL REFERENCES agents(id), message_id INTEGER NOT NULL REFERENCES messages(id), acknowledged INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(agent_id,message_id));
       CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, data TEXT NOT NULL);
+      -- The page of a message's HTML attachment. The message keeps only its title and size, so that the state, the
+      -- history and the turn prompts never carry the page.
+      CREATE TABLE IF NOT EXISTS attachments (message_id INTEGER PRIMARY KEY REFERENCES messages(id), html TEXT NOT NULL);
       -- The role files of the Mu home as the service last saw them, so that a change shows up once, also across restarts.
       CREATE TABLE IF NOT EXISTS role_files (name TEXT PRIMARY KEY, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS eval_runs (id INTEGER PRIMARY KEY, data TEXT NOT NULL);
@@ -243,7 +246,10 @@ export class Store extends EventEmitter {
     this.changed(['agents', id]);
     return this.agent(id);
   }
-  addMessage(transportId, from, text, conversationId = 'common', { autoRouted = false } = {}) {
+  // `attachment` is a checked HTML attachment, { type, title, html }; see src/attachments.mjs.
+  addMessage(transportId, from, text, conversationId = 'common', meta = {}) {
+    /** @type {{ autoRouted?: boolean, attachment?: { type: string, title: string, html: string } }} */
+    const { autoRouted = false, attachment } = meta;
     const existing = this.db.prepare('SELECT id,data FROM messages WHERE transport_id=?').get(transportId);
     if (existing) return { id: existing.id, ...parseData(existing) };
     const conversation = this.conversation(conversationId);
@@ -257,6 +263,9 @@ export class Store extends EventEmitter {
       conversationId,
       mentions: mentions(text),
       ...(autoRouted && { autoRouted: true }),
+      ...(attachment && {
+        attachment: { type: attachment.type, title: attachment.title, bytes: Buffer.byteLength(attachment.html) },
+      }),
       createdAt: new Date().toISOString(),
     };
     const recipients = [];
@@ -266,6 +275,8 @@ export class Store extends EventEmitter {
         .prepare('INSERT INTO messages (transport_id,data) VALUES (?,?)')
         .run(transportId, JSON.stringify(message));
       message.id = Number(lastInsertRowid);
+      if (attachment)
+        this.db.prepare('INSERT INTO attachments (message_id,html) VALUES (?,?)').run(message.id, attachment.html);
       for (const agent of this.agents()) {
         const addressed =
           (conversation.kind === 'direct' && from !== 'system') ||
@@ -319,6 +330,11 @@ export class Store extends EventEmitter {
   message(id) {
     const row = this.db.prepare('SELECT id,data FROM messages WHERE id=?').get(id);
     return row ? { id: row.id, ...parseData(row) } : null;
+  }
+  /** The page of a message's HTML attachment, or null. @param {number} messageId */
+  attachmentHtml(messageId) {
+    const row = this.db.prepare('SELECT html FROM attachments WHERE message_id=?').get(messageId);
+    return row ? /** @type {string} */ (row.html) : null;
   }
   // The newest message ID of each conversation that has messages. SQLite uses the conversation index only for a
   // conversation given as a parameter, not in a correlated subquery, so each conversation is one lookup.

@@ -55,6 +55,7 @@ import { createMotion, stateChanges, themeValue } from './motion.js';
 import { rawInput, toolView } from './tools.js';
 import { createPicker, enhanceSelects } from './picker.js';
 import { createVisualsView } from './visuals-view.js';
+import { createAttachments } from './attachments.js';
 import { createMentionAutocomplete } from './mention-autocomplete.js';
 
 // An ID names an input, a dialog, a form or another element; the checker cannot tell which from the string.
@@ -710,6 +711,8 @@ function openVisual(id, version = null) {
   if (location.hash !== hash) history.pushState(null, '', hash);
   showView('visuals');
 }
+
+const attachments = createAttachments({ document, window, request });
 
 const visualsView = createVisualsView({
   document,
@@ -1997,6 +2000,7 @@ function messageRow(message, recipients) {
   time.title = date.toLocaleString();
   header.append(time, node('span', 'message-id', `#${message.id}`));
   main.append(header, markdown('message-text', message.text, recipients));
+  if (message.attachment) main.append(attachments.element(message));
   row.append(main);
   row.dataset.message = message.id;
   return row;
@@ -2039,6 +2043,7 @@ function renderMessages(arrivals = new Set()) {
   if (appending) {
     rows = appendMessageRows(elements.messages, messages.slice(messageRows.size));
     for (const [id, row] of rows) messageRows.set(id, row);
+    attachments.settle(elements.messages);
   } else {
     const fragment = document.createDocumentFragment();
     lastRenderedDay = undefined;
@@ -2058,7 +2063,7 @@ function renderMessages(arrivals = new Set()) {
       fragment.append(empty);
     }
     rows = loading ? [] : appendMessageRows(fragment, messages);
-    elements.messages.replaceChildren(fragment);
+    attachments.replace(elements.messages, fragment);
     messageRows = new Map(rows);
   }
   applyMessageHighlight();

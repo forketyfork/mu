@@ -20,6 +20,7 @@ This skill has sections in the files beside this one. Read a section when its si
 - **Text that leaves Mu** (a PR title or description, a commit message, an issue, a review reply): its readers do not know this team. Leave out the user, the lead, agent names, task IDs and message references; write an open decision as "needs a decision". A comment on a PR says what this push changed: do not present an earlier fix as new, and do not ask a review bot to review again.
 - **Identifiers in chat:** write a task ID only as `` `task-1a2b3c4d` `` and a message reference only as `` `#123` ``; the dashboard links only that form. Write PR and issue numbers as plain text or full links, never in backticks.
 - When the user must read, compare or decide something larger than a few lines of chat (a plan, an explanation of a change, a review), write a visual; run `node "$MU_CLI" visual guide` before your first one.
+- When the result is something to see or play rather than read (a small game, an interactive chart or sketch), post the report with one self-contained HTML page attached: `say --html FILE REPORT`, at most 256 KiB, scripts, styles and media inline, no network; then end the turn with `NO_REPLY`, so the report is not posted twice. Not for a document the user must decide on (a visual) or what a few lines of Markdown say.
 
 ## Judgment and permissions
 

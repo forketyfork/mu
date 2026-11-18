@@ -41,8 +41,8 @@ export class FakeChat extends EventEmitter {
   async connect() {}
   close() {}
   async syncConversation() {}
-  async send(from, text, conversationId) {
-    return this.options.onMessage(crypto.randomUUID(), from, text, conversationId);
+  async send(from, text, conversationId, meta = {}) {
+    return this.options.onMessage(crypto.randomUUID(), from, text, conversationId, meta);
   }
 }
 

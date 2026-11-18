@@ -83,6 +83,17 @@ A [visual](visuals.md) is written by an agent and shown in the dashboard, and an
 
 A flaw in a rendering library would give script inside that frame, which can read the visual it shows and draw inside its own rectangle, and nothing more. The decisions are in [Architecture](architecture.md#visuals).
 
+## HTML attachments
+
+An [HTML attachment](dashboard.md#chat) is a page an agent wrote, with its own script, so the dashboard treats it as hostile code:
+
+- It runs only after you click **Run**, in a sandboxed frame with an opaque origin: it has no credential, storage or cookies, cannot read the dashboard or Mu's API, and cannot open popups, submit forms or navigate the dashboard.
+- Its policy allows no requests: no fetch, sockets or beacons, and no image, style, font or script from another address. Its own media are `data:` URLs.
+- The dashboard draws the title, the author and the controls outside the frame, and takes from the frame only a request for its page and a height, which it bounds.
+- Only members of the message's conversation, and you, can read the page through the API.
+
+Two channels stay open while a page runs, because no browser policy governs them: WebRTC, which can reach a STUN or TURN server on any host, and the name lookup and connection that the browser makes before it refuses a navigation to another host. A running page can therefore send what it holds, its own text and what you type into it, to a host it chooses. It holds nothing of Mu's. The decisions are in [Architecture](architecture.md#html-attachments).
+
 ## Model evals
 
 A [model eval](evals.md) sends a case prompt to a model provider from a container, not from an agent. Only you can start one or read its results; agents get no eval API.
@@ -97,7 +108,7 @@ The IRC server does not authenticate clients or nicknames. Mu therefore records 
 
 ## The HTTP service
 
-Every API request needs a credential. The service also rejects requests whose `Host` or `Origin` is not the local Mu address, against cross-site requests from web pages and DNS rebinding. The one exception is a `GET` of a file of the [visual frame](#visuals), which carries no data.
+Every API request needs a credential. The service also rejects requests whose `Host` or `Origin` is not the local Mu address, against cross-site requests from web pages and DNS rebinding. The one exception is a `GET` of a file of the [visual frame](#visuals) or the [attachment frame](#html-attachments), which carries no data.
 
 ## Outbound requests
 

@@ -7,6 +7,7 @@ import { Store } from '../src/store.mjs';
 import { Runner } from '../src/runner.mjs';
 import { readTurn, turnReply } from '../src/adapters.mjs';
 import { ROOT } from '../src/server.mjs';
+import { attachmentPlaceholder } from '../src/attachments.mjs';
 import { testIdentity } from './identity-fixture.mjs';
 
 async function until(check) {
@@ -522,4 +523,23 @@ test('a reply posted while the agent is stopped is acknowledged and not posted a
     [`@lead\n\ndone ${request.id}`],
   );
   assert.equal((await runs()).length, 1);
+});
+
+test('a turn prompt names an attachment by its placeholder and leaves its page out', async (t) => {
+  const { runs, custom } = await fixture(t);
+  const store = new Store();
+  t.after(() => store.close());
+  team(store);
+  const { runner } = harness(t, store, custom);
+  const html = '<!doctype html><title>Pong</title><script>const pageMarker = 1;</script>';
+  const message = store.addMessage('with-page', 'lead', '@worker Play this.', 'room-a', {
+    attachment: { type: 'html', title: 'Pong', html },
+  });
+  runner.kick();
+  await until(() => !pendingIds(store).length);
+  await settled(runner);
+  const [run] = await runs();
+  assert.equal(run.id, message.id);
+  assert.ok(run.prompt.includes(`@worker Play this.\n${attachmentPlaceholder(message.attachment)}`), run.prompt);
+  assert.doesNotMatch(run.prompt, /pageMarker/);
 });

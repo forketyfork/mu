@@ -1,11 +1,12 @@
 import { access, readFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { createInterface } from 'node:readline';
 import { initializeHome, resolveDataDir, resolveHome } from './home.mjs';
 import { documentSource, parseBlocks, sectionSource } from './visual-format.mjs';
+import { MAX_HTML_BYTES, plainMessageText } from './attachments.mjs';
 
 const help = `Mu — local agent team
 
@@ -16,7 +17,10 @@ Usage: node src/cli.mjs COMMAND [options]
                   (--model: the native CLI's model name or alias for claude, codex and pi; required for pi; default: the CLI's configured model)
                   (--effort: reasoning effort for every turn; claude: low|medium|high|xhigh|max,
                    codex: none|minimal|low|medium|high|xhigh|max, pi: off|minimal|low|medium|high|xhigh|max; default: the CLI's)
-  say             [--from ID] [--conversation ID] TEXT  (or --file FILE)
+  say             [--from ID] [--conversation ID] TEXT  (or --file FILE) [--html FILE [--title TITLE]]
+                  (--html: attach a self-contained HTML page, at most 256 KiB, that the dashboard runs in a sandboxed
+                   frame under the message, without network access; --title names it, default: the file name)
+  attachment      --message MESSAGE_ID  (prints the HTML page attached to a message)
   init            [--dry-run] [--accept ROLE_FILE] [--adopt]
                   (user's shell or managed lead; installs or upgrades instructions and seed files in MU_HOME, default ~/.mu)
   room create     --name NAME [--id ID] [--members lead,worker-one] [--source-conversation ID]
@@ -99,7 +103,8 @@ const commandOptions = {
     'task-id',
     'task-title',
   ],
-  say: ['from', 'file', 'conversation', 'room'],
+  say: ['from', 'file', 'conversation', 'room', 'html', 'title'],
+  attachment: ['message'],
   'room:create': ['id', 'name', 'members', 'from', 'source-conversation'],
   'room:invite': ['conversation', 'room', 'members', 'from'],
   'room:list': [],
@@ -286,6 +291,22 @@ export async function send(url, path, { method = 'GET', body, signal, token } = 
   return data;
 }
 
+// The page is read as bytes, so that a file too large or not UTF-8 is refused with its name before it is sent.
+async function htmlAttachment(file, title) {
+  const bytes = await readFile(file);
+  if (bytes.length > MAX_HTML_BYTES)
+    throw new Error(
+      `${file} has ${bytes.length} bytes; an HTML attachment holds at most ${MAX_HTML_BYTES / 1024} KiB. Inline only what the page needs, or write a visual.`,
+    );
+  let html;
+  try {
+    html = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    throw new Error(`${file} is not UTF-8 text; an HTML attachment is a UTF-8 page.`);
+  }
+  return { type: 'html', title: title ?? basename(file, extname(file)), html };
+}
+
 async function terminalChat(url, conversationId, token) {
   const request = send;
   const initial = await request(url, '/api/state', { token });
@@ -295,7 +316,7 @@ async function terminalChat(url, conversationId, token) {
   const show = (messages) => {
     for (const message of messages) {
       if (message.id > lastId) {
-        process.stdout.write(`${message.from}: ${message.text}\n`);
+        process.stdout.write(`${message.from}: ${plainMessageText(message)}\n`);
         lastId = message.id;
       }
     }
@@ -456,12 +477,15 @@ export async function main(
     }
     case 'say': {
       if (values.file && positionals.length) throw new Error('Use either message text or --file.');
+      if (values.title !== undefined && values.html === undefined)
+        throw new Error('--title names an --html attachment.');
       const text = values.file ? await readFile(values.file, 'utf8') : positionals.join(' ');
       const from = values.from ?? env.MU_AGENT_ID ?? 'user';
       const conversationId = selectedConversation ?? env.MU_CONVERSATION_ID ?? 'common';
+      const attachment = values.html === undefined ? undefined : await htmlAttachment(values.html, values.title);
       const sent = await request(url, '/api/messages', {
         method: 'POST',
-        body: { from, conversationId, text: required(text, 'message text') },
+        body: { from, conversationId, text: required(text, 'message text'), ...(attachment && { attachment }) },
       });
       // A managed turn also posts its final text to its own conversation. The turn prompt says so, but a context
       // compaction in the middle of the turn drops the prompt, and the agent then answers twice: with this message and
@@ -469,6 +493,10 @@ export async function main(
       const ownTurnConversation =
         env.MU_MESSAGE_ID !== undefined && from === env.MU_AGENT_ID && conversationId === env.MU_CONVERSATION_ID;
       return ownTurnConversation ? { ...sent, note: ownConversationNote(conversationId) } : sent;
+    }
+    case 'attachment': {
+      const message = integer(required(values.message, '--message'), '--message', 1);
+      return (await request(url, `/api/messages/${message}/attachment`)).html;
     }
     case 'room:create':
       return request(url, '/api/conversations', {

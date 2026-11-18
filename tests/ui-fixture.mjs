@@ -10,6 +10,7 @@ import * as tools from '../public/tools.js';
 import * as picker from '../public/picker.js';
 import { createMentionAutocomplete } from '../public/mention-autocomplete.js';
 import { createVisualsView } from '../public/visuals-view.js';
+import { createAttachments } from '../public/attachments.js';
 import { createEvalsView } from '../public/evals-view.js';
 
 const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
@@ -196,6 +197,7 @@ export async function fixture(
     themeValue,
     createMotion: () => createMotion(preference),
     createVisualsView,
+    createAttachments,
     createEvalsView,
     markdownElement(className, source, options) {
       const element = window.document.createElement('div');

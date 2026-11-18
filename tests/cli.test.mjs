@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { main } from '../src/cli.mjs';
-import { listenLocal } from './isolation.mjs';
+import { MAX_HTML_BYTES } from '../src/attachments.mjs';
+import { listenLocal, shortTempDir } from './isolation.mjs';
 
 /** @param {unknown} [response] */
 async function fixture(t, response = { ok: true }, status = 200) {
@@ -68,6 +71,38 @@ test('chat messages preserve identity and mention text', async (t) => {
       { from: 'user', conversationId: 'common', text: '@lead New request' },
     ],
   );
+});
+
+test('say --html sends a page file as the attachment of the message, and attachment reads it back', async (t) => {
+  const page = '<!doctype html><title>Pong</title><p>é</p>';
+  const { calls, env } = await fixture(t, { type: 'html', title: 'pong', bytes: 44, html: page });
+  const dir = await shortTempDir(t, 'cli-html');
+  const file = join(dir, 'pong.html');
+  await writeFile(file, page);
+  await main(['say', '--html', file, '@lead The game is ready.'], env);
+  await main(['say', '--html', file, '--title', 'Pong, two players', 'Again'], env);
+  assert.deepEqual(
+    calls.map((call) => call.body.attachment),
+    [
+      { type: 'html', title: 'pong', html: page },
+      { type: 'html', title: 'Pong, two players', html: page },
+    ],
+  );
+  assert.equal(calls[0].body.text, '@lead The game is ready.');
+  assert.equal(await main(['attachment', '--message', '12'], env), page);
+  assert.deepEqual(calls.at(-1), { method: 'GET', path: '/api/messages/12/attachment', body: undefined });
+
+  // A file that Mu would refuse is refused before anything is sent, with its name.
+  const before = calls.length;
+  const large = join(dir, 'large.html');
+  await writeFile(large, 'a'.repeat(MAX_HTML_BYTES + 1));
+  await assert.rejects(main(['say', '--html', large, 'Big'], env), /large\.html has 262145 bytes.*at most 256 KiB/);
+  const binary = join(dir, 'binary.html');
+  await writeFile(binary, Buffer.from([0x3c, 0x70, 0x3e, 0xff, 0xfe]));
+  await assert.rejects(main(['say', '--html', binary, 'Bytes'], env), /binary\.html is not UTF-8 text/);
+  await assert.rejects(main(['say', '--title', 'Pong', 'No page'], env), /--title names an --html attachment/);
+  await assert.rejects(main(['say', '--html', join(dir, 'missing.html'), 'Gone'], env), /ENOENT/);
+  assert.equal(calls.length, before);
 });
 
 test('self-registration works when the shell already contains the new identity', async (t) => {

@@ -15,7 +15,7 @@ import { createActivities } from './activities.mjs';
 import { createVisuals } from './visuals.mjs';
 import { createEvals } from './evals.mjs';
 import { containerRunner } from './eval-runner.mjs';
-import { FRAME_POLICY, PAGE_POLICY, commonJsModule, frameAssetOf } from './browser-policy.mjs';
+import { FRAME_DIRECTORIES, PAGE_POLICY, commonJsModule, frameAssetOf } from './browser-policy.mjs';
 import { createDashboardStream } from './dashboard.mjs';
 import { dependencyError } from './dependencies.mjs';
 import { PricingCatalog } from './pricing.mjs';
@@ -44,6 +44,7 @@ import {
   writeRestartRecord,
 } from './service.mjs';
 import { httpError as bad } from './http-error.mjs';
+import { MAX_MESSAGE_BODY_BYTES, validateAttachment } from './attachments.mjs';
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // NUL and the CTCP marker would corrupt the IRC line that carries a message.
@@ -53,12 +54,12 @@ function object(value) {
   if (!value || Array.isArray(value) || typeof value !== 'object') throw bad('Expected a JSON object');
   return value;
 }
-async function body(request) {
+async function body(request, limit = 512 * 1024) {
   request.setEncoding('utf8');
   let text = '';
   for await (const chunk of request) {
     text += chunk;
-    if (Buffer.byteLength(text) > 512 * 1024) throw bad('Request exceeds 512 KiB', 413);
+    if (Buffer.byteLength(text) > limit) throw bad(`Request exceeds ${limit / 1024} KiB`, 413);
   }
   try {
     return object(JSON.parse(text));
@@ -517,7 +518,7 @@ export async function createApp({
   // same way. `wake` names a stopped agent that the message is for: it runs turns again once the message is in the chat,
   // as when its card is resumed, so the message gets no notice that nobody will process it. Answers `notice` with the
   // text of the notice, for a caller whose user does not read the conversation.
-  const postMessage = async (from, text, conversation, { wake = null } = {}) => {
+  const postMessage = async (from, text, conversation, { wake = null, attachment = undefined } = {}) => {
     if (
       typeof text !== 'string' ||
       !text.trim() ||
@@ -539,7 +540,7 @@ export async function createApp({
     if (!chat.state.connected) throw bad(chat.state.error || 'IRC unavailable', 503);
     let message;
     try {
-      message = await chat.send(from, text.trim(), conversation.id);
+      message = await chat.send(from, text.trim(), conversation.id, attachment ? { attachment } : {});
     } catch (error) {
       if (!chat.state.connected) throw bad(chat.state.error || error.message || 'IRC unavailable', 503);
       throw error;
@@ -609,8 +610,8 @@ export async function createApp({
     try {
       const parsed = new URL(request.url, url);
       const pathname = parsed.pathname;
-      // The visual frame is sandboxed into an opaque origin, so the browser marks its requests for its own files as
-      // cross-site, with the origin "null". Those files are public code and hold no data.
+      // The frames of visuals and attachments are sandboxed into an opaque origin, so the browser marks their requests
+      // for their own files as cross-site, with the origin "null". Those files are public code and hold no data.
       const frameAsset = request.method === 'GET' ? frameAssetOf(pathname) : null;
       if (binding) {
         if (request.headers.origin) throw bad('Browser requests are not accepted on an agent socket', 403);
@@ -729,13 +730,22 @@ export async function createApp({
           throw bad(`Unknown message ${messageMatch[1]}`, 404);
         return send(response, 200, message);
       }
+      const attachmentMatch = pathname.match(/^\/api\/messages\/([1-9]\d{0,15})\/attachment$/);
+      if (request.method === 'GET' && attachmentMatch) {
+        const message = store.message(Number(attachmentMatch[1]));
+        if (!message || !memberOf(request.caller, message.conversationId))
+          throw bad(`Unknown message ${attachmentMatch[1]}`, 404);
+        if (!message.attachment) throw bad(`Message ${message.id} has no attachment`, 404);
+        return send(response, 200, { ...message.attachment, html: store.attachmentHtml(message.id) });
+      }
       if (request.method === 'POST' && pathname === '/api/messages') {
-        const input = await body(request);
+        const input = await body(request, MAX_MESSAGE_BODY_BYTES);
         const from = actor(request, input);
         if (request.headers.origin && input.conversationId === undefined)
           throw bad('Select a conversation before sending. Refresh the dashboard if it is out of date.');
         const conversation = conversationFor(input.conversationId ?? 'common', from);
-        return send(response, 201, (await postMessage(from, input.text, conversation)).message);
+        const attachment = input.attachment === undefined ? undefined : validateAttachment(input.attachment);
+        return send(response, 201, (await postMessage(from, input.text, conversation, { attachment })).message);
       }
       if (request.method === 'POST' && pathname === '/api/agents') {
         const input = await body(request);
@@ -1124,7 +1134,7 @@ export async function createApp({
         // The frame's files answer only at their listed paths, which carry the frame's policy and no other. Another
         // spelling that reaches the same file, such as a doubled slash or another letter case on a file system that
         // ignores case, would serve the frame page with the dashboard's policy.
-        if (!frameAsset && relative(join(root, 'public'), full).toLowerCase().split(sep)[0] === 'visual')
+        if (!frameAsset && FRAME_DIRECTORIES.includes(relative(join(root, 'public'), full).toLowerCase().split(sep)[0]))
           throw bad('Not found', 404);
         let contents;
         try {
@@ -1144,7 +1154,7 @@ export async function createApp({
         response.writeHead(200, {
           'Content-Type': `${mime}; charset=utf-8`,
           'X-Content-Type-Options': 'nosniff',
-          'Content-Security-Policy': frameAsset?.page ? FRAME_POLICY : PAGE_POLICY,
+          'Content-Security-Policy': frameAsset?.policy ?? PAGE_POLICY,
           ...(frameAsset ? { 'Access-Control-Allow-Origin': '*' } : {}),
         });
         response.end(contents);

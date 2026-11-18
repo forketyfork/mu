@@ -2934,6 +2934,111 @@ button.task-result {
   overflow-wrap: anywhere;
 }
 
+.message-attachment {
+  /* A popover that is not open is hidden by the browser; this one stays in its message until it is shown larger. */
+  position: static;
+  inset: auto;
+  display: block;
+  width: auto;
+  height: auto;
+  margin: var(--space-10px) 0 0;
+  padding: 0;
+  overflow: hidden;
+  color: var(--ink);
+  border: 1px solid var(--markdown-body-pre-edge);
+  border-radius: var(--border-radius-8px);
+  background: var(--markdown-body-pre-surface);
+}
+
+.message-attachment:popover-open {
+  position: fixed;
+  inset: var(--space-24px);
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  box-shadow: var(--agent-dialog-box-shadow);
+}
+
+.message-attachment::backdrop {
+  background: var(--agent-dialog-backdrop-surface);
+  backdrop-filter: var(--agent-dialog-backdrop-backdrop-filter);
+}
+
+.message-attachment-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-10px);
+  padding: var(--space-6px) var(--space-12px);
+  border-bottom: 1px solid var(--markdown-body-pre-edge);
+  font-size: var(--font-size-14px);
+  color: var(--muted);
+}
+
+.message-attachment-kind {
+  font-weight: var(--font-weight-600);
+  color: var(--accent);
+}
+
+.message-attachment-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.message-attachment-bar .text-button {
+  padding: 0;
+  font-size: var(--font-size-14px);
+}
+
+.message-attachment-start {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-12px);
+  padding: var(--space-12px);
+}
+
+.message-attachment-note {
+  font-size: var(--font-size-14px);
+  color: var(--muted);
+}
+
+.message-attachment-frame {
+  display: block;
+  width: 100%;
+  height: 360px;
+  max-height: 70vh;
+  border: 0;
+
+  /* The page gets the canvas of a plain web page, which is what its author drew on. */
+  color-scheme: light;
+  background: Canvas;
+}
+
+.message-attachment:popover-open .message-attachment-frame {
+  flex: 1;
+  height: auto;
+  max-height: none;
+}
+
+.message-attachment-error {
+  display: none;
+  margin: 0;
+  padding: var(--space-10px) var(--space-12px);
+  color: var(--status-error-ink);
+}
+
+.message-attachment.failed .message-attachment-error {
+  display: block;
+}
+
+.message-attachment.failed .message-attachment-frame {
+  display: none;
+}
+
 .message-mention {
   color: var(--message-ref-ink);
   background: var(--message-ref-hover-surface);
