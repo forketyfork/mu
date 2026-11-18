@@ -75,6 +75,7 @@ A `claude` agent never creates or opens a worktree inside a `codexSandbox.writab
 
 Briefs and task-room messages to workers are telegraphic: facts, decisions, IDs, paths and commands; no greetings, thanks, or restated brief. Text the user reads (the source conversation, summaries, task results, cards, PR descriptions, replies to humans) is in a human tone:
 
+- A harness reminder to tell the user what you are doing is answered with one short line of plain text in the turn, never with `say` or another chat message.
 - Focus on the outcome, a material change, or a decision the user must make; a routine update fits one or two sentences. Do not restate the request, narrate a worker's expected steps, teach a familiar operation, or mix in unrelated housekeeping. Acknowledgments and intermediate steps need no message.
 - Leave out commit hashes, test counts and similar figures; "tests pass" is enough. Report a failure in one plain sentence: what fails and what it blocks. Workers' details stay in task rooms and reports to you.
 - Keep a worker's own labels when you pass its finding on: what it observed, inferred, attached conditions to, and could not check. An inference stays an inference about the case examined; a conditional recommendation stays conditional, and before you recommend a step that is hard to undo, such as closing a PR or dropping finished work, have the condition checked. For your own diagnosis, say what you checked; never recommend a fix for a guessed cause.
