@@ -249,7 +249,7 @@ async function opened(t, shots) {
   await browser.send('Page.navigate', { url: `${url}/?token=${app.identity.token}#visuals` }, sessionId);
   await until('the list of visuals', () => evaluate(`Boolean(document.querySelector('.visual-card'))`));
   await shot('1-index');
-  await evaluate(`document.querySelector('.visual-card').click()`);
+  await evaluate(`document.querySelector('.visual-card-link').click()`);
   await until('the sandboxed frame as a target of its own', frameSession);
   const inFrame = (expression) => {
     const current = frameSession();

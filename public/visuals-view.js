@@ -145,67 +145,59 @@ export function createVisualsView({
     if (signature === indexSignature) return;
     indexSignature = signature;
     $('visuals-count').textContent = String(visuals.length);
-    const groups = new Map();
-    for (const visual of visuals) {
-      const key = visual.taskId ?? '';
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(visual);
-    }
-    const sections = [];
-    for (const [taskId, items] of groups) {
-      const group = node('section', 'visuals-group');
-      const heading = node('h3', 'visuals-group-title');
-      const task = state.tasks.find((item) => item.id === taskId);
-      if (task) heading.append(taskReference(task));
-      else heading.textContent = taskId ? `Task ${taskId}` : 'Not linked to a task';
-      const list = node('div', 'visuals-cards');
-      for (const visual of items) {
-        const card = visualLink(visual, 'visual-card');
-        card.dataset.visual = visual.id;
-        const meta = node('span', 'visual-card-meta');
+    const cards = visuals.map((visual) => {
+      const card = node('article', 'visual-card');
+      card.dataset.visual = visual.id;
+      const title = visualLink(visual, 'visual-card-link');
+      title.append(node('strong', 'visual-card-title', visual.title));
+      const meta = node('span', 'visual-card-meta');
+      meta.append(
+        node('span', 'visual-card-author', `@${visual.agentId}`),
+        node('span', 'visual-version-pill', `v${visual.version}`),
+        node(
+          'span',
+          '',
+          `${visual.sectionCount} ${visual.sectionCount === 1 ? 'section' : 'sections'} · ${time(visual.updatedAt)}`,
+        ),
+      );
+      // What waits for somebody: questions and drafts for the user, sent comments for the author to answer.
+      if (visual.openQuestions)
         meta.append(
-          node('span', 'visual-card-author', `@${visual.agentId}`),
-          node('span', 'visual-version-pill', `v${visual.version}`),
           node(
             'span',
-            '',
-            `${visual.sectionCount} ${visual.sectionCount === 1 ? 'section' : 'sections'} · ${time(visual.updatedAt)}`,
+            'visual-card-drafts',
+            `${visual.openQuestions} ${visual.openQuestions === 1 ? 'question' : 'questions'}`,
           ),
         );
-        // What waits for somebody: questions and drafts for the user, sent comments for the author to answer.
-        if (visual.openQuestions)
-          meta.append(
-            node(
-              'span',
-              'visual-card-drafts',
-              `${visual.openQuestions} ${visual.openQuestions === 1 ? 'question' : 'questions'}`,
-            ),
-          );
-        if (visual.draftComments)
-          meta.append(
-            node(
-              'span',
-              'visual-card-drafts',
-              `${visual.draftComments} ${visual.draftComments === 1 ? 'draft' : 'drafts'}`,
-            ),
-          );
-        if (visual.openComments)
-          meta.append(
-            node(
-              'span',
-              'visual-card-open',
-              `${visual.openComments} ${visual.openComments === 1 ? 'comment' : 'comments'} sent`,
-            ),
-          );
-        card.append(node('strong', 'visual-card-title', visual.title), meta);
-        list.append(card);
+      if (visual.draftComments)
+        meta.append(
+          node(
+            'span',
+            'visual-card-drafts',
+            `${visual.draftComments} ${visual.draftComments === 1 ? 'draft' : 'drafts'}`,
+          ),
+        );
+      if (visual.openComments)
+        meta.append(
+          node(
+            'span',
+            'visual-card-open',
+            `${visual.openComments} ${visual.openComments === 1 ? 'comment' : 'comments'} sent`,
+          ),
+        );
+      card.append(title, meta);
+      if (visual.taskId) {
+        const task = state.tasks.find((item) => item.id === visual.taskId);
+        const reference = node('p', 'visual-card-task');
+        reference.append(node('span', 'visual-card-task-label', 'Task'), ' ');
+        reference.append(task ? taskReference(task) : document.createTextNode(visual.taskId));
+        card.append(reference);
       }
-      group.append(heading, list);
-      sections.push(group);
-    }
+      return card;
+    });
     $('visuals-list').replaceChildren(
-      ...(sections.length
-        ? sections
+      ...(cards.length
+        ? cards
         : [
             node(
               'p',

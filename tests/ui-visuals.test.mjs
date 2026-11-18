@@ -49,7 +49,7 @@ test('the sections to mark are those that are new or have new content', () => {
   assert.deepEqual(changedSections(before, before), []);
 });
 
-test('the Visuals view lists visuals by task, a task card links to its visuals, and chat links a visual by its ID', async (t) => {
+test('the Visuals view lists visuals as cards with their task, a task card links to its visuals, and chat links a visual by its ID', async (t) => {
   const state = withVisuals(
     record(),
     record({
@@ -75,16 +75,28 @@ test('the Visuals view lists visuals by task, a task card links to its visuals, 
   assert.equal($('#view-label').textContent, 'Visuals');
   assert.equal($('#visuals-count').textContent, '2');
   assert.deepEqual(
-    [...window.document.querySelectorAll('.visuals-group')].map((group) => [
-      group.querySelector('.visuals-group-title').textContent,
-      [...group.querySelectorAll('.visual-card-title')].map((title) => title.textContent),
+    [...window.document.querySelectorAll('#visuals-list .visual-card')].map((card) => [
+      card.querySelector('.visual-card-title').textContent,
+      card.querySelector('.task-ref')?.textContent ?? null,
     ]),
     [
-      ['Not linked to a task', ['Loose notes']],
-      ['Review changes', ['Storage plan']],
+      ['Loose notes', null],
+      ['Storage plan', 'Review changes'],
     ],
-    'the group with the latest change comes first',
+    'one flat list, the latest change first, and the task only on a visual that has one',
   );
+  const taskLink = $(`[data-visual="${ID}"] .task-ref`);
+  assert.equal(taskLink.closest('a.visual-card-link'), null, 'a link inside a link is invalid');
+  taskLink.click();
+  await settle();
+  assert.equal($('#workspace').hidden, false, 'the task reference goes to the task, not to the visual');
+  ui.click('.rail-link[data-view="visuals"]');
+  await settle();
+  $(`[data-visual="${ID}"] .visual-card-link`).click();
+  await settle();
+  assert.equal(window.location.hash, `#visuals/${ID}`);
+  window.location.hash = '#visuals';
+  await settle();
   assert.match($(`[data-visual="${ID}"] .visual-card-meta`).textContent, /@lead.*v2.*2 sections/);
 
   // A visual that appears while the list is shown is listed at once.

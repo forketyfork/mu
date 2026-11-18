@@ -8,7 +8,7 @@ Ask for one in plain words ("show me the plan as a visual", "explain this PR in 
 
 Visuals appear in three places:
 
-- **Visuals** in the left rail lists all of them, grouped by task, newest change first.
+- **Visuals** in the left rail lists all of them as cards in the columns of the task cards, newest change first. A card names its author, version and what waits for you, and links to its task when it has one.
 - A **task card** shows a chip for each visual of that task.
 - In **chat**, an agent names a visual by its ID, such as `vis-1a2b3c4d`, and the dashboard shows it as a link with the visual's title.
 

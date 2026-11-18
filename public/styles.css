@@ -676,10 +676,18 @@ p {
   min-height: calc(100dvh - 86px);
 }
 
-.main-pane {
+/* Every page that fills the content area shares one box: the full width, and the scrolling of the document, so that the
+   scrollbar sits at the right edge of the window. A page that reads better in a narrow column limits its text, not
+   its box. */
+.main-pane,
+.brag-pane,
+.visuals-index {
   padding: var(--space-40px) var(--space-32px) var(--space-28px);
   min-width: 0;
   min-height: calc(100dvh - 86px);
+}
+
+.main-pane {
   display: flex;
   flex-direction: column;
   background:
@@ -3400,7 +3408,9 @@ kbd {
 }
 
 @media (width >= 1600px) {
-  .main-pane {
+  .main-pane,
+  .brag-pane,
+  .visuals-index {
     padding: var(--space-48px) var(--space-45px) var(--space-30px);
   }
 
@@ -3434,7 +3444,9 @@ kbd {
 }
 
 @media (width <= 1280px) {
-  .main-pane {
+  .main-pane,
+  .brag-pane,
+  .visuals-index {
     padding: var(--space-34px) var(--space-26px) var(--space-26px);
   }
 
@@ -3477,7 +3489,9 @@ kbd {
     padding: 0 var(--space-24px);
   }
 
-  .main-pane {
+  .main-pane,
+  .brag-pane,
+  .visuals-index {
     padding: var(--space-30px) var(--space-22px) var(--space-24px);
   }
 
@@ -3595,7 +3609,9 @@ kbd {
     min-height: calc(100dvh - 76px);
   }
 
-  .main-pane {
+  .main-pane,
+  .brag-pane,
+  .visuals-index {
     min-height: calc(100dvh - 76px);
     padding: var(--space-34px) var(--space-24px) var(--space-30px);
   }
@@ -3716,7 +3732,9 @@ kbd {
     gap: var(--space-8px);
   }
 
-  .main-pane {
+  .main-pane,
+  .brag-pane,
+  .visuals-index {
     padding: var(--space-30px) var(--space-20px) var(--space-26px);
   }
 
@@ -3848,7 +3866,9 @@ kbd {
   }
 
   .workspace-content,
-  .main-pane {
+  .main-pane,
+  .brag-pane,
+  .visuals-index {
     min-height: calc(100dvh - 72px);
   }
 
@@ -4000,7 +4020,9 @@ kbd {
     padding: 0 var(--space-16px);
   }
 
-  .main-pane {
+  .main-pane,
+  .brag-pane,
+  .visuals-index {
     padding-left: var(--space-16px);
     padding-right: var(--space-16px);
   }
@@ -4365,10 +4387,6 @@ kbd {
 }
 
 .brag-pane {
-  padding: var(--space-40px) var(--space-32px) var(--space-28px);
-  min-width: 0;
-  max-width: 980px;
-  min-height: calc(100dvh - 86px);
   background: var(--main-pane-surface-4);
 }
 
@@ -4461,6 +4479,7 @@ kbd {
 }
 
 .brag-period .markdown-body {
+  max-width: 68ch;
   font-size: var(--font-size-17px);
   line-height: var(--line-height-1-6);
 }
@@ -4565,58 +4584,77 @@ kbd {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  height: calc(100dvh - 86px);
   background: var(--main-pane-surface-4);
 }
 
-.visuals-index {
-  max-width: 980px;
-  padding: var(--space-40px) var(--space-32px) var(--space-28px);
-  overflow-y: auto;
+/* The viewer scrolls its own panes, so it needs a height; the list scrolls with the page like the others. */
+.visuals-pane:has(.visual-viewer:not([hidden])) {
+  height: calc(100dvh - 86px);
 }
 
+/* Cards flow in columns like the task and agent lists, and look like the task cards. */
 .visuals-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-28px);
+  column-count: 3;
+  column-gap: var(--space-18px);
 }
 
-.visuals-group-title {
-  margin-bottom: var(--space-10px);
-  color: var(--muted);
-  font-size: var(--font-size-15px);
-  font-weight: var(--font-weight-500);
+.visuals-list > * {
+  break-inside: avoid;
+  margin-bottom: var(--space-18px);
 }
 
-.visuals-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: var(--space-12px);
+@media (width <= 640px) {
+  .visuals-list {
+    column-count: 1;
+  }
 }
 
 .visual-card {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: var(--space-8px);
-  padding: var(--space-16px) var(--space-18px);
-  border: 1px solid var(--line);
-  border-radius: var(--border-radius-10px);
-  background: var(--surface);
+  gap: var(--space-10px);
+  min-width: 0;
+  padding: var(--space-22px) var(--space-24px) var(--space-18px);
+  border: 1px solid var(--waiting-card-edge);
+  border-radius: var(--border-radius-12px);
+  background: linear-gradient(135deg, var(--waiting-card-surface), var(--waiting-card-surface-2));
   color: var(--ink);
-  text-decoration: none;
-  transition: border-color var(--duration-0-15s);
+  transition: border-color var(--duration-0-6s);
 }
 
 .visual-card:hover,
-.visual-card:focus-visible {
+.visual-card:focus-within {
   border-color: var(--accent);
 }
 
+/* The title is the link of the card and stretches over all of it; the task reference is another link above it. */
 .visual-card-title {
-  font-size: var(--font-size-18px);
+  font-size: var(--font-size-22px);
   font-weight: var(--font-weight-550);
-  line-height: var(--line-height-1-35);
+  line-height: var(--line-height-1-4);
   overflow-wrap: anywhere;
+}
+
+.visual-card-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.visual-card-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.visual-card-link:focus-visible {
+  outline: none;
+}
+
+.visual-card-link:focus-visible::after {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .visual-card-meta {
@@ -4626,6 +4664,18 @@ kbd {
   gap: var(--space-8px);
   color: var(--muted);
   font-size: var(--font-size-14px);
+}
+
+.visual-card-task {
+  position: relative;
+  color: var(--ink);
+  font-size: var(--font-size-14px);
+  line-height: var(--line-height-1-6);
+  overflow-wrap: anywhere;
+}
+
+.visual-card-task-label {
+  color: var(--task-assignment-ink);
 }
 
 .visual-card-author {
