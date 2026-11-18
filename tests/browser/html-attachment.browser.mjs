@@ -471,6 +471,26 @@ test('the page of an HTML attachment can play sound after the user clicked Run',
   await until('the audio running', async () => (await inFrame(`window.audio.state`)) === 'running', 5000);
 });
 
+test('the page of an HTML attachment gets the keys the user types right after clicking Run', async (t) => {
+  const { browser, sessionId, evaluate, inFrame } = await runAudioPage(t);
+  await typeKeys(browser, sessionId, 'go');
+  await until('the keys in the page', async () => (await inFrame(`window.keys`)) === 'go', 5000);
+  // A click on the bar over the page takes the keyboard back, and the shield returns: the page gets no more keys.
+  await clickAt(
+    browser,
+    sessionId,
+    await evaluate(
+      `(() => { const box = document.querySelector('.message-attachment-title').getBoundingClientRect(); return { x: box.x + box.width / 2, y: box.y + box.height / 2 }; })()`,
+    ),
+  );
+  await until('the shield back over the page', () =>
+    evaluate(`!document.querySelector('.message-attachment-shield').hidden`),
+  );
+  await typeKeys(browser, sessionId, 'x');
+  await sleep(300);
+  assert.equal(await inFrame(`window.keys`), 'go');
+});
+
 // It takes the keyboard every 50 ms, records the keys it gets, and asks for its page again and again.
 const TRAP = `<!doctype html><title>Trap</title><input id="field">
 <script>

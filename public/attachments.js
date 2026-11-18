@@ -106,6 +106,9 @@ export function createAttachments({ document, window, request }) {
     frame.referrerPolicy = 'no-referrer';
     // Tab passes over the page; the shield is the way in by keyboard.
     frame.tabIndex = -1;
+    frame.addEventListener('load', () => {
+      if (engaged === figure) frame.contentWindow.focus();
+    });
     frame.src = ATTACHMENT_PAGE;
     const shield = /** @type {HTMLButtonElement} */ (node('button', 'message-attachment-shield'));
     shield.type = 'button';
@@ -116,7 +119,7 @@ export function createAttachments({ document, window, request }) {
     figure.append(stage);
     Object.assign(part, { frame, shield, served: false });
     running.set(part.message.id, figure);
-    watch ??= setInterval(guard, 200);
+    watch ??= setInterval(() => guard(true), 200);
     engage(figure);
   }
 
@@ -157,15 +160,17 @@ export function createAttachments({ document, window, request }) {
 
   // A page may have the keyboard only after the user gave it: a page that takes the focus itself would get what the
   // user types into the dashboard. Such a page is stopped, and the focus goes back where it was. The window's blur
-  // reports a frame that takes the focus from the dashboard; the poll, one that takes it from another frame.
-  function guard() {
+  // reports a frame that takes the focus from the dashboard; the poll, one that takes it from another frame. A window
+  // event comes while the focus is still moving, when the active element can be the body for a moment, so only a
+  // settled state (a `focusin`, the poll) can say that the frame lost the keyboard.
+  function guard(settled = true) {
     const active = document.activeElement;
     const thief = [...running.values()].find((figure) => figure !== engaged && parts.get(figure).frame === active);
     if (thief) {
       const back = engaged ? parts.get(engaged).frame : lastFocus;
       stop(thief, 'Mu stopped this page because it took the keyboard without your click.');
       if (back?.isConnected) back.focus();
-    } else if (engaged && (!engaged.isConnected || parts.get(engaged).frame !== active)) disengage();
+    } else if (settled && engaged && (!engaged.isConnected || parts.get(engaged).frame !== active)) disengage();
     if (!running.size && watch) {
       clearInterval(watch);
       watch = null;
@@ -261,10 +266,10 @@ export function createAttachments({ document, window, request }) {
   document.addEventListener('focusin', (event) => {
     const target = /** @type {HTMLElement} */ (event.target);
     if (target.tagName !== 'IFRAME') lastFocus = target;
-    guard();
+    guard(true);
   });
-  window.addEventListener('blur', guard);
-  window.addEventListener('focus', guard);
+  window.addEventListener('blur', () => guard(false));
+  window.addEventListener('focus', () => guard(false));
 
   // Each message is matched to its frame by the window it came from; anything else in it is ignored. A frame gets its
   // page once per load that Mu started, so a page cannot make the dashboard copy it again and again.
