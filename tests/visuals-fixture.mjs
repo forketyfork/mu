@@ -70,6 +70,8 @@ export async function team(t) {
       from: 'lead',
     });
   for (const id of ['worker', 'outsider']) app.store.updateAgent(id, { status: 'stopped' });
+  // A message can wake the worker, and the claude CLI must not start in a test: its turns are recorded by startTurn.
+  app.runner.paused = true;
   const task = (
     await user('POST', '/api/tasks', { title: 'Plan', conversationId: 'work', agentIds: ['worker'], from: 'lead' })
   ).body;

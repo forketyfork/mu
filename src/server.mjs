@@ -205,7 +205,7 @@ export async function createApp({
     store,
     runner,
     tasks,
-    sendAsUser: (text, conversationId) => postMessage('user', text, conversationFor(conversationId)),
+    sendAsUser: (text, conversationId, options) => postMessage('user', text, conversationFor(conversationId), options),
   });
   let stopEventLoopMonitor = null;
   const adapters = ['codex', 'claude', 'pi', 'manual', 'demo', ...Object.keys(custom)];
@@ -510,8 +510,10 @@ export async function createApp({
     return `@user Message #${message.id} is queued, but nobody will process it now: ${names} ${paused.length === 1 ? 'does' : 'do'} not run turns until resumed. Ask the lead to take over the request, or resume the agent from its card.`;
   };
   // Posts a chat message with the checks of a message typed in the chat; the user's comments on a visual take the
-  // same way.
-  const postMessage = async (from, text, conversation) => {
+  // same way. `wake` names a stopped agent that the message is for: it runs turns again once the message is in the chat,
+  // as when its card is resumed, so the message gets no notice that nobody will process it. Answers `notice` with the
+  // text of the notice, for a caller whose user does not read the conversation.
+  const postMessage = async (from, text, conversation, { wake = null } = {}) => {
     if (
       typeof text !== 'string' ||
       !text.trim() ||
@@ -538,6 +540,13 @@ export async function createApp({
       if (!chat.state.connected) throw bad(chat.state.error || error.message || 'IRC unavailable', 503);
       throw error;
     }
+    // Checked and changed in one step: an agent that another request already woke is running, and keeps its status.
+    let woken = false;
+    if (wake && store.agent(wake)?.status === 'stopped') {
+      store.updateAgent(wake, { status: 'idle' });
+      runner.kick();
+      woken = true;
+    }
     const notice = from === 'user' ? deliveryNotice(conversation, message) : null;
     if (notice) {
       try {
@@ -550,7 +559,7 @@ export async function createApp({
         );
       }
     }
-    return message;
+    return { message, notice, woken };
   };
   const syncConversation = async (conversation) => {
     try {
@@ -709,7 +718,7 @@ export async function createApp({
         if (request.headers.origin && input.conversationId === undefined)
           throw bad('Select a conversation before sending. Refresh the dashboard if it is out of date.');
         const conversation = conversationFor(input.conversationId ?? 'common', from);
-        return send(response, 201, await postMessage(from, input.text, conversation));
+        return send(response, 201, (await postMessage(from, input.text, conversation)).message);
       }
       if (request.method === 'POST' && pathname === '/api/agents') {
         const input = await body(request);

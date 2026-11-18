@@ -519,12 +519,13 @@ test('answers whose message is on its way are not sent a second time', async (t)
 });
 
 test('answers that are in the chat are sent, whatever happened to the delivery notice', async (t) => {
-  const { chat, answer, send, read, record, messages } = await asked(t);
+  const { app, chat, answer, send, read, record, messages } = await asked(t);
   await answer({ database: 'postgres' });
-  // The author is stopped, so the message gets a notice for the user; the broker fails on that notice.
+  // The author fails as the message goes out, so the message gets a notice for the user; the broker fails on that notice.
   const chatSend = chat.send.bind(chat);
   chat.send = async (from, ...rest) => {
     if (from === 'system') throw new Error('IRC confirmation failed');
+    if (from === 'user') app.store.updateAgent('worker', { status: 'error' });
     return chatSend(from, ...rest);
   };
   const failed = await send();

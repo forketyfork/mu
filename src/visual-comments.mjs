@@ -24,13 +24,14 @@ const parseData = (row) => JSON.parse(/** @type {string} */ (row.data));
  * @param {object} options
  * @param {import('./store.mjs').Store} options.store
  * @param {{ get: (id: string) => any, save: (visual: any) => any, readVersion: (id: string, number: number) => any, readSection: (id: string, rev: string) => any }} options.visuals
- * @param {(text: string, conversationId: string) => Promise<{ id: number }>} options.sendAsUser
+ * @param {(text: string, conversationId: string, options: { wake: string | null }) => Promise<{ message: { id: number }, notice: string | null, woken: boolean }>} options.sendAsUser
+ *   Posts a chat message as the user, with the checks and the delivery notice of a message typed in the chat, and wakes
+ *   the stopped agent that `wake` names. An error that carries `saved` is about the notice only: that message is in the chat.
  * @param {(visualId: string, version: any) => string[]} options.hiddenFor The sections of a version that the
  *   answers the author has hide.
- *   Posts a chat message as the user, with the checks and the delivery notice of a message typed in the chat. An
- *   error that carries `saved` is about the notice only: that message is in the chat.
+ * @param {(visual: any) => import('./visual-feedback.mjs').Route} options.reach Who takes the feedback on a visual.
  */
-export function createVisualComments({ store, visuals, sendAsUser, hiddenFor }) {
+export function createVisualComments({ store, visuals, sendAsUser, hiddenFor, reach }) {
   store.db.exec(`
     CREATE TABLE IF NOT EXISTS visual_comments (id TEXT PRIMARY KEY, visual_id TEXT NOT NULL, version INTEGER NOT NULL, data TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS visual_comments_version ON visual_comments (visual_id, version);`);
@@ -305,18 +306,22 @@ export function createVisualComments({ store, visuals, sendAsUser, hiddenFor }) 
    * @param {any} options.visual
    * @param {any[]} options.drafts
    * @param {string} options.text
+   * @param {import('./visual-feedback.mjs').Route} options.route Who the text is addressed to, from `reach`.
    * @param {string[]} [options.claims]
    * @param {(current: any, messageId: number, now: string) => any} [options.record]
    */
-  async function deliver({ visual, drafts: sorted, text, claims = [], record = (current) => current }) {
+  async function deliver({ visual, drafts: sorted, text, route, claims = [], record = (current) => current }) {
     const keys = [...sorted.map((comment) => comment.id), ...claims];
     const taken = claims.find((key) => claimed.has(key));
     if (taken) throw bad('This feedback is being sent. Wait for the result, then read the visual again.', 409);
     for (const key of keys) claimed.add(key);
     let posted;
+    let outcome = { notice: null, woken: false };
     let noticeFailure = null;
     try {
-      posted = await sendAsUser(text, visual.conversationId);
+      const result = await sendAsUser(text, visual.conversationId, { wake: route.wake });
+      posted = result.message;
+      outcome = result;
     } catch (error) {
       // The author has the message when it is in the chat, whatever happened to its delivery notice.
       if (!error.saved) throw error;
@@ -342,7 +347,15 @@ export function createVisualComments({ store, visuals, sendAsUser, hiddenFor }) 
       visuals.save(record(sent.length ? counted(current) : current, posted.id, now));
     });
     if (noticeFailure) throw noticeFailure;
-    return { messageId: posted.id, comments: sent };
+    // What happened to the message besides its delivery, for the user who sent it: the author it woke, the agent that took
+    // it for an author that cannot run, and a notice that nobody processes it.
+    return {
+      messageId: posted.id,
+      comments: sent,
+      ...(outcome.woken ? { woke: route.to } : {}),
+      ...(route.author ? { routedTo: route.to } : {}),
+      ...(outcome.notice ? { notice: outcome.notice } : {}),
+    };
   }
 
   /** Sends the drafts of one version, all of them or the named ones, as one chat message to the author. */
@@ -361,10 +374,12 @@ export function createVisualComments({ store, visuals, sendAsUser, hiddenFor }) 
     if (!chosen.length) throw bad(`Version ${input.version} has no draft to send`);
     const version = visuals.readVersion(visualId, input.version);
     const { lines, sorted } = items(visual, version, chosen, hiddenFor(visualId, version));
+    const route = reach(visual);
     return deliver({
       visual,
       drafts: sorted,
-      text: feedbackText({ visual, version, answers: null, comments: lines }),
+      text: feedbackText({ visual, version, answers: null, comments: lines, route }),
+      route,
     });
   }
 

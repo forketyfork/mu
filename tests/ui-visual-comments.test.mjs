@@ -422,7 +422,7 @@ test('a click on marked text shows its comment, and a click on a comment shows i
   );
 });
 
-test('a version shows the comments it answers, where other comments are, and that a stopped author waits', async (t) => {
+test('a version shows the comments it answers, where other comments are, and that a stopped author wakes', async (t) => {
   const answered = comment('vc-0000000c', { version: 1, answeredIn: 2, text: 'Explain the cache' });
   const stopped = { ...withVisuals(record()), agents: [{ ...initialState().agents[0], status: 'stopped' }] };
   const visual = record();
@@ -450,7 +450,7 @@ test('a version shows the comments it answers, where other comments are, and tha
   );
   assert.equal(
     $('#visual-comments-note').textContent,
-    '@lead is stopped; it reads comments when it is resumed.Comments on other versions:v1 (3)',
+    '@lead is stopped. Sending a comment wakes it, so that it takes the comment.Comments on other versions:v1 (3)',
   );
 
   answers[0].querySelector('button').click();
@@ -673,4 +673,88 @@ test('a visual that is opened while its author works shows that at once', async 
   });
   await settle();
   assert.equal(ui.asked.length, asked);
+});
+
+// A visual that a worker wrote, in a room with a lead; the worker is in the given state.
+const authored = (worker, lead = {}) => {
+  const base = initialState();
+  const state = {
+    ...withVisuals(record({ agentId: 'worker' })),
+    agents: [
+      { ...base.agents[0], ...lead },
+      { id: 'worker', role: 'worker', adapter: 'claude', ...worker, task: '', cwd: '/project', createdAt },
+    ],
+    conversations: [
+      base.conversations[0],
+      { id: 'room-a', name: 'Review changes', kind: 'room', members: ['user', 'lead', 'worker'] },
+    ],
+  };
+  return state;
+};
+
+test('before a comment is sent, the panel says what happens to it when the author cannot run', async (t) => {
+  const visual = record({ agentId: 'worker' });
+  const ui = await viewer(t, {
+    hash: `#visuals/${ID}`,
+    visuals: [visual],
+    versions: { latest: versionOf(visual, 2, SECTIONS) },
+  });
+  const note = () => (ui.$('#visual-comments-note').hidden ? null : ui.$('#visual-comments-note').textContent);
+  const set = async (worker, lead) => {
+    ui.update(authored(worker, lead));
+    await settle();
+  };
+  ui.update(authored({ status: 'idle' }));
+  await settle();
+  ui.attach();
+  ui.fromFrame({ type: 'ready' });
+  await settle();
+  assert.equal(note(), null, 'an author that runs needs no note');
+  await set({ status: 'working' });
+  assert.equal(note(), null);
+  // No comment is written or listed yet: the note is there before the user types.
+  await set({ status: 'stopped' });
+  assert.equal(note(), '@worker is stopped. Sending a comment wakes it, so that it takes the comment.');
+  // A failed author is not resumed by a comment: the lead takes it.
+  await set({ status: 'error', lastError: 'claude exited with code 1' });
+  assert.equal(
+    note(),
+    '@worker failed: claude exited with code 1. A comment does not resume it: sending goes to @lead, who can resume @worker.',
+  );
+  // Without a lead that runs, nothing can take the comment, and the panel says that the send is refused.
+  await set({ status: 'error', lastError: 'out of credit' }, { status: 'stopped' });
+  assert.equal(
+    note(),
+    '@worker failed: out of credit. No lead of this conversation can take a comment instead. Resume @worker from its card; sending is refused until then.',
+  );
+  await set({ status: 'idle' });
+  assert.equal(note(), null, 'the note goes when the author runs again');
+});
+
+test('the dashboard says what a send did for the author, and keeps a notice that nobody processes the comment', async (t) => {
+  const ui = await commenting(t);
+  const toast = () => (ui.$('#toast').hidden ? null : ui.$('#toast').textContent);
+  ui.served.delivery = { woke: 'lead' };
+  ui.write('Explain this');
+  await ui.submit();
+  assert.equal(toast(), '@lead was stopped and runs again to take it.');
+  assert.equal(ui.$('#visual-composer-error').hidden, true);
+
+  ui.served.delivery = { routedTo: 'lead' };
+  ui.write('Shorter');
+  await ui.submit();
+  assert.equal(toast(), 'Sent to @lead: the author cannot run.');
+
+  // The notice is for a reader who is not in the chat: it stays in the panel after the list was loaded again.
+  ui.served.delivery = {
+    notice:
+      '@user Message #7 is queued, but nobody will process it now: lead (error) does not run turns until resumed.',
+  };
+  ui.write('Again');
+  await ui.submit();
+  assert.equal(
+    ui.$('#visual-composer-error').textContent,
+    'Message #7 is queued, but nobody will process it now: lead (error) does not run turns until resumed.',
+  );
+  assert.equal(ui.$('#visual-composer-error').hidden, false);
 });

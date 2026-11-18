@@ -38,7 +38,9 @@ A comment reaches the agent that wrote the visual as a chat message from you in 
 
 Comments stay with the version they were written on. A new version starts without comments and lists, under **Answered in this version**, the comments that it answers. An earlier version keeps its comments; each shows **Answered in version N** once the author answered it. The list of visuals shows for each visual how many drafts wait for you and how many sent comments wait for the author.
 
-When the author changes a section in the same turn after you commented on it, the comment keeps the text it was written on and says that the section changed. A stopped author reads its comments when it is resumed.
+When the author changes a section in the same turn after you commented on it, the comment keeps the text it was written on and says that the section changed.
+
+**When the author cannot run.** The panel says so before you send, also when you have written nothing yet. A **stopped** author, for example one that was retired when you verified its task, is woken by your comment: it runs again, as if you had resumed it from its card, and takes the comment together with any message that waited for it; a notice says so after the send. An author that **failed** is not resumed for you, because its failure may repeat and somebody should read it first. The panel shows its error, and your comment goes to the lead of the visual's conversation instead, with the author named and how to resume it; the lead resumes the author or tells you why not. When no lead can take the comment, because the room has none, it is stopped or failed too, or the author is the lead, the send is refused with the reason, and your comment stays a draft. If a message still reaches nobody, the notice that Mu would post in the chat appears in the panel too. Answers sent with **Send answers** follow the same rules.
 
 ## Answer questions
 

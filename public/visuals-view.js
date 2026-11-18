@@ -54,6 +54,7 @@ export function safeLink(href) {
  * @param {(id: string, version?: number | null) => void} options.navigate Shows a visual, or the list for a null ID.
  * @param {(id: string, version?: number | null) => string} options.hashOf
  * @param {(agent: object) => boolean} options.isBusy
+ * @param {(message: string) => void} options.notify Tells the user something that was done for them, for a few seconds.
  * @param {(key: any) => void} options.onKey Receives a key that the frame took from the browser, as the frame sent it.
  */
 export function createVisualsView({
@@ -66,6 +67,7 @@ export function createVisualsView({
   navigate,
   hashOf,
   isBusy,
+  notify,
   onKey,
 }) {
   const $ = (id) => /** @type {any} */ (document.getElementById(id));
@@ -91,10 +93,27 @@ export function createVisualsView({
   let indexSignature = null;
 
   const record = (id) => (getState()?.visuals ?? []).find((visual) => visual.id === id);
-  // The author as the comments need it: its status, and the message that its running turn is on.
-  const authorOf = (agentId) => {
-    const agent = getState().agents.find((item) => item.id === agentId);
-    return agent ? { id: agent.id, status: agent.status, turn: agent.activeMessageId ?? null } : null;
+  // The author as the comments need it: its status, the message that its running turn is on, and who takes the
+  // feedback when it cannot run: a lead of the visual's conversation that can.
+  /** @returns {import('./visual-delivery.js').Author} */
+  const authorOf = (/** @type {any} */ visual) => {
+    const { agents, conversations } = getState();
+    const agent = agents.find((item) => item.id === visual.agentId);
+    const members = conversations?.find((item) => item.id === visual.conversationId)?.members ?? [];
+    const lead = agents.find(
+      (item) =>
+        item.role === 'lead' &&
+        item.id !== visual.agentId &&
+        members.includes(item.id) &&
+        !['stopped', 'error'].includes(item.status),
+    );
+    return {
+      id: visual.agentId,
+      status: agent?.status ?? 'missing',
+      turn: agent?.activeMessageId ?? null,
+      error: agent?.lastError ?? null,
+      lead: lead?.id ?? null,
+    };
   };
   const post = (message) => frame?.contentWindow?.postMessage(message, '*');
 
@@ -301,7 +320,7 @@ export function createVisualsView({
       showError('');
       renderHeader();
       renderOutline();
-      comments.show(data, authorOf(data.agentId));
+      comments.show(data, authorOf(data));
       // A change that arrives is marked in place: a new version for a user who follows the newest one, or new content
       // of the version on screen. A version the user switched to starts at its top.
       const live = flash && previous && (target.pinned === null || previous.shown.number === data.shown.number);
@@ -415,13 +434,14 @@ export function createVisualsView({
   const comments = createCommentsPanel({
     document,
     request,
+    notify,
     post,
     showVersion: (number) => navigate(open.id, number === (record(open.id)?.version ?? number) ? null : number),
     reload: () => load(),
     time,
   });
 
-  const answers = createAnswersPanel({ document, request, post, reload: () => load() });
+  const answers = createAnswersPanel({ document, request, notify, post, reload: () => load() });
 
   const step = (delta) => {
     const latest = record(open.id)?.version ?? open.data?.version ?? 1;
@@ -449,7 +469,7 @@ export function createVisualsView({
       if (!visual || !open.data) return;
       // The comments that the author works on are those of its running turn, so a turn that starts is news for
       // them; a turn that ends needs no request, because the comments compare the turn with what was loaded.
-      const author = authorOf(open.data.agentId);
+      const author = authorOf(open.data);
       const turn = author?.turn ?? null;
       const started = turn !== null && turn !== open.turn;
       open.turn = turn;

@@ -140,6 +140,8 @@ async function opened(t, shots) {
     from: 'lead',
   });
   app.store.updateAgent('worker', { status: 'stopped' });
+  // A comment wakes the stopped worker, and the claude CLI must not start in a test: the tests record its turns.
+  app.runner.paused = true;
   await user('POST', '/api/tasks', {
     title: 'Plan the storage migration',
     conversationId: 'work',

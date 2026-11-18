@@ -642,6 +642,7 @@ const visualsView = createVisualsView({
   navigate: openVisual,
   hashOf: visualHash,
   isBusy: isAgentBusy,
+  notify: toast,
   onKey: (key) => {
     if (isLeadChatShortcut(key, macKeyboard)) focusLeadChat();
   },

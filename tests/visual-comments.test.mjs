@@ -179,8 +179,11 @@ test('the drafts of a version reach the author as one chat message from the user
       `Change the sections these concern with \`visual patch --id ${visual.id}\`, and name the comments a change answers with \`--resolves\`. \`visual comments --id ${visual.id}\` shows each comment with its whole quote.`,
     ].join('\n\n'),
   );
-  // The worker of this fixture is stopped, and the user learns that as for a message typed in the chat.
-  assert.match(posted[1].text, /is queued, but nobody will process it now: worker \(stopped\)/);
+  // The worker of this fixture was stopped: the message woke it, so nobody has to resume it before it answers.
+  assert.equal(posted.length, 1);
+  assert.equal(sent.body.woke, 'worker');
+  assert.equal('notice' in sent.body, false);
+  assert.equal(app.store.agent('worker').status, 'idle');
 
   assert.deepEqual(
     sent.body.comments.map((comment) => [comment.id, comment.status, comment.messageId]),
@@ -386,12 +389,13 @@ test('a comment whose message cannot be delivered stays a draft', async (t) => {
 });
 
 test('a message that is in the chat has sent its comments, whatever happened to the delivery notice', async (t) => {
-  const { chat, user, comments, messages } = await written(t);
+  const { app, chat, user, comments, messages } = await written(t);
   const { id } = (await user('POST', comments, ON_CODE)).body;
-  // The author is stopped, so the message gets a notice for the user; the broker fails on that notice.
+  // The author fails as the message goes out, so the message gets a notice for the user; the broker fails on that notice.
   const send = chat.send.bind(chat);
   chat.send = async (from, ...rest) => {
     if (from === 'system') throw new Error('IRC confirmation failed');
+    if (from === 'user') app.store.updateAgent('worker', { status: 'error' });
     return send(from, ...rest);
   };
   const failed = await user('POST', `${comments}/send`, { version: 1, ids: [id] });
@@ -730,4 +734,138 @@ test('a comment on a patch names a line by its file, side and number, checked ag
   };
   const [listed] = await main(['visual', 'comments', '--id', visual.id], env);
   assert.deepEqual([listed.id, listed.block, listed.quote, listed.line], [comment.id, 1, null, added]);
+});
+
+// The author is a worker of a task the user has verified, which the lead retired: its record says stopped, and its
+// task keeps listing it as retired.
+async function retiredAuthor(t) {
+  const context = await written(t);
+  const { app, user, lead, task } = context;
+  const ready = await lead('PATCH', `/api/tasks/${task.id}`, {
+    status: 'ready',
+    result: 'The plan is written.\n\n- Done.',
+  });
+  assert.equal(ready.status, 200, JSON.stringify(ready.body));
+  // Verifying a task retires its workers.
+  assert.equal((await user('POST', `/api/tasks/${task.id}/verify`, {})).status, 200);
+  assert.deepEqual((await user('GET', `/api/tasks/${task.id}`)).body.retiredAgentIds, ['worker']);
+  assert.equal(app.store.agent('worker').status, 'stopped');
+  return context;
+}
+
+test('a comment on a visual of a retired author wakes it, and its queued messages go with it', async (t) => {
+  const { app, user, comments, messages, task } = await retiredAuthor(t);
+  const before = (await messages()).length;
+  const drafted = (await user('POST', comments, ON_CODE)).body;
+  const sent = await user('POST', `${comments}/send`, { version: 1, ids: [drafted.id] });
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  assert.equal(sent.body.woke, 'worker');
+  // Woken as the agent card does it: idle, with the comment in its inbox, and no notice that nobody works.
+  assert.equal(app.store.agent('worker').status, 'idle');
+  assert.deepEqual(
+    app.store.inbox('worker').map((message) => message.id),
+    [sent.body.messageId],
+  );
+  assert.deepEqual(
+    (await messages()).slice(before).map((message) => message.from),
+    ['user'],
+  );
+  // The retirement stays in the task record: the worker is woken, not un-retired.
+  assert.deepEqual((await user('GET', `/api/tasks/${task.id}`)).body.retiredAgentIds, ['worker']);
+});
+
+test('comments sent one after another wake the author once, and leave a running author alone', async (t) => {
+  const { app, user, comments, startTurn } = await retiredAuthor(t);
+  const send = async (text) => {
+    const { id } = (await user('POST', comments, { ...ON_CODE, text })).body;
+    return (await user('POST', `${comments}/send`, { version: 1, ids: [id] })).body;
+  };
+  const [first, second] = await Promise.all([send('One'), send('Two')]);
+  assert.deepEqual([first.woke, second.woke].filter(Boolean), ['worker']);
+  // The runner starts its turn: a later comment must not set the working author back to idle.
+  app.store.updateAgent('worker', { status: 'working' });
+  startTurn('worker');
+  const third = await send('Three');
+  assert.equal('woke' in third, false);
+  assert.equal(app.store.agent('worker').status, 'working');
+});
+
+test('a comment is not sent when the stopped author is not woken, and a failed send leaves it stopped', async (t) => {
+  const { app, chat, user, comments, messages } = await retiredAuthor(t);
+  const { id } = (await user('POST', comments, ON_CODE)).body;
+  chat.state.connected = false;
+  const failed = await user('POST', `${comments}/send`, { version: 1, ids: [id] });
+  chat.state.connected = true;
+  assert.equal(failed.status, 503);
+  assert.equal(app.store.agent('worker').status, 'stopped');
+  assert.equal((await messages()).filter((message) => message.from === 'user').length, 0);
+});
+
+test('a comment on a visual whose author failed goes to the lead, and the author stays failed', async (t) => {
+  const { app, user, comments, messages, visual } = await written(t);
+  app.store.updateAgent('lead', { status: 'idle' });
+  app.store.updateAgent('worker', { status: 'error', lastError: 'claude exited 1: @lead rate limited' });
+  const { id } = (await user('POST', comments, ON_CODE)).body;
+  const sent = await user('POST', `${comments}/send`, { version: 1, ids: [id] });
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  assert.equal(sent.body.routedTo, 'lead');
+  assert.equal('woke' in sent.body, false);
+  assert.equal(app.store.agent('worker').status, 'error');
+  const [message] = (await messages()).filter((item) => item.from === 'user');
+  // Only the lead is addressed: the error text is the agent's and cannot mention anybody, and the author is in a code span.
+  assert.deepEqual(mentions(message.text), ['lead']);
+  assert.match(
+    message.text,
+    /^@lead A comment on visual `vis-[0-9a-f]{8}` `Storage plan`, version 1, sent to you because its author `worker` cannot run \(`in an error state: claude exited 1: @ lead rate limited`\):/,
+  );
+  assert.match(message.text, new RegExp(`status --id worker --status idle.*visual comments --id ${visual.id}`));
+  assert.deepEqual(
+    app.store.inbox('worker').map((item) => item.id),
+    [],
+  );
+});
+
+test('feedback for an author that cannot run is refused loudly when nobody can take it', async (t) => {
+  const { app, user, worker, startTurn } = await written(t);
+  // A room without a lead, and a visual that the worker wrote in it.
+  await user('POST', '/api/conversations', {
+    kind: 'room',
+    id: 'solo',
+    name: 'Solo',
+    from: 'user',
+    members: ['worker'],
+  });
+  startTurn('worker', 'solo');
+  const solo = (await worker('POST', '/api/visuals', { source: PLAN, conversationId: 'solo' })).body;
+  app.runner.active.clear();
+  const path = `/api/visuals/${solo.id}/comments`;
+  const { id } = (await user('POST', path, ON_CODE)).body;
+  const attempt = async () => (await user('POST', `${path}/send`, { version: 1, ids: [id] })).body;
+  const posted = () => app.store.messages(50, 'solo').filter((message) => message.from === 'user');
+  app.store.updateAgent('worker', { status: 'error', lastError: 'out of credit' });
+  assert.match((await attempt()).error, /@worker is in an error state: out of credit, and solo has no other lead/);
+  // The lead is in the room, and stopped.
+  await user('POST', '/api/conversations/solo/members', { members: ['lead'] });
+  app.store.updateAgent('lead', { status: 'stopped' });
+  assert.match((await attempt()).error, /the lead @lead is stopped, so nobody would take the feedback/);
+  // Nothing was posted, and the comment is still a draft the user can send once the author is resumed.
+  assert.equal(posted().length, 0);
+  assert.equal((await user('GET', path)).body[0].status, 'draft');
+  app.store.updateAgent('worker', { status: 'stopped' });
+  assert.equal((await user('POST', `${path}/send`, { version: 1, ids: [id] })).body.woke, 'worker');
+  assert.equal(posted().length, 1);
+});
+
+test('a delivery notice that still applies reaches the sender with the response', async (t) => {
+  const { app, chat, user, comments } = await written(t);
+  const { id } = (await user('POST', comments, ON_CODE)).body;
+  // The author fails as the message goes out.
+  const send = chat.send.bind(chat);
+  chat.send = async (from, ...rest) => {
+    if (from === 'user') app.store.updateAgent('worker', { status: 'error' });
+    return send(from, ...rest);
+  };
+  const sent = await user('POST', `${comments}/send`, { version: 1, ids: [id] });
+  assert.equal(sent.status, 200);
+  assert.match(sent.body.notice, /nobody will process it now: worker \(error\)/);
 });

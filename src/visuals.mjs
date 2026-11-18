@@ -29,8 +29,9 @@ export const sectionRev = (section) =>
  * @param {import('./store.mjs').Store} options.store
  * @param {{active: Map<string, { conversationId?: string, messageIds?: number[] }>}} options.runner
  * @param {{find: (id: string) => any, list: () => any[]}} options.tasks
- * @param {(text: string, conversationId: string) => Promise<{ id: number }>} options.sendAsUser
- *   Posts a chat message as the user; the user's comments and answers reach the author of a visual through it.
+ * @param {(text: string, conversationId: string, options: { wake: string | null }) => Promise<{ message: { id: number }, notice: string | null, woken: boolean }>} options.sendAsUser
+ *   Posts a chat message as the user; the user's comments and answers reach the author of a visual through it. It wakes
+ *   the stopped agent that `wake` names and answers the delivery notice, if the message got one.
  */
 export function createVisuals({ store, runner, tasks, sendAsUser }) {
   store.db.exec(`
@@ -127,10 +128,38 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
     const row = store.db.prepare('SELECT data FROM visual_sections WHERE visual_id=? AND rev=?').get(id, hash);
     return row ? parseData(row) : null;
   };
+  const REASON_CHARS = 200;
+  // Who takes the user's feedback on a visual. A stopped author is woken by the message, as when its card is resumed.
+  // A failed author is not resumed for the user: the failure may repeat, and somebody has to read it first. The lead of
+  // the visual's conversation takes the feedback then, and resumes the author or tells the user why it does not.
+  /** @type {(visual: any) => import('./visual-feedback.mjs').Route} */
+  const reach = (visual) => {
+    const author = store.agent(visual.agentId);
+    if (author && author.status !== 'error') return { to: author.id, wake: author.id, author: null };
+    const failure = author?.lastError ? `: ${[...author.lastError].slice(0, REASON_CHARS).join('')}` : '';
+    const cause = author ? `in an error state${failure}` : 'not registered any more';
+    const lead = store
+      .conversation(visual.conversationId)
+      ?.members.map((id) => store.agent(id))
+      .find((agent) => agent?.role === 'lead' && agent.id !== visual.agentId);
+    const resume = 'Resume the author from its card, then send again.';
+    if (!lead)
+      throw bad(
+        `@${visual.agentId} is ${cause}, and ${visual.conversationId} has no other lead to take the feedback. ${resume}`,
+        409,
+      );
+    if (['stopped', 'error'].includes(lead.status))
+      throw bad(
+        `@${visual.agentId} is ${cause}, and the lead @${lead.id} is ${lead.status}, so nobody would take the feedback. ${resume}`,
+        409,
+      );
+    return { to: lead.id, wake: null, author: { id: visual.agentId, cause } };
+  };
   const comments = createVisualComments({
     store,
     visuals: { get, save, readVersion, readSection },
     sendAsUser,
+    reach,
     // What the author knows of the sections that the answers hide: only the answers it has, never a draft.
     hiddenFor: (visualId, version) => answers.hidden(visualId, version, 'sent'),
   });
@@ -450,10 +479,12 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
     // Answers sent with the comments are the author's once it reads the message.
     const hidden = answers.hidden(id, version, reviewed ? 'current' : 'sent');
     const { lines, sorted } = comments.items(visual, version, drafts, hidden);
+    const route = reach(visual);
     const sent = await comments.deliver({
       visual,
       drafts: sorted,
-      text: feedbackText({ visual, version, answers: reviewed?.lines ?? null, comments: lines }),
+      text: feedbackText({ visual, version, answers: reviewed?.lines ?? null, comments: lines, route }),
+      route,
       // Two requests that reviewed the same answers would both find them unsent.
       claims: reviewed ? [`answers of ${id}`] : [],
       record: (current, messageId, now) => {

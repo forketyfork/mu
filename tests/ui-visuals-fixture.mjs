@@ -53,8 +53,9 @@ export const withVisuals = (...visuals) => ({ ...initialState(), visuals });
 export async function viewer(t, { hash = '', visuals = [record()], versions }) {
   const ui = await fixture(t, { initial: withVisuals(...visuals) });
   // `comments` holds the comments as the service would; `failSend` makes the next send fail with that message,
-  // and `failNotice` makes it fail after the comments were sent.
-  const served = { versions, comments: [], failSend: null, failNotice: null, failAnswer: null };
+  // and `failNotice` makes it fail after the comments were sent. `delivery` is what a send answers besides its message:
+  // the author it woke, the agent it went to instead, or a notice.
+  const served = { versions, comments: [], failSend: null, failNotice: null, failAnswer: null, delivery: {} };
   const fetch = ui.window.fetch;
   const asked = [];
   // The requests that change comments, as `[method, path, body]`.
@@ -91,7 +92,7 @@ export async function viewer(t, { hash = '', visuals = [record()], versions }) {
       );
       for (const comment of sent) Object.assign(comment, { status: 'sent', sentAt: now, messageId: 7 });
       if (served.failNotice) return answer(503, { error: served.failNotice });
-      return answer(200, { messageId: 7, comments: sent });
+      return answer(200, { messageId: 7, comments: sent, ...served.delivery });
     }
     const comment = served.comments.find((item) => item.id === id);
     if (method === 'PATCH') {
@@ -121,7 +122,7 @@ export async function viewer(t, { hash = '', visuals = [record()], versions }) {
         Object.assign(field, { sent: field.answer && { ...field.answer, at: now }, unsent: false });
       for (const comment of served.comments) if (comment.status === 'draft') comment.status = 'sent';
     }
-    return answer(200, {});
+    return answer(200, part === 'feedback' ? served.delivery : {});
   }
   ui.window.fetch = async (path, options = {}) => {
     const answered = /^\/api\/visuals\/vis-[0-9a-f]{8}\/(answers|feedback)$/.exec(path);

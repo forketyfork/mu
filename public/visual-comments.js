@@ -3,6 +3,8 @@
 // sent is decided here, by the user. The frame only reports what the reader selected, and a report is checked before
 // it is used; the quote in it is shown as text and sent as a quote. See "Visuals" in docs/architecture.md.
 
+import { authorNote, deliveryReport } from './visual-delivery.js';
+
 // The limits of a quote; `COMMENT_LIMITS` of the visual format holds the same numbers for the service and the frame.
 export const QUOTE_CHARS = 600;
 export const CONTEXT_CHARS = 32;
@@ -71,12 +73,13 @@ export const lineLabel = (line) => `${line.path}:${line.number}${line.side === '
  * @param {object} options
  * @param {Document} options.document
  * @param {(path: string, options?: object) => Promise<any>} options.request
+ * @param {(message: string) => void} options.notify Tells the user something that was done for them.
  * @param {(message: object) => void} options.post Sends a message to the frame.
  * @param {(version: number) => void} options.showVersion
  * @param {() => Promise<void>} options.reload Loads the visual again, after a comment changed.
  * @param {(at: string) => string} options.time
  */
-export function createCommentsPanel({ document, request, post, showVersion, reload, time }) {
+export function createCommentsPanel({ document, request, notify, post, showVersion, reload, time }) {
   const $ = (id) => /** @type {any} */ (document.getElementById(id));
   const node = (tag, className, text) => {
     const element = document.createElement(tag);
@@ -93,7 +96,7 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
 
   /** @type {any} What the service answered for the version shown. */
   let data = null;
-  /** @type {{ id: string, status: string, turn: number | null } | null} The author, and the message its turn is on. */
+  /** @type {import('./visual-delivery.js').Author | null} */
   let author = null;
   let workingSent = '[]';
   // What the reader selected last, and the selection the comment field is about. The field follows the selection
@@ -276,12 +279,12 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
         button('text-button', 'Send', () => act(() => send([comment.id]))),
         button('text-button', 'Edit', () => edit(comment)),
         button('text-button', 'Delete', () =>
-          act(() =>
-            request(`/api/visuals/${encodeURIComponent(data.id)}/comments/${comment.id}`, {
+          act(async () => {
+            await request(`/api/visuals/${encodeURIComponent(data.id)}/comments/${comment.id}`, {
               method: 'DELETE',
               body: '{}',
-            }),
-          ),
+            });
+          }),
         ),
       );
     else {
@@ -335,14 +338,9 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
     $('visual-answers-list').replaceChildren(...answers.map((comment) => card(comment, { answer: true })));
 
     const notes = [];
-    if (author && ['stopped', 'error'].includes(author.status) && comments.length)
-      notes.push(
-        node(
-          'span',
-          '',
-          `@${author.id} is ${author.status === 'stopped' ? 'stopped' : 'in an error state'}; it reads comments when it is resumed.`,
-        ),
-      );
+    // Said before the user sends, with or without a comment yet: what happens to the comment depends on the author.
+    const unable = authorNote(author);
+    if (unable) notes.push(node('span', 'visual-comments-author', unable));
     const elsewhere = (data?.versions ?? []).filter(
       (version) => version.comments && version.number !== data.shown.number,
     );
@@ -387,11 +385,17 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
   }
 
   const commentsPath = () => `/api/visuals/${encodeURIComponent(data.id)}/comments`;
-  const send = (ids) =>
-    request(`${commentsPath()}/send`, {
+  // What the service did besides delivering the message is told here; a warning that must stay is the one thing the
+  // work of `act` hands on.
+  async function send(ids) {
+    const result = await request(`${commentsPath()}/send`, {
       method: 'POST',
       body: JSON.stringify({ version: data.shown.number, ...(ids ? { ids } : {}) }),
     });
+    const { done, warning } = deliveryReport(result);
+    if (done) notify(done);
+    return warning;
+  }
 
   // One request at a time; whatever it did, the list is loaded again, so that it shows what the service holds.
   async function act(work) {
@@ -400,8 +404,9 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
     renderComposer();
     renderList();
     let failure = null;
+    let warning = null;
     try {
-      await work();
+      warning = (await work()) ?? null;
     } catch (error) {
       failure = error;
     }
@@ -409,7 +414,7 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
     await reload();
     // A send can fail after the message reached the chat, so the list that was just loaded says what the comment is.
     const kept = failure?.unsent && data?.shown.comments.some((c) => c.id === failure.unsent && c.status === 'draft');
-    showError(failure ? `${kept ? 'The comment is saved as a draft. ' : ''}${failure.message}` : '');
+    showError(failure ? `${kept ? 'The comment is saved as a draft. ' : ''}${failure.message}` : (warning ?? ''));
     renderComposer();
   }
 
@@ -446,7 +451,7 @@ export function createCommentsPanel({ document, request, post, showVersion, relo
       active = saved.id;
       if (!andSend) return;
       try {
-        await send([saved.id]);
+        return await send([saved.id]);
       } catch (error) {
         throw Object.assign(error, { unsent: saved.id });
       }

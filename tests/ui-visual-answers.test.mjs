@@ -240,6 +240,15 @@ test('Send answers sends the list that the panel shows, with the draft comments 
   );
   assert.equal(ui.answers.at(-1).fields.notes.state, 'sent');
 
+  // What the send did for an author that could not run is told, as for a comment.
+  ui.served.delivery = { woke: 'lead' };
+  await ui.report('workers', 3);
+  ui.read();
+  ui.click('#visual-questions-send');
+  await settle();
+  assert.equal(ui.$('#toast').textContent, '@lead was stopped and runs again to take it.');
+  ui.served.delivery = {};
+
   // A refusal is shown, and the list is the service's again.
   await ui.report('workers', 2);
   ui.served.failAnswer = 'The questions or your answers changed since you reviewed them. Review them again, then send.';

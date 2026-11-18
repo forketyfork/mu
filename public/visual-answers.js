@@ -3,6 +3,8 @@
 // the service holds, and sends exactly that list when the user clicks Send, so a hostile visual can neither answer
 // for the user nor send anything. See "Visuals" in docs/architecture.md.
 
+import { deliveryReport } from './visual-delivery.js';
+
 const TEXT_CHARS = 2000;
 // The user sends what the list shows, so an answer must have stood in the list for this long before a click on Send
 // sends it. The frame can report an answer while the pointer is on its way to the button, or during the click.
@@ -52,11 +54,12 @@ const CHIPS = { open: 'No answer', suggested: 'Suggested', unsent: 'Not sent', s
  * @param {object} options
  * @param {Document} options.document
  * @param {(path: string, options?: object) => Promise<any>} options.request
+ * @param {(message: string) => void} options.notify Tells the user something that was done for them.
  * @param {(message: object) => void} options.post Sends a message to the frame.
  * @param {() => Promise<void>} options.reload Loads the visual again, after an answer changed.
  * @param {() => number} [options.now] The time in milliseconds.
  */
-export function createAnswersPanel({ document, request, post, reload, now = () => Date.now() }) {
+export function createAnswersPanel({ document, request, notify, post, reload, now = () => Date.now() }) {
   const $ = (id) => /** @type {any} */ (document.getElementById(id));
   const node = (tag, className, text) => {
     const element = document.createElement(tag);
@@ -175,13 +178,14 @@ export function createAnswersPanel({ document, request, post, reload, now = () =
 
   async function act(work) {
     let failure = '';
+    let warning = '';
     try {
-      await work();
+      warning = (await work()) ?? '';
     } catch (error) {
       failure = error.message;
     }
     await reload();
-    showError(failure);
+    showError(failure || warning);
   }
 
   const path = (part) => `/api/visuals/${encodeURIComponent(data.id)}/${part}`;
@@ -208,9 +212,15 @@ export function createAnswersPanel({ document, request, post, reload, now = () =
     );
     const version = data.shown.number;
     queue = queue.then(() =>
-      act(() =>
-        request(path('feedback'), { method: 'POST', body: JSON.stringify({ version, answers: reviewed }) }),
-      ).then(() => {
+      act(async () => {
+        const result = await request(path('feedback'), {
+          method: 'POST',
+          body: JSON.stringify({ version, answers: reviewed }),
+        });
+        const { done, warning } = deliveryReport(result);
+        if (done) notify(done);
+        return warning;
+      }).then(() => {
         busy = false;
         render();
       }),
