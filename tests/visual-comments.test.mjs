@@ -790,7 +790,7 @@ test('comments sent one after another wake the author once, and leave a running 
   assert.equal(app.store.agent('worker').status, 'working');
 });
 
-test('a comment is not sent when the stopped author is not woken, and a failed send leaves it stopped', async (t) => {
+test('a send that fails before the post leaves a stopped author stopped', async (t) => {
   const { app, chat, user, comments, messages } = await retiredAuthor(t);
   const { id } = (await user('POST', comments, ON_CODE)).body;
   chat.state.connected = false;
