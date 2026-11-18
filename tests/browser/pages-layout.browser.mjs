@@ -193,6 +193,16 @@ test('visuals are cards in the columns of the task cards, each with its task ins
   );
   await shot('visuals-cards-1500');
 
+  // The blank end of the task row belongs to the card, which opens its visual; only the task's own link goes elsewhere.
+  const hit = await evaluate(`(() => {
+    const card = [...document.querySelectorAll('.visual-card')].find((item) => item.querySelector('.task-ref'));
+    card.scrollIntoView({ block: 'center' });
+    const row = card.querySelector('.visual-card-task').getBoundingClientRect();
+    const end = document.elementFromPoint(card.getBoundingClientRect().right - 40, row.top + row.height / 2);
+    return { onCardLink: Boolean(end?.closest('.visual-card-link')), found: end?.className };
+  })()`);
+  assert.equal(hit.onCardLink, true, JSON.stringify(hit));
+
   // The task link goes to the task, not to the visual that holds it.
   const withTask = wide.find((card) => card.task);
   await evaluate(`document.querySelector('[data-visual="${withTask.id}"] .task-ref').click()`);
@@ -225,6 +235,10 @@ test('the top bar fits the window at every width, and its controls stay in reach
     return {
       barOverflow: bar.scrollWidth - bar.clientWidth,
       pageOverflow: document.documentElement.scrollWidth - innerWidth,
+      label: (() => {
+        const label = document.getElementById('view-label');
+        return getComputedStyle(label).display === 'none' || label.scrollWidth <= label.clientWidth;
+      })(),
       newAgent: box('#new-agent'),
       archived: box('.archive-toggle'),
       connection: box('#connection-badge'),
@@ -232,7 +246,7 @@ test('the top bar fits the window at every width, and its controls stay in reach
       newAgentName: document.getElementById('new-agent').getAttribute('aria-label'),
     };
   })()`;
-  for (const width of [1500, 1100, 900, 760, 700, 650, 600, 500, 390, 360])
+  for (const width of [1500, 1100, 900, 760, 700, 650, 600, 540, 500, 480, 470, 420, 390, 360])
     for (const page of ['workspace', 'evals', 'visuals']) {
       await viewport(width, 700);
       await open(page);
@@ -240,6 +254,7 @@ test('the top bar fits the window at every width, and its controls stay in reach
       const where = `${page} at ${width}: ${JSON.stringify(measured)}`;
       assert.equal(measured.barOverflow, 0, where);
       assert.equal(measured.pageOverflow, 0, where);
+      assert.equal(measured.label, true, `the page name is whole or gone, never clipped: ${where}`);
       for (const control of ['newAgent', 'archived', 'connection'])
         assert.deepEqual(measured[control], { shown: true, inside: true }, `${control}: ${where}`);
       assert.equal(measured.connectionText, 'Connected locally', where);

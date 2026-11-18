@@ -4040,8 +4040,8 @@ kbd {
   }
 }
 
-/* Only the dot tells the connection at this width; the words stay for assistive technology. */
-@media (width <= 480px) {
+/* Only the dot tells the connection here; the words stay for assistive technology. */
+@media (width <= 600px) {
   #connection-label {
     position: absolute;
     width: 1px;
@@ -4049,6 +4049,13 @@ kbd {
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+}
+
+/* The page has its own heading, so the header drops the page name where it would not fit whole. */
+@media (width <= 480px) {
+  #view-label {
+    display: none;
   }
 }
 
@@ -4723,10 +4730,17 @@ kbd {
 
 .visual-card-task {
   position: relative;
+
+  /* Only the link of the task takes clicks; the rest of the row belongs to the card's own link beneath. */
+  pointer-events: none;
   color: var(--ink);
   font-size: var(--font-size-14px);
   line-height: var(--line-height-1-6);
   overflow-wrap: anywhere;
+}
+
+.visual-card-task .task-ref {
+  pointer-events: auto;
 }
 
 .visual-card-task-label {
