@@ -248,6 +248,38 @@ export function totalUnread(messages, conversations, readThrough) {
   );
 }
 
+// Only an explicit `@user` asks for the user's attention. `@all` is a broadcast that Mu delivers to the agents of a
+// room, and a private chat has no one else to write to, so neither says "this one is for you".
+export function isMention(message) {
+  return message.from !== 'user' && message.mentions.includes('user');
+}
+
+// The unread messages that mention the user, newest first, in the conversations given. A mention is read by the same
+// position as its message: `readThrough` is the map that the unread counts use.
+export function unreadMentions(messages, conversations, readThrough) {
+  const listed = new Set(conversations.map((conversation) => conversation.id));
+  return messages
+    .filter(
+      (message) =>
+        listed.has(message.conversationId) &&
+        message.id > (readThrough.get(message.conversationId) ?? 0) &&
+        isMention(message),
+    )
+    .sort((a, b) => b.id - a.id);
+}
+
+export function mentionCount(messages, conversationId, readThrough = 0) {
+  return messages.filter(
+    (message) => message.conversationId === conversationId && message.id > readThrough && isMention(message),
+  ).length;
+}
+
+// One line of a message for a list, so that line breaks do not take the room.
+export function snippet(text, limit = 110) {
+  const line = text.replace(/\s+/g, ' ').trim();
+  return line.length > limit ? `${line.slice(0, limit - 1).trimEnd()}…` : line;
+}
+
 // A managed turn can be running while the agent has already reported a final status such as `done`.
 export function isAgentBusy(agent) {
   return agent.status === 'working' || Boolean(agent.activeMessageId);

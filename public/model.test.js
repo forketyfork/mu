@@ -23,7 +23,10 @@ import {
   splitMentions,
   summarizeAgents,
   tasksOfAgents,
+  mentionCount,
+  snippet,
   totalUnread,
+  unreadMentions,
   unreadCount,
   unreadLabel,
   viewFromHash,
@@ -773,4 +776,31 @@ test('a stream batch replaces, adds and removes whole records and appends new me
   assert.deepEqual(next.transport, { connected: false, error: 'gone' });
   assert.deepEqual([...touched].sort(), ['agents', 'messages', 'transport', 'waiting']);
   assert.throws(() => applyChanges(state, [{ kind: 'secrets', value: 1 }]), /unknown change kind: secrets/);
+});
+
+test('only an explicit @user from someone else is a mention, and it is read with its conversation', () => {
+  const conversations = [{ id: 'dm-lead' }, { id: 'room-a' }, { id: 'room-gone' }];
+  const messages = [
+    { id: 1, conversationId: 'dm-lead', from: 'lead', mentions: ['user'] },
+    { id: 2, conversationId: 'dm-lead', from: 'lead', mentions: [] },
+    { id: 3, conversationId: 'room-a', from: 'worker', mentions: ['all'] },
+    { id: 4, conversationId: 'room-a', from: 'worker', mentions: ['lead', 'user'] },
+    { id: 5, conversationId: 'room-a', from: 'user', mentions: ['user'] },
+    { id: 6, conversationId: 'room-a', from: 'worker', mentions: ['user'] },
+    { id: 7, conversationId: 'room-archived', from: 'worker', mentions: ['user'] },
+  ];
+  assert.deepEqual(
+    unreadMentions(messages, conversations.slice(0, 2), new Map([['room-a', 4]])).map((message) => message.id),
+    [6, 1],
+    'newest first; the read one, the broadcast, the own one and the unlisted conversation are left out',
+  );
+  assert.equal(mentionCount(messages, 'room-a', 0), 2);
+  assert.equal(mentionCount(messages, 'room-a', 4), 1);
+  assert.equal(mentionCount(messages, 'dm-lead'), 1);
+});
+
+test('a snippet keeps one line and is cut with an ellipsis at the limit', () => {
+  assert.equal(snippet('first\n\n  second   line'), 'first second line');
+  assert.equal(snippet('a'.repeat(20), 10), `${'a'.repeat(9)}…`);
+  assert.equal(snippet('a'.repeat(10), 10), 'a'.repeat(10));
 });

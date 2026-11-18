@@ -26,6 +26,8 @@
     'rail-link-selected-glow-2': ['#75f6db06', 'glow'],
     'rail-badge-surface': ['#b3a0ff', 'fill'],
     'rail-badge-ink': ['#211a37', 'inverse'],
+    'mention-badge-surface': ['#6fe3cb', 'fill'],
+    'mention-badge-ink': ['#0a2423', 'inverse'],
     'topbar-surface': ['#0d1523', 'surface'],
     'breadcrumb-ink': ['#91a2bc', 'text'],
     'breadcrumb-strong-ink': ['#d3def0', 'text'],

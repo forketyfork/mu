@@ -42,7 +42,10 @@ import {
   visualHash,
   isLeadChatShortcut,
   leadChatShortcutLabel,
+  mentionCount,
   mentionEntries,
+  snippet,
+  unreadMentions,
 } from './model.js';
 import { markdownElement } from './markdown.js';
 import { emptyMessages, groupBrag } from './brag.js';
@@ -444,7 +447,13 @@ function renderConversations() {
       if (isArchived) label.append(node('span', 'archived-tag', 'Archived'));
       option.append(label);
       const unread = unreadCount(state.messages, conversation.id, readThrough.get(conversation.id));
-      if (unread) option.append(node('span', 'unread-count', unreadLabel(unread)));
+      const mentioned = mentionCount(state.messages, conversation.id, readThrough.get(conversation.id));
+      if (unread) {
+        const badges = node('span', 'conversation-badges');
+        badges.append(node('span', 'unread-count', unreadLabel(unread)));
+        if (mentioned) badges.append(mentionBadge(mentioned));
+        option.append(badges);
+      }
       option.addEventListener('click', () => selectConversation(conversation.id));
       fragment.append(option);
     }
@@ -527,15 +536,81 @@ function renderConversationActivity(conversation) {
   if (view === 'chat' && atBottom) scrollChat();
 }
 
+// A mention is also an unread message, so a conversation row shows the two counts side by side. The badge says what it
+// counts in its text, since its color alone does not.
+const mentionTitle = (count) => `${count} unread ${count === 1 ? 'mention' : 'mentions'} of you`;
+
+function mentionBadge(count) {
+  const badge = node('span', 'mention-count', `@${unreadLabel(count)}`);
+  badge.title = mentionTitle(count);
+  return badge;
+}
+
 function renderChatUnread() {
-  const unread = totalUnread(state.messages, listedConversations(), readThrough);
+  const listed = listedConversations();
+  const unread = totalUnread(state.messages, listed, readThrough);
   for (const badge of [$('chat-unread'), $('conversation-unread')]) {
     badge.hidden = !unread;
     badge.textContent = unreadLabel(unread);
   }
+  const mentions = unreadMentions(state.messages, listed, readThrough);
+  for (const badge of [$('chat-mentions'), $('conversation-mentions')]) {
+    badge.hidden = !mentions.length;
+    badge.textContent = `@${unreadLabel(mentions.length)}`;
+    badge.title = mentionTitle(mentions.length);
+  }
+  $('chat-mentions').setAttribute('aria-label', `${mentionTitle(mentions.length)}; show them`);
   document
     .querySelector('.rail-link[data-view="chat"]')
     .setAttribute('aria-label', unread ? `Team chat, ${unreadLabel(unread)} unread` : 'Team chat');
+  renderMentionList(mentions);
+}
+
+// The list is rebuilt only when its entries change, so that a hovered or focused row does not flicker.
+let mentionListSignature = '';
+
+function renderMentionList(mentions) {
+  const popover = $('mention-list');
+  if (!mentions.length) {
+    popover.hidePopover();
+    mentionListSignature = '';
+    $('mention-items').replaceChildren();
+    return;
+  }
+  const signature = mentions.map((message) => message.id).join(',');
+  if (signature === mentionListSignature) return;
+  mentionListSignature = signature;
+  $('mention-items').replaceChildren(
+    ...mentions.map((message) => {
+      const conversation = state.conversations.find((item) => item.id === message.conversationId);
+      const item = node('button', 'mention-item');
+      item.type = 'button';
+      item.dataset.message = message.id;
+      const head = node('span', 'mention-item-head');
+      const where = node('span', 'mention-item-where');
+      where.append(
+        node('span', '', conversation.kind === 'direct' ? '@' : '# '),
+        conversation.kind === 'direct'
+          ? agentName('span', '', directAgent(conversation), conversationName(conversation))
+          : conversationName(conversation),
+      );
+      where.append(document.createTextNode(' · '), agentName('span', '', message.from));
+      const date = new Date(message.createdAt);
+      const time = node(
+        'time',
+        'mention-item-time',
+        `${dateLabel(date)}, ${new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(date)}`,
+      );
+      time.dateTime = message.createdAt;
+      head.append(where, time);
+      item.append(head, node('span', 'mention-item-text', snippet(message.text)));
+      item.addEventListener('click', () => {
+        popover.hidePopover();
+        void revealMessage(message.id, message.conversationId);
+      });
+      return item;
+    }),
+  );
 }
 
 const viewLabels = { workspace: 'Overview', chat: 'Chat', brag: 'Brag doc', visuals: 'Visuals' };

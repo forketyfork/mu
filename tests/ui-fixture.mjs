@@ -20,6 +20,7 @@ export const message = (id, conversationId = 'dm-lead') => ({
   conversationId,
   from: 'lead',
   text: `Message ${id}`,
+  mentions: [],
   createdAt,
 });
 export const initialState = () => ({

@@ -37,7 +37,7 @@ A second check, `tests/browser/lead-shortcut.browser.mjs`, presses the shortcut 
 
 A third check, `tests/browser/focus-drag.browser.mjs`, drags cards of the focus list with the browser's own drag (Chrome hands it over through the protocol, and the test replays it as drag events at chosen points) and drops them under a short lane's cards, on its bottom edge and on the other lane's header, over a column that is not the first. JSDOM has no layout, so only a real browser shows which part of a lane box receives a drop. The pre-commit hook runs it with the others.
 
-A fourth check, `tests/browser/unread-persist.browser.mjs`, covers the unread markers with what JSDOM only fakes: a real reload, the `storage` event between two tabs of one browser, and storage that is kept apart for two Mu instances on different ports. It runs with the others.
+A fourth check, `tests/browser/unread-persist.browser.mjs`, covers the unread markers with what JSDOM only fakes: a real reload, the `storage` event between two tabs of one browser, and storage that is kept apart for two Mu instances on different ports. It runs with the others. A fifth, `tests/browser/mention-badges.browser.mjs`, covers the mention badges: where the two badges sit on the chat icon, the popover list that the mention badge opens, opening a mention from it, and the counts across a reload.
 
 A fifth check, `tests/browser/visual-author-wake.browser.mjs`, retires the worker that wrote a visual, then comments on it: the note that the author is stopped before anything is typed, the author that the send wakes, the section that its answer changes and flashes, and the note about a failed author, whose comment goes to the lead. It runs with the others.
 

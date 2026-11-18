@@ -105,7 +105,7 @@ test('verified work, its rooms, and retired workers are hidden by default and re
 test('unread messages in hidden archived conversations do not count toward the chat badge', async (t) => {
   const { $, update, click } = await archiveFixture(t);
   const next = archiveState();
-  next.messages.push({ id: 1, conversationId: 'room-done', from: 'system', text: 'Verified', createdAt });
+  next.messages.push({ id: 1, conversationId: 'room-done', from: 'system', text: 'Verified', mentions: [], createdAt });
   update(next);
   assert.equal($('#chat-unread').hidden, true);
   click('#show-archived');
