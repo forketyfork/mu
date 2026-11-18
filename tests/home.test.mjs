@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmod, link, lstat, mkdir, readFile, readdir, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, link, lstat, mkdir, readFile, readdir, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { main } from '../src/cli.mjs';
 import {
@@ -160,35 +160,45 @@ test('an existing unmanaged role file and seed are kept without starting managem
   assert.equal(await readFile(join(home, DEFAULTS[0]), 'utf8'), 'user-owned role file\n');
 });
 
-test('a manifest entry for a role file this checkout does not ship is ignored, and init forgets it', async (t) => {
+test('a role file that an older checkout does not ship keeps its record until it leaves the home', async (t) => {
   const home = await temporaryHome(t);
   const root = await sourceRoot(t);
-  await initializeHome({ home, root });
-  // A newer checkout installed a role file that this one does not ship, as after a revert.
-  const gone = 'skills/worker/gone.md';
-  await writeFile(join(home, gone), 'role file from a newer checkout\n', { mode: 0o600 });
+  const section = DEFAULTS.at(-1);
+  const older = DEFAULTS.slice(0, -1);
   const manifestPath = join(home, '.install/manifest.json');
-  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
-  manifest.files[gone] = 'a'.repeat(64);
-  manifest.installedAt[gone] = new Date().toISOString();
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  const manifestOf = async () => JSON.parse(await readFile(manifestPath, 'utf8'));
+  const stateOf = async (roleFiles) =>
+    Object.fromEntries((await homeState({ home, root, roleFiles })).defaults.map(({ path, state }) => [path, state]));
+  await initializeHome({ home, root });
 
-  const state = await homeState({ home, root });
-  assert.deepEqual(
-    state.defaults.map(({ path, state }) => [path, state]),
-    DEFAULTS.map((path) => [path, 'current']),
+  // A revert to an older checkout starts and initializes, and leaves the record of the file it does not ship.
+  assert.deepEqual(await stateOf(older), Object.fromEntries(older.map((path) => [path, 'current'])));
+  const reverted = await initializeHome({ home, root, roleFiles: older });
+  assert.equal(
+    reverted.actions.some(({ path, action }) => path === section && action === 'forget'),
+    false,
   );
-  const preview = await initializeHome({ home, root, dryRun: true });
-  assert.ok(preview.actions.some(({ path, action }) => path === gone && action === 'forget'));
+  assert.ok(section in (await manifestOf()).files);
+
+  // Shipped again with a change, the file is updated as usual instead of staying unmanaged.
+  await replaceDefault(root, section, '# Section\n\nNew rule.\n');
+  assert.equal((await stateOf(DEFAULTS))[section], 'outdated');
+  const reapplied = await initializeHome({ home, root });
+  assert.ok(reapplied.actions.some(({ path, action }) => path === section && action === 'replace'));
+  assert.equal(await readFile(join(home, section), 'utf8'), '# Section\n\nNew rule.\n');
+  assert.equal((await stateOf(DEFAULTS))[section], 'current');
+
+  // Once the file leaves the home, the older checkout forgets its record.
+  await unlink(join(home, section));
+  const preview = await initializeHome({ home, root, roleFiles: older, dryRun: true });
+  assert.ok(preview.actions.some(({ path, action }) => path === section && action === 'forget'));
   assert.ok(
     preview.actions.some(({ path, action }) => path === '.install/manifest.json' && action === 'write-manifest'),
   );
-
-  await initializeHome({ home, root });
-  const pruned = JSON.parse(await readFile(manifestPath, 'utf8'));
-  assert.equal(gone in pruned.files, false);
-  assert.equal(gone in pruned.installedAt, false);
-  assert.equal(await readFile(join(home, gone), 'utf8'), 'role file from a newer checkout\n');
+  await initializeHome({ home, root, roleFiles: older });
+  const pruned = await manifestOf();
+  assert.equal(section in pruned.files, false);
+  assert.equal(section in pruned.installedAt, false);
 });
 
 test('existing home files become private, and dry-run only reports the mode change', async (t) => {

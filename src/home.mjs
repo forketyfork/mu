@@ -250,9 +250,9 @@ async function atomicWrite(path, text) {
   }
 }
 
-async function readDefaults(root) {
+async function readDefaults(root, defaults) {
   const files = new Map();
-  for (const path of DEFAULTS) {
+  for (const path of defaults) {
     const absolute = join(root, path);
     const bytes = await readFile(absolute);
     files.set(path, assertText(bytes, absolute));
@@ -364,10 +364,10 @@ function conflictLines(text) {
   return ranges;
 }
 
-function acceptedPath(value) {
+function acceptedPath(value, defaults) {
   if (value === undefined) return undefined;
   const normalized = value.replaceAll('\\', '/').replace(/^\.\//, '');
-  if (!DEFAULTS.includes(normalized)) throw new Error(`--accept must name a shipped role file: ${DEFAULTS.join(', ')}`);
+  if (!defaults.includes(normalized)) throw new Error(`--accept must name a shipped role file: ${defaults.join(', ')}`);
   return normalized;
 }
 
@@ -391,9 +391,15 @@ async function createBackup(home, updates) {
 
 /**
  * Read the installed state without changing the home.
- * @param {{env?: NodeJS.ProcessEnv, home?: string, root?: string}} [options]
+ * `roleFiles` lists the role files the checkout ships; a test passes another list to stand for an older or newer checkout.
+ * @param {{env?: NodeJS.ProcessEnv, home?: string, root?: string, roleFiles?: readonly string[]}} [options]
  */
-export async function homeState({ env = process.env, home = resolveHome(env), root = ROOT } = {}) {
+export async function homeState({
+  env = process.env,
+  home = resolveHome(env),
+  root = ROOT,
+  roleFiles = DEFAULTS,
+} = {}) {
   const absoluteHome = resolve(home);
   const sourceCheckout = await realpath(root);
   const placement = placementError(absoluteHome, sourceCheckout, resolveDataDir(env, absoluteHome));
@@ -402,7 +408,7 @@ export async function homeState({ env = process.env, home = resolveHome(env), ro
   await validateFiles(absoluteHome);
 
   const manifest = await readManifest(absoluteHome);
-  const shipped = await readDefaults(sourceCheckout);
+  const shipped = await readDefaults(sourceCheckout, roleFiles);
   const defaults = [];
   for (const [path, updated] of shipped) {
     const current = await readHomeText(absoluteHome, path);
@@ -450,7 +456,8 @@ export async function homeState({ env = process.env, home = resolveHome(env), ro
 
 /**
  * Plan or install the defaults and one-time seeds for a Mu home.
- * @param {{env?: NodeJS.ProcessEnv, home?: string, root?: string, dryRun?: boolean, accept?: string, adopt?: boolean}} [options]
+ * `roleFiles` is as in `homeState`.
+ * @param {{env?: NodeJS.ProcessEnv, home?: string, root?: string, dryRun?: boolean, accept?: string, adopt?: boolean, roleFiles?: readonly string[]}} [options]
  */
 export async function initializeHome({
   env = process.env,
@@ -459,12 +466,13 @@ export async function initializeHome({
   dryRun = false,
   accept,
   adopt = false,
+  roleFiles = DEFAULTS,
 } = {}) {
   const absoluteHome = resolve(home);
   const sourceCheckout = await realpath(root);
   const placement = placementError(absoluteHome, sourceCheckout, resolveDataDir(env, absoluteHome));
   if (placement) throw new Error(placement);
-  const accepted = acceptedPath(accept);
+  const accepted = acceptedPath(accept, roleFiles);
   const directoryStates = await validateDirectories(absoluteHome);
   const fileStates = await validateFiles(absoluteHome);
 
@@ -474,7 +482,7 @@ export async function initializeHome({
       `Mu home was installed from ${manifest.sourceCheckout}, not ${sourceCheckout}; rerun with --adopt to use this checkout's defaults.`,
     );
 
-  const shipped = await readDefaults(sourceCheckout);
+  const shipped = await readDefaults(sourceCheckout, roleFiles);
   const files = { ...(manifest?.files ?? {}) };
   const installedAt = { ...(manifest?.installedAt ?? {}) };
   const writes = [];
@@ -483,9 +491,10 @@ export async function initializeHome({
   const conflicts = [];
 
   // A newer checkout may have installed role files that this one does not ship, for example before a revert.
-  // They stay on disk, but this checkout no longer manages them.
+  // While such a file is in the home, its record and merge base stay, so a later checkout that ships it again
+  // updates it as usual instead of finding it unmanaged.
   for (const path of Object.keys(files)) {
-    if (shipped.has(path)) continue;
+    if (shipped.has(path) || (await readHomeText(absoluteHome, path)) !== null) continue;
     delete files[path];
     delete installedAt[path];
     actions.push({ path, action: 'forget' });
