@@ -150,7 +150,15 @@ test('an HTML attachment runs in its sandboxed frame without reaching Mu, the da
     })()`),
     { frames: 0, run: 'Run', visible: 0 },
   );
-  const run = () => evaluate(`document.querySelector('.message-attachment-run').click()`);
+  // The click of a user, which gives the window the focus as a script's click does not.
+  const run = async () =>
+    clickAt(
+      browser,
+      sessionId,
+      await evaluate(
+        `(() => { const box = document.querySelector('.message-attachment-run').getBoundingClientRect(); return { x: box.x + box.width / 2, y: box.y + box.height / 2 }; })()`,
+      ),
+    );
   await run();
   await until('the frame as a target of its own', frameSession);
   await until('the page in the frame', () => inFrame(`Boolean(window.done)`));
@@ -430,16 +438,22 @@ const AUDIO_PAGE = `<!doctype html><title>Sound</title><canvas width="100" heigh
   tone.connect(context.destination);
   tone.start();
   window.audio = context;
+  window.loaded = true;
   window.keys = '';
   addEventListener('keydown', (event) => { window.keys += event.key; });
 </script>`;
 
-async function runAudioPage(t) {
+/**
+ * @param {import('node:test').TestContext} t
+ * @param {string} html
+ * @param {{ afterRun?: (session: any) => Promise<void> }} [options] `afterRun` acts right after the click on Run.
+ */
+async function runAttachment(t, html, { afterRun } = {}) {
   const { app, url, worker } = await startDashboard(t);
   const posted = await worker('POST', '/api/messages', {
     conversationId: 'work',
     text: '@lead Listen.',
-    attachment: { type: 'html', title: 'Sound', html: AUDIO_PAGE },
+    attachment: { type: 'html', title: 'Sound', html },
   });
   assert.equal(posted.status, 201, JSON.stringify(posted.body));
   const session = await startSession(t, {
@@ -459,20 +473,21 @@ async function runAudioPage(t) {
       `(() => { const box = document.querySelector('.message-attachment-run').getBoundingClientRect(); return { x: box.x + box.width / 2, y: box.y + box.height / 2 }; })()`,
     ),
   );
+  await afterRun?.(session);
   await until('the frame as a target of its own', frameSession);
-  await until('the page in the frame', () => inFrame(`Boolean(window.audio)`));
+  await until('the page in the frame', () => inFrame(`Boolean(window.loaded)`));
   // Nothing has reached the page itself.
   assert.equal(await inFrame(`navigator.userActivation.hasBeenActive`), false);
   return session;
 }
 
 test('the page of an HTML attachment can play sound after the user clicked Run', async (t) => {
-  const { inFrame } = await runAudioPage(t);
+  const { inFrame } = await runAttachment(t, AUDIO_PAGE);
   await until('the audio running', async () => (await inFrame(`window.audio.state`)) === 'running', 5000);
 });
 
 test('the page of an HTML attachment gets the keys the user types right after clicking Run', async (t) => {
-  const { browser, sessionId, evaluate, inFrame } = await runAudioPage(t);
+  const { browser, sessionId, evaluate, inFrame } = await runAttachment(t, AUDIO_PAGE);
   await typeKeys(browser, sessionId, 'go');
   await until('the keys in the page', async () => (await inFrame(`window.keys`)) === 'go', 5000);
   // A click on the bar over the page takes the keyboard back, and the shield returns: the page gets no more keys.
@@ -489,6 +504,78 @@ test('the page of an HTML attachment gets the keys the user types right after cl
   await typeKeys(browser, sessionId, 'x');
   await sleep(300);
   assert.equal(await inFrame(`window.keys`), 'go');
+});
+
+// A page that writes itself anew, as a page can by script, whenever it loses the focus and, when `every` is set, that
+// often. Each write fires the load event of its frame again, and must not give the page the keyboard back.
+const rewritingPage = (every) => `<!doctype html><title>Rewrite</title><input id="field">
+<script>
+  window.loaded = true;
+  window.keys ??= '';
+  addEventListener('keydown', (event) => { window.keys += event.key; });
+  const rewrite = () => {
+    const html = document.documentElement.outerHTML;
+    document.open();
+    document.write('<!doctype html>' + html);
+    document.close();
+  };
+  addEventListener('blur', rewrite);
+  ${every ? `window.timer ??= setInterval(rewrite, ${every});` : ''}
+</script>`;
+
+const centerOf = (evaluate, selector) =>
+  evaluate(
+    `(() => { const box = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: box.x + box.width / 2, y: box.y + box.height / 2 }; })()`,
+  );
+
+test('a page that rewrites itself does not keep the keyboard the user took back', async (t) => {
+  const { browser, sessionId, evaluate, inFrame } = await runAttachment(t, rewritingPage());
+  await typeKeys(browser, sessionId, 'go');
+  await until('the keys in the page', async () => (await inFrame(`window.keys`)) === 'go', 5000);
+  await clickAt(browser, sessionId, await centerOf(evaluate, '.message-attachment-title'));
+  await until('the shield back over the page', () =>
+    evaluate(`!document.querySelector('.message-attachment-shield').hidden`),
+  );
+  // The page may rewrite itself for a while before it would use a key.
+  await sleep(600);
+  assert.equal(await evaluate(`document.querySelector('.message-attachment-shield').hidden`), false);
+  await typeKeys(browser, sessionId, 'x');
+  await sleep(300);
+  assert.equal(await inFrame(`window.keys`), 'go');
+});
+
+test('a page that was not given the keyboard and rewrites itself gets none of the keys typed into the message box', async (t) => {
+  const { browser, sessionId, evaluate, inFrame } = await runAttachment(t, rewritingPage(100));
+  await clickAt(browser, sessionId, await centerOf(evaluate, '#message-input'));
+  await typeKeys(browser, sessionId, 'hello world');
+  await sleep(500);
+  assert.deepEqual(
+    await evaluate(`({
+      composer: document.getElementById('message-input').value,
+      stopped: document.querySelector('.message-attachment').classList.contains('stopped'),
+      shield: !document.querySelector('.message-attachment-shield').hidden,
+    })`),
+    { composer: 'hello world', stopped: false, shield: true },
+  );
+  assert.equal(await inFrame(`window.keys`), '');
+});
+
+test('a page that the user left right after Run does not get the keyboard when its frame has loaded', async (t) => {
+  const { browser, sessionId, evaluate, inFrame } = await runAttachment(t, rewritingPage(), {
+    afterRun: async ({ browser, sessionId, evaluate }) =>
+      clickAt(browser, sessionId, await centerOf(evaluate, '#message-input')),
+  });
+  await sleep(500);
+  await typeKeys(browser, sessionId, 'abc');
+  await sleep(300);
+  assert.deepEqual(
+    await evaluate(`({
+      composer: document.getElementById('message-input').value,
+      stopped: document.querySelector('.message-attachment').classList.contains('stopped'),
+    })`),
+    { composer: 'abc', stopped: false },
+  );
+  assert.equal(await inFrame(`window.keys`), '');
 });
 
 // It takes the keyboard every 50 ms, records the keys it gets, and asks for its page again and again.
