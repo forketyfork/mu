@@ -194,9 +194,15 @@ test('a final reply offers choices on a last line `Choices: A | B`', () => {
     choices: ['Merge', 'Wait'],
   });
   assert.deepEqual(splitChoices('Which?\nChoices: A | B | C | D | E | F').choices, ['A', 'B', 'C', 'D', 'E', 'F']);
+  // The question may carry emphasis or a full-width mark.
+  assert.deepEqual(splitChoices('**Merge it now?**\nChoices: Merge | Wait').choices, ['Merge', 'Wait']);
+  assert.deepEqual(splitChoices('今すぐマージしますか？\nChoices: はい | いいえ').choices, ['はい', 'いいえ']);
   // A fence that was closed above does not hide the line.
-  assert.deepEqual(splitChoices('Run:\n```sh\nnpm test\n```\nChoices: Yes | No').choices, ['Yes', 'No']);
-  assert.deepEqual(splitChoices('Run:\n~~~\n```\n~~~\nChoices: Yes | No').choices, ['Yes', 'No']);
+  assert.deepEqual(splitChoices('Run:\n```sh\nnpm test\n```\nShould I run it?\nChoices: Yes | No').choices, [
+    'Yes',
+    'No',
+  ]);
+  assert.deepEqual(splitChoices('Run:\n~~~\n```\n~~~\nShould I run it?\nChoices: Yes | No').choices, ['Yes', 'No']);
 });
 
 test('a reply that merely looks like it offers choices stays text', () => {
@@ -219,6 +225,12 @@ test('a reply that merely looks like it offers choices stays text', () => {
     'Write:\n~~~\nChoices: Yes | No',
     'Write:\n````\n```\nChoices: Yes | No',
     'Write:\n   ```\nChoices: Yes | No',
+    // Prose that introduces the line is not the question it answers.
+    'Write the final line as:\nChoices: Yes | No',
+    'Write the final line as\n\nChoices: Yes | No',
+    'Is this the line to write? Then use\nChoices: Yes | No',
+    'Run it:\n```sh\nnpm test\n```\nChoices: Yes | No',
+    'Merge it now.\nChoices: Yes | No',
     // No words above it.
     'Choices: Yes | No',
     '\n\nChoices: Yes | No\n',

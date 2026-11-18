@@ -34,6 +34,8 @@ export function validChoices(value) {
 }
 
 const CHOICES_LINE = /^Choices:[ \t]+(\S.*?)[ \t]*$/;
+// The line above the choices is the question; text that introduces the line, such as "Write it like this:", is not.
+const QUESTION_END = /[?？][*_\s]*$/;
 const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 
 /**
@@ -56,9 +58,9 @@ function endsInFence(lines) {
 
 /**
  * Splits the choices off the final reply of an agent. The reply offers choices when its last line, from the first
- * column, is `Choices: Yes | No` and reads as the choices of `say --choices`, and when words precede it. Any other
- * reply is text, as written: a line in a code block, a quote, a list item or a sentence, a list that `validChoices`
- * refuses, and a line without a question above it.
+ * column, is `Choices: Yes | No` and reads as the choices of `say --choices`, and when the line above it ends
+ * with a question mark. Any other reply is text, as written: a line in a code block, a quote, a list item or a
+ * sentence, a list that `validChoices` refuses, and a line that something other than a question introduces.
  * @param {string} text the reply, trimmed, without a final NO_REPLY line
  * @returns {{ text: string, choices?: string[] }}
  */
@@ -68,7 +70,7 @@ export function splitChoices(text) {
   if (!match || endsInFence(lines)) return { text };
   const body = lines.slice(0, -1).join('\n').trimEnd();
   // A reply of NO_REPLY above the line would post as the sentinel, and the service would drop the reply.
-  if (!body.trim() || body.trim() === 'NO_REPLY') return { text };
+  if (body.trim() === 'NO_REPLY' || !QUESTION_END.test(body)) return { text };
   try {
     return { text: body, choices: validChoices(match[1].split('|').map((label) => label.trim())) };
   } catch (error) {
