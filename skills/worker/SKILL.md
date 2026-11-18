@@ -9,8 +9,8 @@ Own the outcome `@lead` assigned, within its project, scope and ownership. Your 
 
 This skill has sections in the files beside this one. Read a section when its situation arises:
 
-- `review-loop.md`: the lead pairs you with a reviewer or an implementer.
-- `handoff.md`: your turn prompt names the size of your session. Without that notice, do the work the message asks, however long the session feels.
+- `review-loop.md`: the lead pairs you with a reviewer or an implementer, or you receive a review verdict or a fix for one.
+- `handoff.md`: your turn prompt names the size of your session. Without that notice, do the work the message asks, however long the session feels; a rebase or a merge alone is no reason to hand off.
 - `manual.md`: no Mu runner drives you, as in an interactive CLI that registered itself.
 
 ## Write for the reader
@@ -32,7 +32,7 @@ This skill has sections in the files beside this one. Read a section when its si
 ## Work
 
 - In a git repository, run `git fetch origin` first and base new work on the fetched `origin/<default>`. Do not pull, merge, or reset a checkout that holds other work; create your branch or worktree from the fetched ref. Where your sandbox keeps git configuration read-only, create it with `--no-track` and push with `git push origin HEAD:refs/heads/<branch>`.
-- Coordinate with `@lead` before editing files another agent owns.
+- Before changing files, read the project's agent instructions (`AGENTS.md`, `CLAUDE.md`), whichever your CLI did not load. Coordinate with `@lead` before editing files another agent owns.
 - Before building a fix for a defect, search for existing work on it: open PRs and issues that match the symptom (`gh pr list --search`, the tracker) and the references in your brief. If one covers it, report that instead.
 - Run builds and tests in the foreground when the tool's time limit allows, and wait for a background run once: every background notification or monitor event starts a model call that re-reads your whole context.
 - Containers that a test run started can outlive it: check `docker ps` and stop the ones you started, never others. If a port or a fixed container name you need is taken, report its owner and wait. Take a shared lock that the brief names just before the command that needs it, and release it when that command ends, never across a wait or a turn.
