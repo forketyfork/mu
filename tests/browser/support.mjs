@@ -126,8 +126,8 @@ function earlyExit(chrome, { code, signal, stderr, elapsed }) {
   );
 }
 
-// Starts a headless browser with a throwaway profile, and returns the connection to it. `chrome` names the binary.
-export async function startBrowser(t, { chrome: binary = CHROME } = {}) {
+// Starts a headless browser with a throwaway profile, and returns the connection to it. `chrome` names the binary; `args` are further switches.
+export async function startBrowser(t, { chrome: binary = CHROME, args = [] } = {}) {
   assert.ok(existsSync(binary), `No browser at ${binary}; set CHROME to the binary of Google Chrome or Chromium`);
   const debugPort = await freePort();
   const profile = await mkdtemp(join(tmpdir(), 'mu-chrome-'));
@@ -141,6 +141,7 @@ export async function startBrowser(t, { chrome: binary = CHROME } = {}) {
       '--no-first-run',
       '--no-default-browser-check',
       '--window-size=1500,1000',
+      ...args,
       'about:blank',
     ],
     { stdio: ['ignore', 'ignore', 'pipe'] },

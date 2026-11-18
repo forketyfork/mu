@@ -90,6 +90,7 @@ An [HTML attachment](dashboard.md#chat) is a page an agent wrote, with its own s
 - It runs only after you click **Run**, in a sandboxed frame with an opaque origin: it has no credential, storage or cookies, cannot read the dashboard or Mu's API, and cannot open popups, submit forms or navigate the dashboard.
 - Its policy allows no requests: no fetch, sockets or beacons, and no image, style, font or script from another address. Its own media are `data:` URLs.
 - The dashboard draws the title, the author and the controls outside the frame, and takes from the frame only a request for its page and a height, which it bounds.
+- It may play sound once you click **Run**; the browser's autoplay rule is lifted for the frame, and nothing else is.
 - It gets the keyboard only when you click it. A page that takes the keyboard by itself is stopped, and the focus returns to where you were typing.
 - Only members of the message's conversation, and you, can read the page through the API.
 

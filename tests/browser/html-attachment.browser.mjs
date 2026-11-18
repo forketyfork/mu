@@ -103,44 +103,7 @@ const page = (elsewhere) => `<!doctype html>
 </html>`;
 
 test('an HTML attachment runs in its sandboxed frame without reaching Mu, the dashboard or the network', async (t) => {
-  const port = await freePort();
-  const app = await createApp({
-    home: await temporaryMuHome(t),
-    port,
-    dataDir: await shortTempDir(t, 'attachment-browser'),
-    chatFactory: (options) => new FakeChat(options),
-    pricing: offlinePricing(),
-    platform: 'darwin',
-  });
-  await app.start();
-  t.after(async () => {
-    app.runner.active.clear();
-    await app.close();
-  });
-  app.runner.paused = true;
-  const url = `http://127.0.0.1:${port}`;
-  const as = (headers) => async (method, path, data) => {
-    const response = await fetch(`${url}${path}`, {
-      method,
-      headers,
-      ...(data === undefined ? {} : { body: JSON.stringify(data) }),
-    });
-    return { status: response.status, body: await response.json() };
-  };
-  const user = as(userHeaders(app));
-  const worker = as({ 'Content-Type': 'application/json', Authorization: `Bearer ${app.identity.issue('worker')}` });
-  const created = async (path, body) => assert.equal((await user('POST', path, body)).status, 201, path);
-  await created('/api/agents', { id: 'lead', role: 'lead', adapter: 'manual', cwd: ROOT, task: '' });
-  await created('/api/conversations', { kind: 'room', id: 'work', name: 'Work', from: 'lead', members: [] });
-  await created('/api/agents', {
-    id: 'worker',
-    role: 'worker',
-    adapter: 'manual',
-    cwd: ROOT,
-    task: '',
-    conversationId: 'work',
-    from: 'lead',
-  });
+  const { app, url, worker, created } = await startDashboard(t);
 
   // A server that is not Mu.
   const reached = [];
@@ -164,40 +127,7 @@ test('an HTML attachment runs in its sandboxed frame without reaching Mu, the da
   });
   assert.equal(posted.status, 201, JSON.stringify(posted.body));
 
-  const browser = await startBrowser(t);
-  /** @type {Map<string, any>} */
-  const sessions = new Map();
-  browser.on((message) => {
-    if (message.method === 'Target.detachedFromTarget') sessions.delete(message.params.sessionId);
-    else if (message.method === 'Target.attachedToTarget') {
-      const { sessionId, targetInfo } = message.params;
-      sessions.set(sessionId, targetInfo);
-      void browser.send('Runtime.enable', {}, sessionId).catch(() => {});
-    }
-  });
-  const { targetId } = await browser.send('Target.createTarget', { url: 'about:blank' });
-  const { sessionId } = await browser.send('Target.attachToTarget', { targetId, flatten: true });
-  await browser.send('Page.enable', {}, sessionId);
-  await browser.send(
-    'Target.setAutoAttach',
-    { autoAttach: true, waitForDebuggerOnStart: false, flatten: true },
-    sessionId,
-  );
-  const evaluate = async (expression, session = sessionId) => {
-    const result = await browser.send(
-      'Runtime.evaluate',
-      { expression, returnByValue: true, awaitPromise: true },
-      session,
-    );
-    if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
-    return result.result.value;
-  };
-  const frameSession = () => [...sessions].find(([, info]) => info.type === 'iframe')?.[0];
-  const inFrame = (expression) => {
-    const current = frameSession();
-    if (!current) throw new Error('the attachment frame is not attached');
-    return evaluate(expression, current);
-  };
+  const { browser, sessionId, sessions, evaluate, inFrame, frameSession } = await startSession(t);
 
   await browser.send('Page.navigate', { url: `${url}/?token=${app.identity.token}#team-chat` }, sessionId);
   await until('the conversation list', () =>
@@ -404,6 +334,139 @@ test('an HTML attachment runs in its sandboxed frame without reaching Mu, the da
       leaked: '',
     },
   );
+});
+
+// A throwaway Mu app with a lead, a room `work` and a worker in it, as the user and the worker see its API.
+async function startDashboard(t) {
+  const port = await freePort();
+  const app = await createApp({
+    home: await temporaryMuHome(t),
+    port,
+    dataDir: await shortTempDir(t, 'attachment-browser'),
+    chatFactory: (options) => new FakeChat(options),
+    pricing: offlinePricing(),
+    platform: 'darwin',
+  });
+  await app.start();
+  t.after(async () => {
+    app.runner.active.clear();
+    await app.close();
+  });
+  app.runner.paused = true;
+  const url = `http://127.0.0.1:${port}`;
+  const as = (headers) => async (method, path, data) => {
+    const response = await fetch(`${url}${path}`, {
+      method,
+      headers,
+      ...(data === undefined ? {} : { body: JSON.stringify(data) }),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  const user = as(userHeaders(app));
+  const worker = as({ 'Content-Type': 'application/json', Authorization: `Bearer ${app.identity.issue('worker')}` });
+  const created = async (path, body) => assert.equal((await user('POST', path, body)).status, 201, path);
+  await created('/api/agents', { id: 'lead', role: 'lead', adapter: 'manual', cwd: ROOT, task: '' });
+  await created('/api/conversations', { kind: 'room', id: 'work', name: 'Work', from: 'lead', members: [] });
+  await created('/api/agents', {
+    id: 'worker',
+    role: 'worker',
+    adapter: 'manual',
+    cwd: ROOT,
+    task: '',
+    conversationId: 'work',
+    from: 'lead',
+  });
+  return { app, url, user, worker, created };
+}
+
+// A browser with one tab, and what it takes to read the tab and its attachment frame.
+async function startSession(t, options = {}) {
+  const browser = await startBrowser(t, options);
+  /** @type {Map<string, any>} */
+  const sessions = new Map();
+  browser.on((message) => {
+    if (message.method === 'Target.detachedFromTarget') sessions.delete(message.params.sessionId);
+    else if (message.method === 'Target.attachedToTarget') {
+      const { sessionId, targetInfo } = message.params;
+      sessions.set(sessionId, targetInfo);
+      void browser.send('Runtime.enable', {}, sessionId).catch(() => {});
+    }
+  });
+  const { targetId } = await browser.send('Target.createTarget', { url: 'about:blank' });
+  const { sessionId } = await browser.send('Target.attachToTarget', { targetId, flatten: true });
+  await browser.send('Page.enable', {}, sessionId);
+  await browser.send(
+    'Target.setAutoAttach',
+    { autoAttach: true, waitForDebuggerOnStart: false, flatten: true },
+    sessionId,
+  );
+  const evaluate = async (expression, session = sessionId) => {
+    const result = await browser.send(
+      'Runtime.evaluate',
+      { expression, returnByValue: true, awaitPromise: true },
+      session,
+    );
+    if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
+    return result.result.value;
+  };
+  const frameSession = () => [...sessions].find(([, info]) => info.type === 'iframe')?.[0];
+  const inFrame = (expression) => {
+    const current = frameSession();
+    if (!current) throw new Error('the attachment frame is not attached');
+    return evaluate(expression, current);
+  };
+  return { browser, sessionId, sessions, evaluate, inFrame, frameSession };
+}
+
+// What a page that plays sound needs from its frame. The user's click on Run lands in the dashboard, not in the page:
+// without the frame's `allow="autoplay"`, Chrome keeps the page's audio suspended until the user clicks or types inside
+// it. The browser is told its default policy, so the check does not depend on the flags of the build.
+const AUDIO_PAGE = `<!doctype html><title>Sound</title><canvas width="100" height="50"></canvas>
+<script>
+  const context = new AudioContext();
+  const tone = context.createOscillator();
+  tone.connect(context.destination);
+  tone.start();
+  window.audio = context;
+  window.keys = '';
+  addEventListener('keydown', (event) => { window.keys += event.key; });
+</script>`;
+
+async function runAudioPage(t) {
+  const { app, url, worker } = await startDashboard(t);
+  const posted = await worker('POST', '/api/messages', {
+    conversationId: 'work',
+    text: '@lead Listen.',
+    attachment: { type: 'html', title: 'Sound', html: AUDIO_PAGE },
+  });
+  assert.equal(posted.status, 201, JSON.stringify(posted.body));
+  const session = await startSession(t, {
+    args: ['--autoplay-policy=document-user-activation-required', '--mute-audio'],
+  });
+  const { browser, sessionId, evaluate, inFrame, frameSession } = session;
+  await browser.send('Page.navigate', { url: `${url}/?token=${app.identity.token}#team-chat` }, sessionId);
+  await until('the conversation list', () =>
+    evaluate(`Boolean(document.querySelector('#conversation-list [data-conversation="work"]'))`),
+  );
+  await evaluate(`document.querySelector('#conversation-list [data-conversation="work"]').click()`);
+  await until('the Run button', () => evaluate(`Boolean(document.querySelector('.message-attachment-run'))`));
+  await clickAt(
+    browser,
+    sessionId,
+    await evaluate(
+      `(() => { const box = document.querySelector('.message-attachment-run').getBoundingClientRect(); return { x: box.x + box.width / 2, y: box.y + box.height / 2 }; })()`,
+    ),
+  );
+  await until('the frame as a target of its own', frameSession);
+  await until('the page in the frame', () => inFrame(`Boolean(window.audio)`));
+  // Nothing has reached the page itself.
+  assert.equal(await inFrame(`navigator.userActivation.hasBeenActive`), false);
+  return session;
+}
+
+test('the page of an HTML attachment can play sound after the user clicked Run', async (t) => {
+  const { inFrame } = await runAudioPage(t);
+  await until('the audio running', async () => (await inFrame(`window.audio.state`)) === 'running', 5000);
 });
 
 // It takes the keyboard every 50 ms, records the keys it gets, and asks for its page again and again.

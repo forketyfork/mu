@@ -99,7 +99,9 @@ export function createAttachments({ document, window, request }) {
     frame.className = 'message-attachment-frame';
     frame.title = `HTML attachment ${part.message.attachment.title} from ${part.message.from}`;
     frame.setAttribute('sandbox', 'allow-scripts');
-    frame.setAttribute('allow', "picture-in-picture 'none'");
+    // The user's click on Run is in the dashboard, never in the page. Delegating autoplay lets the page's audio start
+    // on that click; without it the browser keeps the audio suspended until the user clicks or types in the page.
+    frame.setAttribute('allow', "autoplay; picture-in-picture 'none'");
     frame.setAttribute('loading', 'lazy');
     frame.referrerPolicy = 'no-referrer';
     // Tab passes over the page; the shield is the way in by keyboard.
