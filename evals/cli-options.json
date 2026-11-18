@@ -1,0 +1,39 @@
+{
+  "id": "cli-options",
+  "title": "Add a CLI option without breaking scripts",
+  "skill": "Contained implementation",
+  "prompt": "A CLI uses Node util.parseArgs in strict mode with options {\"format\":{\"type\":\"string\",\"short\":\"f\",\"default\":\"text\"}}. Users need repeatable --tag / -t values, including duplicates in order. With no tags, do not introduce a tag key. Return the complete replacement parseArgs options object in the field options. Also submit a regression test in regression: {argv: [argument strings], values: {exact expected options}}. Make it catch an implementation that keeps only the last tag, not just exercise a happy path. Do not return JavaScript.",
+  "checks": [
+    {
+      "label": "Old invocation keeps its default",
+      "type": "cli",
+      "field": "options",
+      "argv": [],
+      "values": { "format": "text" }
+    },
+    {
+      "label": "Existing short option still works",
+      "type": "cli",
+      "field": "options",
+      "argv": ["-f", "csv"],
+      "values": { "format": "csv" }
+    },
+    {
+      "label": "Aliases accumulate, not overwrite",
+      "type": "cli",
+      "field": "options",
+      "argv": ["--tag", "red", "-t", "blue", "--tag=red", "--format=json"],
+      "values": { "format": "json", "tag": ["red", "blue", "red"] }
+    },
+    {
+      "label": "The proposed regression test passes the reference and fails a last-tag-only implementation",
+      "type": "cli-regression",
+      "field": "regression",
+      "reference": {
+        "format": { "type": "string", "short": "f", "default": "text" },
+        "tag": { "type": "string", "short": "t", "multiple": true }
+      },
+      "lastOnly": "tag"
+    }
+  ]
+}

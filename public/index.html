@@ -61,6 +61,11 @@
             <path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7" />
           </svg>
         </a>
+        <a class="rail-link" href="#evals" data-view="evals" title="Model evals" aria-label="Model evals">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+            <path d="M4 4v16h17M8 16v-5m5 5V6m5 10V9" />
+          </svg>
+        </a>
         <a class="rail-link" href="#visuals" data-view="visuals" title="Visuals" aria-label="Visuals">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
             <path d="M6 3.5h8.5L19 8v12.5H6V3.5Z" />
@@ -328,6 +333,62 @@
             <div class="brag-periods" id="brag-periods"></div>
           </section>
 
+          <section class="brag-pane eval-pane" id="evals" aria-labelledby="eval-title" hidden>
+            <h2 id="eval-title">Model evals</h2>
+            <p>
+              Run the same work samples with different models. Compare correctness, cost and time, not just the final
+              answer.
+            </p>
+            <div id="eval-error" class="notice error-notice" role="alert" hidden></div>
+            <form id="eval-form">
+              <div class="eval-controls">
+                <label
+                  >Harness
+                  <select id="eval-adapter" required></select
+                ></label>
+                <label>Exact model ID <input id="eval-model" required maxlength="100" autocomplete="off" /></label>
+                <label
+                  >Reasoning effort
+                  <select id="eval-effort" required></select
+                ></label>
+                <label
+                  >Budget (USD)
+                  <input id="eval-budget" type="number" min="0.000001" max="1000" step="any" value="0.50" required
+                /></label>
+              </div>
+              <fieldset>
+                <legend>Work samples</legend>
+                <div id="eval-cases"></div>
+              </fieldset>
+              <p>
+                The budget stops the run before the next case. One Codex or pi case can go over it. Unknown cost stops
+                the run. Claude also receives the remaining budget.
+              </p>
+              <button class="button secondary" type="submit" id="eval-preview">Preview run</button>
+              <section id="eval-confirm" hidden>
+                <p id="eval-estimate" role="status"></p>
+                <button class="button primary" type="button" id="eval-start">Start paid run</button>
+              </section>
+            </form>
+            <section>
+              <h3>Compare saved runs</h3>
+              <p>
+                Each row is one version of a case. A changed fixture or scoring rule gets a separate row. One trial is
+                not a trend.
+              </p>
+              <div class="eval-controls">
+                <label
+                  >Run A
+                  <select id="eval-left"></select></label
+                ><label
+                  >Run B
+                  <select id="eval-right"></select></label
+                ><button class="button secondary" type="button" id="eval-refresh">Refresh</button
+                ><button class="button secondary" id="eval-older" type="button" hidden>Load older runs</button>
+              </div>
+              <div id="eval-comparison" aria-live="polite"></div>
+            </section>
+          </section>
           <section class="visuals-pane" id="visuals" aria-labelledby="visuals-title" hidden>
             <div class="visuals-index" id="visuals-index">
               <div class="section-heading">

@@ -217,6 +217,7 @@ export const viewHashes = Object.freeze({
   workspace: '#workspace',
   chat: '#team-chat',
   brag: '#brag-doc',
+  evals: '#evals',
   visuals: '#visuals',
 });
 

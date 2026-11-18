@@ -1,0 +1,20 @@
+{
+  "id": "merge-contract",
+  "title": "Resolve both sides of a contract change",
+  "skill": "Rebase judgment",
+  "prompt": "Base build plan: {phases:[lint,unit,publish], publish:{tag:stable,sign:false}}. Upstream renamed lint to check, added verify-signature just before publish and requires sign:true. Topic inserts integration immediately after unit and changes tag to preview, without changing signing. Supply the merged phases (array) and publish (object) in a single JSON object. Keep execution order.",
+  "checks": [
+    {
+      "label": "Both upstream and topic phases in execution order",
+      "type": "equals",
+      "field": "phases",
+      "value": ["check", "unit", "integration", "verify-signature", "publish"]
+    },
+    {
+      "label": "Keep upstream signing and topic release channel",
+      "type": "equals",
+      "field": "publish",
+      "value": { "tag": "preview", "sign": true }
+    }
+  ]
+}

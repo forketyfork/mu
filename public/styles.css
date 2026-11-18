@@ -4372,6 +4372,74 @@ kbd {
   background: var(--main-pane-surface-4);
 }
 
+.eval-pane form,
+.eval-pane fieldset,
+.eval-pane > section,
+#eval-comparison {
+  margin-top: var(--space-16px);
+}
+
+.eval-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-12px);
+}
+
+#eval-cases label {
+  display: block;
+}
+
+.eval-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6px);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.eval-controls .picker {
+  max-width: 100%;
+}
+
+/* Drawn like the picker triggers beside them. */
+.eval-controls input {
+  min-height: var(--space-40px);
+  max-width: 100%;
+  padding: 0 var(--space-12px);
+  border: 1px solid var(--conversation-browser-summary-edge);
+  border-radius: var(--border-radius-8px);
+  background: var(--conversation-browser-summary-surface);
+  color: var(--conversation-browser-summary-ink);
+}
+
+.eval-pane p {
+  margin-block: var(--space-8px);
+}
+
+#eval-comparison {
+  overflow-x: auto;
+}
+
+.eval-pane table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.eval-pane th,
+.eval-pane td {
+  padding: var(--space-10px);
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+
+.eval-pane pre {
+  max-width: 45ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .brag-periods {
   display: flex;
   flex-direction: column;

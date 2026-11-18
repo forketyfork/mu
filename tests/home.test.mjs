@@ -333,7 +333,7 @@ test('MU_HOME cannot overlap the checkout, and the data directory lies beside th
     initializeHome({ home, root, env: { MU_DATA_DIR: dirname(home) } }),
     /must not hold the Mu home/,
   );
-  for (const entry of ['skills', 'memory/lead/data', 'config.json', '.install'])
+  for (const entry of ['skills', 'memory/lead/data', 'evals/data', 'config.json', '.install'])
     await assert.rejects(
       initializeHome({ home, root, env: { MU_DATA_DIR: join(home, entry) } }),
       new RegExp(`overlaps ${join(home, entry.split('/')[0])}, which belongs to the Mu home`),

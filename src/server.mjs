@@ -13,6 +13,8 @@ import { createTasks } from './tasks.mjs';
 import { createWaiting } from './waiting.mjs';
 import { createActivities } from './activities.mjs';
 import { createVisuals } from './visuals.mjs';
+import { createEvals } from './evals.mjs';
+import { containerRunner } from './eval-runner.mjs';
 import { FRAME_POLICY, PAGE_POLICY, commonJsModule, frameAssetOf } from './browser-policy.mjs';
 import { createDashboardStream } from './dashboard.mjs';
 import { dependencyError } from './dependencies.mjs';
@@ -95,6 +97,7 @@ export async function createApp({
     fetch: pricingFetch,
   }),
   transcriptHomes = {},
+  evalRunner = null,
   launchd = null,
   requireIrc = false,
   exit = /** @type {(code: number) => void} */ ((code) => process.exit(code)),
@@ -161,6 +164,7 @@ export async function createApp({
     getConversations: () => store.conversations(),
   };
   const chat = chatFactory ? chatFactory(options) : new Chat(options);
+  const evals = createEvals({ store, home: resolvedHome, root, runner: evalRunner ?? containerRunner(env, pricing) });
   const url = `http://127.0.0.1:${port}`;
   const sockets = new AgentSockets({
     dataDir,
@@ -627,6 +631,19 @@ export async function createApp({
           'reads the whole workspace state, which includes every private chat; agents use agents, task list, room list and history',
         );
       if (request.method === 'GET' && pathname === '/api/state') return send(response, 200, state());
+      if (pathname === '/api/evals' || pathname.startsWith('/api/evals/')) {
+        userOnly(request, 'runs and reads private model evaluations');
+        if (request.method === 'GET' && pathname === '/api/evals') return send(response, 200, await evals.catalog());
+        if (request.method === 'GET' && pathname === '/api/evals/runs')
+          return send(response, 200, evals.list(parsed.searchParams.get('before')));
+        const match = /^\/api\/evals\/runs\/(\d+)$/.exec(pathname);
+        if (request.method === 'GET' && match) return send(response, 200, evals.details(Number(match[1])));
+        if (request.method === 'POST' && pathname === '/api/evals/estimate')
+          return send(response, 200, await evals.estimate(await body(request)));
+        if (request.method === 'POST' && pathname === '/api/evals/runs')
+          return send(response, 202, await evals.start(await body(request)));
+        throw bad('Unknown eval route', 404);
+      }
       if (request.method === 'GET' && pathname === '/api/agents')
         return send(response, 200, registryFor(request.caller));
       if (request.method === 'GET' && pathname === '/api/conversations')
@@ -1239,6 +1256,7 @@ export async function createApp({
         } catch (error) {
           failure = error;
         }
+        await evals.close();
         pricing.close();
         dashboard.close();
         await new Promise((resolveClose) => server.close(resolveClose));

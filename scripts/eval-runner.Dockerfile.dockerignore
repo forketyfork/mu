@@ -1,0 +1,8 @@
+**
+!src/
+!src/eval-driver.mjs
+!src/adapters.mjs
+!src/sandbox.mjs
+!src/paths.mjs
+!src/codex-rollout.mjs
+!src/files.mjs

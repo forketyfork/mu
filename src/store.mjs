@@ -77,6 +77,9 @@ export class Store extends EventEmitter {
       CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, data TEXT NOT NULL);
       -- The role files of the Mu home as the service last saw them, so that a change shows up once, also across restarts.
       CREATE TABLE IF NOT EXISTS role_files (name TEXT PRIMARY KEY, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS eval_runs (id INTEGER PRIMARY KEY, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS eval_results (run_id INTEGER NOT NULL REFERENCES eval_runs(id), digest TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(run_id,digest));
+      CREATE INDEX IF NOT EXISTS eval_result_history ON eval_results(digest,run_id DESC);
       -- History reads filter on the conversation: GET /api/state reads the latest messages of every conversation, and
       -- the dashboard pages through one. Without this index each read parses every stored message; when the dashboard
       -- state was rebuilt on each change, that blocked the event loop for seconds per change and stalled HTTP and IRC.

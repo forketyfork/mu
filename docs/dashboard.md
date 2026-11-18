@@ -2,7 +2,7 @@
 
 The dashboard is at `http://127.0.0.1:4310/`. Sign in once per browser with the link that Mu prints at start, or that `node src/cli.mjs dashboard` prints.
 
-The page has two main views, switched with the icons in the left rail: the **workspace** (tasks and agents) and the **chat**. A badge on the chat icon counts unread messages from agents. The left rail also opens the **Brag doc** and the **Theme** picker. **New agent** in the header starts an agent.
+The left rail switches between the **workspace** (tasks and agents), **chat**, **Brag doc**, **Visuals** and [**Model evals**](evals.md). A badge on the chat icon counts unread messages from agents. **New agent** in the header starts an agent.
 
 The page updates live. When the connection to Mu drops, the header shows **Updates disconnected**; the page reconnects by itself and catches up, also after Mu restarts.
 

@@ -32,6 +32,14 @@ export function effortError(adapter, effort) {
   return null;
 }
 
+export const modelArgs = ({ adapter, model }) => (model ? [adapter === 'codex' ? '-m' : '--model', model] : []);
+export const effortArgs = ({ adapter, effort }) =>
+  !effort
+    ? []
+    : adapter === 'codex'
+      ? ['-c', `model_reasoning_effort=${effort}`]
+      : [adapter === 'pi' ? '--thinking' : '--effort', effort];
+
 // Adapters whose agents run in a sandbox that keeps Mu's data directory unreadable, apart from their own files.
 export const SANDBOXED_ADAPTERS = ['codex', 'pi'];
 
@@ -122,9 +130,9 @@ export function commandFor(agent, root, custom = {}, cliArgs = {}, options = {})
       ...CODEX_APPROVALS,
       ...(cliArgs.codex || []),
       ...(agent.role === 'lead' ? CODEX_MEMORY_OFF : []),
-      ...(agent.effort ? ['-c', `model_reasoning_effort=${agent.effort}`] : []),
+      ...effortArgs(agent),
     ];
-    const model = agent.model ? ['-m', agent.model] : [];
+    const model = modelArgs(agent);
     return agent.sessionId
       ? {
           command: 'codex',
@@ -140,8 +148,8 @@ export function commandFor(agent, root, custom = {}, cliArgs = {}, options = {})
       command: 'claude',
       args: [
         ...(agent.role === 'lead' ? claudeLeadArgs(cliArgs.claude || []) : cliArgs.claude || []),
-        ...(agent.model ? ['--model', agent.model] : []),
-        ...(agent.effort ? ['--effort', agent.effort] : []),
+        ...modelArgs(agent),
+        ...effortArgs(agent),
         '-p',
         '--verbose',
         '--output-format',
@@ -167,9 +175,8 @@ export function commandFor(agent, root, custom = {}, cliArgs = {}, options = {})
           '-p',
           '--mode',
           'json',
-          '--model',
-          agent.model,
-          ...(agent.effort ? ['--thinking', agent.effort] : []),
+          ...modelArgs(agent),
+          ...effortArgs(agent),
           '--session-id',
           agent.sessionId || randomUUID(),
         ],

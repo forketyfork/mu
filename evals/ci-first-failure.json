@@ -1,0 +1,11 @@
+{
+  "id": "ci-first-failure",
+  "title": "Find the first causal failure",
+  "skill": "CI diagnosis",
+  "prompt": "Two independent release jobs ended with 'no artifact'. A: [a1] warning: cache miss; [a2] compile OK; [a3] package: dist/manifest.json missing, exit 2; [a4] publish skipped. B: [b1] warning: cache miss; [b2] compile: unknown type Duration, exit 1; [b3] package skipped; [b4] publish skipped. For A and B respectively give the first fatal line id in first (array), the stages to fix in stages (array), and the line ids showing that the shared warning alone does not prove a compiler failure in contrast (array: success, then failure).",
+  "checks": [
+    { "label": "Causal line in both jobs", "type": "equals", "field": "first", "value": ["a3", "b2"] },
+    { "label": "Fix the producing stages", "type": "equals", "field": "stages", "value": ["package", "compile"] },
+    { "label": "Contrast success and failure", "type": "equals", "field": "contrast", "value": ["a2", "b2"] }
+  ]
+}

@@ -56,7 +56,7 @@ export function resolveConfigFile(env = process.env, home = resolveHome(env)) {
 
 // The entries that the home itself holds. The data directory may lie in the home, as it does by default, but
 // beside these entries: init and the sandbox rules treat each of them on its own.
-const HOME_ENTRIES = Object.freeze(['skills', 'memory', 'projects.md', 'config.json', '.install', '.backup']);
+const HOME_ENTRIES = Object.freeze(['skills', 'memory', 'evals', 'projects.md', 'config.json', '.install', '.backup']);
 
 function placementError(home, sourceCheckout, dataDir) {
   if (pathsOverlap(home, sourceCheckout)) return 'MU_HOME must be separate from the Mu checkout.';

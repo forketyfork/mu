@@ -50,6 +50,7 @@ import {
 import { markdownElement } from './markdown.js';
 import { emptyMessages, groupBrag } from './brag.js';
 import { bragSections } from './brag-view.js';
+import { createEvalsView } from './evals-view.js';
 import { createMotion, stateChanges, themeValue } from './motion.js';
 import { rawInput, toolView } from './tools.js';
 import { createPicker, enhanceSelects } from './picker.js';
@@ -613,8 +614,9 @@ function renderMentionList(mentions) {
   );
 }
 
-const viewLabels = { workspace: 'Overview', chat: 'Chat', brag: 'Brag doc', visuals: 'Visuals' };
-const viewPanes = { workspace: 'workspace', chat: 'team-chat', brag: 'brag-doc', visuals: 'visuals' };
+const viewLabels = { workspace: 'Overview', chat: 'Chat', brag: 'Brag doc', visuals: 'Visuals', evals: 'Model evals' };
+const viewPanes = { workspace: 'workspace', chat: 'team-chat', brag: 'brag-doc', visuals: 'visuals', evals: 'evals' };
+const evalsView = createEvalsView(document, request);
 
 function showView(next) {
   const changed = next !== view;
@@ -638,6 +640,8 @@ function showView(next) {
     scrollChat();
   }
   if (view === 'brag') void loadBrag();
+  if (view === 'evals') evalsView.show();
+  else evalsView.hide();
   if (view === 'visuals' && state) visualsView.show(visualFromHash(location.hash));
   if (changed) motion.play($(viewPanes[view]), 'panel');
 }

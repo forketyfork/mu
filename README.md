@@ -125,6 +125,7 @@ Then give the lead its first job. Decisions that wait for you appear at the top 
 | [Visuals](docs/visuals.md) | Documents with diagrams and highlighted code that agents write for you: reading them, versions, how agents write them |
 | [The lead](docs/lead.md) | The lead's memory, its model and effort, an interactive lead in your own terminal |
 | [Agent CLIs](docs/harnesses.md) | Claude Code, Codex and pi: permissions, sandboxes and setup; other CLIs |
+| [Model evals](docs/evals.md) | Run private work samples, preview spend and compare saved results |
 | [Security model](docs/security.md) | Who may do what, and how strong each agent's isolation is |
 | [CLI reference](docs/cli.md) | The `node src/cli.mjs` commands |
 | [Development](docs/development.md) | Tests, checks, Git hooks, adding a dashboard theme |
