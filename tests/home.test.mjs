@@ -160,6 +160,37 @@ test('an existing unmanaged role file and seed are kept without starting managem
   assert.equal(await readFile(join(home, DEFAULTS[0]), 'utf8'), 'user-owned role file\n');
 });
 
+test('a manifest entry for a role file this checkout does not ship is ignored, and init forgets it', async (t) => {
+  const home = await temporaryHome(t);
+  const root = await sourceRoot(t);
+  await initializeHome({ home, root });
+  // A newer checkout installed a role file that this one does not ship, as after a revert.
+  const gone = 'skills/worker/gone.md';
+  await writeFile(join(home, gone), 'role file from a newer checkout\n', { mode: 0o600 });
+  const manifestPath = join(home, '.install/manifest.json');
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  manifest.files[gone] = 'a'.repeat(64);
+  manifest.installedAt[gone] = new Date().toISOString();
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  const state = await homeState({ home, root });
+  assert.deepEqual(
+    state.defaults.map(({ path, state }) => [path, state]),
+    DEFAULTS.map((path) => [path, 'current']),
+  );
+  const preview = await initializeHome({ home, root, dryRun: true });
+  assert.ok(preview.actions.some(({ path, action }) => path === gone && action === 'forget'));
+  assert.ok(
+    preview.actions.some(({ path, action }) => path === '.install/manifest.json' && action === 'write-manifest'),
+  );
+
+  await initializeHome({ home, root });
+  const pruned = JSON.parse(await readFile(manifestPath, 'utf8'));
+  assert.equal(gone in pruned.files, false);
+  assert.equal(gone in pruned.installedAt, false);
+  assert.equal(await readFile(join(home, gone), 'utf8'), 'role file from a newer checkout\n');
+});
+
 test('existing home files become private, and dry-run only reports the mode change', async (t) => {
   const home = await temporaryHome(t);
   const root = await sourceRoot(t);

@@ -275,16 +275,11 @@ function validateManifest(value, path) {
   )
     throw new Error(`Mu home manifest ${path} has an unsupported format`);
   for (const [name, digest] of Object.entries(value.files)) {
-    if (!DEFAULTS.includes(name) || typeof digest !== 'string' || !/^[a-f0-9]{64}$/.test(digest))
+    if (typeof digest !== 'string' || !/^[a-f0-9]{64}$/.test(digest))
       throw new Error(`Mu home manifest ${path} has an invalid entry for ${name}`);
   }
   for (const [name, installedAt] of Object.entries(value.installedAt)) {
-    if (
-      !DEFAULTS.includes(name) ||
-      !(name in value.files) ||
-      typeof installedAt !== 'string' ||
-      !Number.isFinite(Date.parse(installedAt))
-    )
+    if (!(name in value.files) || typeof installedAt !== 'string' || !Number.isFinite(Date.parse(installedAt)))
       throw new Error(`Mu home manifest ${path} has an invalid install time for ${name}`);
   }
   if (Object.keys(value.files).some((name) => !(name in value.installedAt)))
@@ -486,6 +481,15 @@ export async function initializeHome({
   const baseWrites = [];
   const actions = [];
   const conflicts = [];
+
+  // A newer checkout may have installed role files that this one does not ship, for example before a revert.
+  // They stay on disk, but this checkout no longer manages them.
+  for (const path of Object.keys(files)) {
+    if (shipped.has(path)) continue;
+    delete files[path];
+    delete installedAt[path];
+    actions.push({ path, action: 'forget' });
+  }
 
   for (const [path, updated] of shipped) {
     const current = await readHomeText(absoluteHome, path);

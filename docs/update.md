@@ -117,9 +117,10 @@ The plan has more entries than role files. The rest concern the other files of t
 | `create-directory` | A directory of the home does not exist yet, and `init` creates it with mode 0700. |
 | `restrict-directory-mode` | A directory of the home is readable by others. `init` sets its mode to 0700, so only your user can read it. |
 | `restrict-file-mode` | A file of the home is readable by others. `init` sets its mode to 0600. |
+| `forget` | The record lists a role file that this checkout does not ship, for example after a revert to an older version. `init` drops it from the record and leaves the file in the home. Mu does not read it. |
 | `accept-current-edit` | Only with `--accept FILE`: `init` records the shipped version as the file's merge base and leaves the file as it is. |
 
-The mode entries are routine on an older home: they list each file whose permissions differ and change nothing else. Nothing needs your attention in `seed`, `keep-seed`, `write-manifest` and the mode entries. `init` still never overwrites `projects.md`, `memory/lead/MEMORY.md` or `config.json`.
+The mode entries are routine on an older home: they list each file whose permissions differ and change nothing else. Nothing needs your attention in `seed`, `keep-seed`, `write-manifest`, `forget` and the mode entries. `init` still never overwrites `projects.md`, `memory/lead/MEMORY.md` or `config.json`.
 
 Run it when the plan looks right:
 
