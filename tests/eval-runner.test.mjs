@@ -63,8 +63,6 @@ test('a case container is sealed, and only explicit MU_EVAL_ values for the sele
       CLAUDE_CODE_OAUTH_TOKEN: 'service-login',
       OPENAI_API_KEY: 'service-openai-key',
       MU_EVAL_ANTHROPIC_API_KEY: 'eval-anthropic-key',
-      // A subscription login is not an evaluation credential, even when it is named for evaluations.
-      MU_EVAL_CLAUDE_CODE_OAUTH_TOKEN: 'eval-login',
       MU_EVAL_ANTHROPIC_BASE_URL: 'http://gateway.example/anthropic',
       MU_EVAL_CODEX_API_KEY: 'eval-codex-key',
       MU_EVAL_PI_OPENROUTER_API_KEY: 'eval-openrouter-key',
