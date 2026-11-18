@@ -118,6 +118,22 @@ test('say --html fails when the service posted the message without its page', as
   await assert.rejects(main(['say', '--html', file, 'Play'], env), /#9 without its HTML attachment.*Restart Mu/);
 });
 
+test('say offers choices separated by |, and fails when the service drops them', async (t) => {
+  const { calls, env } = await fixture(t, { id: 7, choices: ['Yes', 'No, wait'] });
+  await main(['say', '--choices', 'Yes | No, wait', 'Merge it?'], env);
+  assert.deepEqual(calls[0].body, {
+    from: 'lead',
+    conversationId: 'common',
+    text: 'Merge it?',
+    choices: ['Yes', 'No, wait'],
+  });
+  const old = await fixture(t, { id: 8 });
+  await assert.rejects(
+    main(['say', '--choices', 'Yes|No', 'Merge it?'], old.env),
+    /posted message #8 without its choices: the running service is older/,
+  );
+});
+
 test('self-registration works when the shell already contains the new identity', async (t) => {
   const { calls, env } = await fixture(t);
   await main(

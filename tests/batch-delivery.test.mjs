@@ -7,7 +7,7 @@ import { Store } from '../src/store.mjs';
 import { Runner } from '../src/runner.mjs';
 import { readTurn, turnReply } from '../src/adapters.mjs';
 import { ROOT } from '../src/server.mjs';
-import { attachmentPlaceholder } from '../src/attachments.mjs';
+import { attachmentPlaceholder, choicesPlaceholder } from '../src/attachments.mjs';
 import { testIdentity } from './identity-fixture.mjs';
 
 async function until(check) {
@@ -523,6 +523,21 @@ test('a reply posted while the agent is stopped is acknowledged and not posted a
     [`@lead\n\ndone ${request.id}`],
   );
   assert.equal((await runs()).length, 1);
+});
+
+test('a turn prompt lists the choices of a question that the user answers in the dashboard', async (t) => {
+  const { runs, custom } = await fixture(t);
+  const store = new Store();
+  t.after(() => store.close());
+  team(store);
+  const { runner } = harness(t, store, custom);
+  const message = store.addMessage('with-choices', 'lead', '@worker Merge it?', 'room-a', { choices: ['Yes', 'No'] });
+  runner.kick();
+  await until(() => !pendingIds(store).length);
+  await settled(runner);
+  const [run] = await runs();
+  assert.equal(run.id, message.id);
+  assert.ok(run.prompt.includes(`@worker Merge it?\n${choicesPlaceholder(['Yes', 'No'])}`), run.prompt);
 });
 
 test('a turn prompt names an attachment by its placeholder and leaves its page out', async (t) => {

@@ -416,13 +416,13 @@ export class Chat extends EventEmitter {
       const observer = await this.connect(this.observerNick);
       await this.inviteMember(observer, from, conversation.channel);
     }
-    // IRC clients cannot run an attachment, so the line carries its placeholder; Mu records the attachment itself.
-    const line = meta.attachment
-      ? plainMessageText({
-          text,
-          attachment: { ...meta.attachment, bytes: Buffer.byteLength(meta.attachment.html) },
-        })
-      : text;
+    // IRC clients cannot run an attachment or click a choice, so the line carries their placeholders; Mu records
+    // the attachment and the choices themselves.
+    const line = plainMessageText({
+      text,
+      ...(meta.attachment && { attachment: { ...meta.attachment, bytes: Buffer.byteLength(meta.attachment.html) } }),
+      ...(meta.choices && { choices: meta.choices }),
+    });
     const parts = chunks(line.replace(/[\r\n]/g, '↵'));
     const id = randomUUID();
     return new Promise((resolve, reject) => {

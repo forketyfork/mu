@@ -36,6 +36,7 @@ node src/cli.mjs say --conversation issue-42 "@all Coordinate ownership before e
 node src/cli.mjs say --conversation issue-42 --file brief.md
 node src/cli.mjs say --conversation issue-42 --html pong.html "@lead The game is ready"
 node src/cli.mjs attachment --message 120             # print the HTML attached to #120
+node src/cli.mjs say --conversation dm-lead --choices "Merge|Wait" "The review passed. Merge it now?"
 node src/cli.mjs history --conversation issue-42
 node src/cli.mjs history --conversation issue-42 --after 120   # only messages after #120
 node src/cli.mjs room create --name "Issue 42" --id issue-42 --members lead
@@ -48,6 +49,7 @@ node src/cli.mjs room list
 - `room create` records the conversation it was created from; `--source-conversation ID` sets it explicitly, so that the lead reports back to your original chat.
 - Messages can hold up to 64 KiB of UTF-8 text.
 - `say --html FILE` attaches a self-contained HTML page of at most 256 KiB, which the dashboard runs under the message after the user clicks **Run**. Its title is the file name without extension; `--title` sets another. Scripts and styles are inline, and images, fonts and sounds are `data:` URLs: the page loads no other file and has no network. Where it cannot run (IRC, turn prompts, `chat`), the message ends with a placeholder line; `history` lists its title and size. `say --html` fails when the service did not keep the page, as a service started before this feature does.
+- `say --choices "A|B"` offers the user 2–6 answers of at most 60 characters each, separated by `|`, as buttons under the message. The user's click posts the user's answer to the sender: `> Re: <the last line of the text>` and the label. Put the question on the last line. Where buttons cannot be shown (IRC, turn prompts, `chat`), the message ends with a line that lists the choices; `history` lists them as `choices`, and the answer as `answers` (the question's ID) and `choice`. `say --choices` fails when the service did not keep the choices, as a service started before this feature does.
 
 ## Tasks
 

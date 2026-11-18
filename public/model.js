@@ -133,6 +133,19 @@ export function conversationMessages(messages, conversationId) {
   return messages.filter((message) => message.conversationId === conversationId);
 }
 
+// The user's message that picked one of a question's choices. It follows the question in its conversation, so a
+// dashboard that holds the question holds its answer too.
+export function choiceAnswer(messages, question) {
+  return (
+    messages.find(
+      (message) =>
+        message.answers === question.id &&
+        message.conversationId === question.conversationId &&
+        message.id > question.id,
+    ) ?? null
+  );
+}
+
 export function defaultConversationId(conversations) {
   return (
     conversations.find((conversation) => conversation.id === 'dm-lead')?.id ??

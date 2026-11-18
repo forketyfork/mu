@@ -246,10 +246,12 @@ export class Store extends EventEmitter {
     this.changed(['agents', id]);
     return this.agent(id);
   }
-  // `attachment` is a checked HTML attachment, { type, title, html }; see src/attachments.mjs.
+  // `attachment` is a checked HTML attachment, { type, title, html }; see src/attachments.mjs. `choices` are the
+  // labelled answers an agent offers the user; `answers` and `choice` mark the user's message that picked one of them,
+  // by the ID of the question. Messages never change, so whether a question is answered is read from its answer.
   addMessage(transportId, from, text, conversationId = 'common', meta = {}) {
-    /** @type {{ autoRouted?: boolean, attachment?: { type: string, title: string, html: string } }} */
-    const { autoRouted = false, attachment } = meta;
+    /** @type {{ autoRouted?: boolean, attachment?: { type: string, title: string, html: string }, choices?: string[], answers?: number, choice?: string }} */
+    const { autoRouted = false, attachment, choices, answers, choice } = meta;
     const existing = this.db.prepare('SELECT id,data FROM messages WHERE transport_id=?').get(transportId);
     if (existing) return { id: existing.id, ...parseData(existing) };
     const conversation = this.conversation(conversationId);
@@ -266,6 +268,8 @@ export class Store extends EventEmitter {
       ...(attachment && {
         attachment: { type: attachment.type, title: attachment.title, bytes: Buffer.byteLength(attachment.html) },
       }),
+      ...(choices && { choices }),
+      ...(answers !== undefined && { answers, choice }),
       createdAt: new Date().toISOString(),
     };
     const recipients = [];
@@ -326,6 +330,16 @@ export class Store extends EventEmitter {
       .all(conversationId, from, after, limit)
       .reverse()
       .map((row) => ({ id: row.id, ...parseData(row) }));
+  }
+  // The user's answer to a message that offered choices, or null. An answer follows its question in the same
+  // conversation, so the conversation index bounds the read.
+  answerTo(question) {
+    const row = this.db
+      .prepare(
+        "SELECT id,data FROM messages WHERE json_extract(data,'$.conversationId')=? AND id>? AND json_extract(data,'$.answers')=? ORDER BY id LIMIT 1",
+      )
+      .get(question.conversationId, question.id, question.id);
+    return row ? { id: row.id, ...parseData(row) } : null;
   }
   message(id) {
     const row = this.db.prepare('SELECT id,data FROM messages WHERE id=?').get(id);

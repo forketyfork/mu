@@ -5,6 +5,7 @@ import {
   agentRuntime,
   archivedActivities,
   archivedItems,
+  choiceAnswer,
   codeReference,
   conversationActivity,
   conversationMessages,
@@ -1624,15 +1625,20 @@ function activityLink(task) {
   return wrapper;
 }
 
-// The quote tells the lead which decision the reply answers; the cursor waits on the line below it.
+// The quote tells the agent which question the reply answers; the cursor waits on the line below it, under the draft
+// that was already in the composer.
+function quoteInComposer(quote) {
+  const draft = elements.input.value.trimEnd();
+  elements.input.value = `${draft ? `${draft}\n\n` : ''}${quote}\n\n`;
+  elements.input.setSelectionRange(elements.input.value.length, elements.input.value.length);
+  drafts.set(conversationId, elements.input.value);
+  updateInput();
+  elements.input.focus();
+}
+
 function replyToWaiting(card) {
   openConversation('dm-lead');
-  if (conversationId !== 'dm-lead') return;
-  const draft = elements.input.value.trimEnd();
-  elements.input.value = `${draft ? `${draft}\n\n` : ''}> Re: ${card.text}\n\n`;
-  elements.input.setSelectionRange(elements.input.value.length, elements.input.value.length);
-  drafts.set('dm-lead', elements.input.value);
-  updateInput();
+  if (conversationId === 'dm-lead') quoteInComposer(`> Re: ${card.text}`);
 }
 
 function resultPreview(source) {
@@ -2001,9 +2007,61 @@ function messageRow(message, recipients) {
   header.append(time, node('span', 'message-id', `#${message.id}`));
   main.append(header, markdown('message-text', message.text, recipients));
   if (message.attachment) main.append(attachments.element(message));
+  if (message.choices) main.append(choicesBlock(message));
   row.append(main);
   row.dataset.message = message.id;
   return row;
+}
+
+// The labels the user clicked, by question, from the click until the answer is in the chat.
+const sentChoices = new Map();
+
+// A question offers a button per label until its answer is in the chat; see "Choices in messages" in
+// docs/architecture.md. Writing a reply instead leaves the buttons, because Mu cannot tell whether the words answer it.
+function choicesBlock(question) {
+  const block = node('div', 'message-choices');
+  block.dataset.choicesFor = question.id;
+  const chosen = choiceAnswer(state.messages, question)?.choice ?? sentChoices.get(question.id);
+  if (chosen !== undefined) {
+    block.classList.add('answered');
+    block.append(node('span', 'choice-answered', 'You chose'), node('span', 'choice-chosen', chosen));
+    return block;
+  }
+  for (const label of question.choices) {
+    const button = node('button', 'choice', label);
+    button.type = 'button';
+    button.addEventListener('click', () => void choose(question, label));
+    block.append(button);
+  }
+  const words = node('button', 'choice-words', 'Reply in words');
+  words.type = 'button';
+  words.addEventListener('click', () => {
+    const direct = currentConversation()?.kind === 'direct';
+    quoteInComposer(`${direct ? '' : `@${question.from}\n\n`}> Re: \`#${question.id}\``);
+  });
+  block.append(words);
+  return block;
+}
+
+function refreshChoices(id) {
+  const question = state.messages.find((message) => message.id === id);
+  const block = messageRows.get(id)?.querySelector('.message-choices');
+  if (question?.choices && block) block.replaceWith(choicesBlock(question));
+}
+
+async function choose(question, label) {
+  if (sentChoices.has(question.id)) return;
+  sentChoices.set(question.id, label);
+  refreshChoices(question.id);
+  showError('chat-error', '');
+  try {
+    await request(`/api/messages/${question.id}/choice`, { method: 'POST', body: JSON.stringify({ choice: label }) });
+    forceScroll = true;
+  } catch (error) {
+    sentChoices.delete(question.id);
+    refreshChoices(question.id);
+    showError('chat-error', `Answer not sent: ${error.message}`);
+  }
 }
 
 // Appends the rows of messages after those shown, each under its day; returns the new rows.
@@ -2041,9 +2099,11 @@ function renderMessages(arrivals = new Set()) {
   /** @type {[number, HTMLElement][]} */
   let rows;
   if (appending) {
-    rows = appendMessageRows(elements.messages, messages.slice(messageRows.size));
+    const appended = messages.slice(messageRows.size);
+    rows = appendMessageRows(elements.messages, appended);
     for (const [id, row] of rows) messageRows.set(id, row);
     attachments.settle(elements.messages);
+    for (const message of appended) if (message.answers !== undefined) refreshChoices(message.answers);
   } else {
     const fragment = document.createDocumentFragment();
     lastRenderedDay = undefined;

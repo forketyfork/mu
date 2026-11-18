@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
-import { attachmentPlaceholder, plainMessageText } from './attachments.mjs';
+import { attachmentPlaceholder, choicesPlaceholder, plainMessageText } from './attachments.mjs';
 import { NO_REPLY, commandFor, emptyTurn, foldTurn, muCommand, turnReply } from './adapters.mjs';
 import { MAX_MESSAGE_BYTES } from './chat.mjs';
 import { DEFAULTS } from './home.mjs';
@@ -458,7 +458,7 @@ export class Runner {
       ? `Messages from your other sessions posted in this direct chat since your last turn (shortened):\n${messages
           .map(
             (message) =>
-              `#${message.id}: ${shortenDirectMessage(message.text)}${message.attachment ? ` ${attachmentPlaceholder(message.attachment)}` : ''}`,
+              `#${message.id}: ${shortenDirectMessage(message.text)}${message.attachment ? ` ${attachmentPlaceholder(message.attachment)}` : ''}${message.choices ? ` ${choicesPlaceholder(message.choices)}` : ''}`,
           )
           .join('\n')}${omitted ? '\nSome earlier messages may be omitted.' : ''}\n`
       : '';

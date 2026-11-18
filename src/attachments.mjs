@@ -54,8 +54,20 @@ export const attachmentPlaceholder = (attachment) =>
   `[HTML attachment "${attachment.title}", ${sizeLabel(attachment.bytes)}: open the message in the Mu dashboard to see it]`;
 
 /**
- * The text of a message as a reader without the dashboard gets it: its words, then the placeholder of its attachment.
- * @param {{ text: string, attachment?: { type: string, title: string, bytes: number } }} message
+ * The line that stands for the buttons of a question where they cannot be clicked.
+ * @param {string[]} choices
+ */
+export const choicesPlaceholder = (choices) =>
+  `[Choices for the user: ${choices.join(' | ')}; the user clicks one in the Mu dashboard or writes a reply]`;
+
+/**
+ * The text of a message as a reader without the dashboard gets it: its words, then the placeholders of its
+ * attachment and its choices.
+ * @param {{ text: string, attachment?: { type: string, title: string, bytes: number }, choices?: string[] }} message
  */
 export const plainMessageText = (message) =>
-  message.attachment ? `${message.text}\n${attachmentPlaceholder(message.attachment)}` : message.text;
+  [
+    message.text,
+    ...(message.attachment ? [attachmentPlaceholder(message.attachment)] : []),
+    ...(message.choices ? [choicesPlaceholder(message.choices)] : []),
+  ].join('\n');

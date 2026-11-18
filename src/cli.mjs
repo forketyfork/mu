@@ -17,9 +17,11 @@ Usage: node src/cli.mjs COMMAND [options]
                   (--model: the native CLI's model name or alias for claude, codex and pi; required for pi; default: the CLI's configured model)
                   (--effort: reasoning effort for every turn; claude: low|medium|high|xhigh|max,
                    codex: none|minimal|low|medium|high|xhigh|max, pi: off|minimal|low|medium|high|xhigh|max; default: the CLI's)
-  say             [--from ID] [--conversation ID] TEXT  (or --file FILE) [--html FILE [--title TITLE]]
+  say             [--from ID] [--conversation ID] TEXT  (or --file FILE) [--html FILE [--title TITLE]] [--choices "Yes|No"]
                   (--html: attach a self-contained HTML page, at most 256 KiB, that the dashboard runs in a sandboxed
                    frame under the message, without network access; --title names it, default: the file name)
+                  (--choices: 2–6 answers, separated by |, that the dashboard offers the user as buttons; a click
+                   sends the label back to the sender as the user's message, quoting the last line of TEXT)
   attachment      --message MESSAGE_ID  (prints the HTML page attached to a message)
   init            [--dry-run] [--accept ROLE_FILE] [--adopt]
                   (user's shell or managed lead; installs or upgrades instructions and seed files in MU_HOME, default ~/.mu)
@@ -103,7 +105,7 @@ const commandOptions = {
     'task-id',
     'task-title',
   ],
-  say: ['from', 'file', 'conversation', 'room', 'html', 'title'],
+  say: ['from', 'file', 'conversation', 'room', 'html', 'title', 'choices'],
   attachment: ['message'],
   'room:create': ['id', 'name', 'members', 'from', 'source-conversation'],
   'room:invite': ['conversation', 'room', 'members', 'from'],
@@ -483,14 +485,25 @@ export async function main(
       const from = values.from ?? env.MU_AGENT_ID ?? 'user';
       const conversationId = selectedConversation ?? env.MU_CONVERSATION_ID ?? 'common';
       const attachment = values.html === undefined ? undefined : await htmlAttachment(values.html, values.title);
+      const choices = values.choices?.split('|').map((label) => label.trim());
       const sent = await request(url, '/api/messages', {
         method: 'POST',
-        body: { from, conversationId, text: required(text, 'message text'), ...(attachment && { attachment }) },
+        body: {
+          from,
+          conversationId,
+          text: required(text, 'message text'),
+          ...(attachment && { attachment }),
+          ...(choices && { choices }),
+        },
       });
       // A service started before attachments existed posts the text and drops the page without an error.
       if (attachment && !sent.attachment)
         throw new Error(
           `Mu posted message #${sent.id} without its HTML attachment: the running service is older than this CLI. Restart Mu, then send the page again.`,
+        );
+      if (choices && !sent.choices)
+        throw new Error(
+          `Mu posted message #${sent.id} without its choices: the running service is older than this CLI. Restart Mu, then ask again.`,
         );
       // A managed turn also posts its final text to its own conversation. The turn prompt says so, but a context
       // compaction in the middle of the turn drops the prompt, and the agent then answers twice: with this message and

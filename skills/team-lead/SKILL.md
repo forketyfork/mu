@@ -82,7 +82,7 @@ Briefs and task-room messages to workers are telegraphic: facts, decisions, IDs,
 - Write a task ID only as `` `task-1a2b3c4d` `` and a message reference only as `` `#123` ``; the dashboard links only that form. Write PR and issue numbers as plain text or full links, never in backticks.
 - Inside a double-quoted shell argument, backticks run as a command and the text vanishes: escape each as `` \` ``, quote the text in single quotes, or use `--file`.
 
-Send every question and summary for the user to the source conversation (usually `dm-lead`) with `say --conversation`, not to the task room: the user watches the direct chat. When Mu commands fail, say so in your final reply and start no work that depends on a user decision until they work again.
+Send every question and summary for the user to the source conversation (usually `dm-lead`) with `say --conversation`, not to the task room: the user watches the direct chat. A question with a few short answers (yes or no, one of up to six options) gets buttons: `say --conversation SOURCE_ID --choices "Yes|No" TEXT`, with the question on the last line of TEXT. The user's click arrives as `> Re: <question>` followed by the label; the user can still write a reply instead. A choices message from your own turn's conversation is your answer, so end that turn with `NO_REPLY`. Open questions, and several questions at once, stay in words or a visual. When Mu commands fail, say so in your final reply and start no work that depends on a user decision until they work again.
 
 ### Waiting for you
 

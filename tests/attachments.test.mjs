@@ -5,7 +5,13 @@ import { join } from 'node:path';
 import { Store } from '../src/store.mjs';
 import { Chat } from '../src/chat.mjs';
 import { createApp, ROOT } from '../src/server.mjs';
-import { MAX_HTML_BYTES, attachmentPlaceholder, plainMessageText, validateAttachment } from '../src/attachments.mjs';
+import {
+  MAX_HTML_BYTES,
+  attachmentPlaceholder,
+  choicesPlaceholder,
+  plainMessageText,
+  validateAttachment,
+} from '../src/attachments.mjs';
 import { ATTACHMENT_POLICY } from '../src/browser-policy.mjs';
 import { offlinePricing } from './offline-pricing.mjs';
 import { userHeaders } from './identity-fixture.mjs';
@@ -104,6 +110,37 @@ test('the IRC line of a message with an attachment carries the placeholder, and 
   );
   assert.deepEqual(recorded, [
     { from: 'user', text: 'Here it is.', conversationId: 'common', meta: { attachment: pong } },
+  ]);
+});
+
+test('the IRC line of a question carries its choices, and Mu records them apart from the text', async () => {
+  const lines = [];
+  /** @type {any[]} */
+  const recorded = [];
+  const chat = new Chat({
+    onMessage: (_id, from, text, conversationId, meta) => {
+      recorded.push({ from, text, conversationId, meta });
+      return { text };
+    },
+  });
+  chat.state.connected = true;
+  chat.syncConversation = async () => {};
+  chat.getConversation = () => ({ id: 'common', kind: 'common', channel: '#mu', members: ['user'] });
+  chat.getConversations = () => [chat.getConversation()];
+  chat.connect = async () => ({
+    say: (_channel, text, tags) => {
+      lines.push(text);
+      queueMicrotask(() => chat.receive({ nick: 'lead', target: '#mu', tags, message: text }));
+    },
+  });
+  await chat.send('lead', 'Merge it?', 'common', { choices: ['Yes', 'No'] });
+  assert.equal(lines.join(''), `Merge it?↵${choicesPlaceholder(['Yes', 'No'])}`);
+  assert.match(
+    choicesPlaceholder(['Yes', 'No']),
+    /Yes \| No; the user clicks one in the Mu dashboard or writes a reply/,
+  );
+  assert.deepEqual(recorded, [
+    { from: 'lead', text: 'Merge it?', conversationId: 'common', meta: { choices: ['Yes', 'No'] } },
   ]);
 });
 

@@ -77,6 +77,7 @@ test('reading conversations, messages and inboxes never scans the message histor
     store.messagesAfter(room.id, 1);
     store.messagesFromAfter(room.id, 'lead', 1);
     store.message(3);
+    store.answerTo(store.message(3));
     store.lastMessageIds();
     store.inbox('worker');
     store.agents();

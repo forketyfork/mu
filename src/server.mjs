@@ -11,6 +11,7 @@ import { MODEL_REQUIRED_ADAPTERS, SANDBOXED_ADAPTERS, claudeLeadArgs, effortErro
 import { AgentSockets, Identity, bearer } from './identity.mjs';
 import { createTasks } from './tasks.mjs';
 import { createWaiting } from './waiting.mjs';
+import { answerText, validChoices } from './choices.mjs';
 import { createActivities } from './activities.mjs';
 import { createVisuals } from './visuals.mjs';
 import { createEvals } from './evals.mjs';
@@ -518,7 +519,7 @@ export async function createApp({
   // same way. `wake` names a stopped agent that the message is for: it runs turns again once the message is in the chat,
   // as when its card is resumed, so the message gets no notice that nobody will process it. Answers `notice` with the
   // text of the notice, for a caller whose user does not read the conversation.
-  const postMessage = async (from, text, conversation, { wake = null, attachment = undefined } = {}) => {
+  const postMessage = async (from, text, conversation, { wake = null, attachment = undefined, meta = {} } = {}) => {
     if (
       typeof text !== 'string' ||
       !text.trim() ||
@@ -540,7 +541,7 @@ export async function createApp({
     if (!chat.state.connected) throw bad(chat.state.error || 'IRC unavailable', 503);
     let message;
     try {
-      message = await chat.send(from, text.trim(), conversation.id, attachment ? { attachment } : {});
+      message = await chat.send(from, text.trim(), conversation.id, { ...meta, ...(attachment && { attachment }) });
     } catch (error) {
       if (!chat.state.connected) throw bad(chat.state.error || error.message || 'IRC unavailable', 503);
       throw error;
@@ -565,6 +566,29 @@ export async function createApp({
       }
     }
     return { message, notice, woken };
+  };
+  // Question IDs whose answer is on its way to IRC: the message is recorded only once IRC confirms it, so a second
+  // click in that time would not find the first answer.
+  const answering = new Set();
+  const answerChoice = async (id, choice) => {
+    const question = store.message(id);
+    if (!question) throw bad(`Unknown message ${id}`, 404);
+    if (!question.choices) throw bad(`Message #${id} offers no choices`);
+    if (typeof choice !== 'string' || !question.choices.includes(choice))
+      throw bad(`choice must be one of the labels of message #${id}: ${question.choices.join(', ')}`);
+    if (answering.has(id) || store.answerTo(question))
+      throw bad(`Message #${id} is already answered; write a reply to change the answer`, 409);
+    const conversation = conversationFor(question.conversationId);
+    answering.add(id);
+    try {
+      return (
+        await postMessage('user', answerText(question, choice, conversation.kind === 'direct'), conversation, {
+          meta: { answers: id, choice },
+        })
+      ).message;
+    } finally {
+      answering.delete(id);
+    }
   };
   const syncConversation = async (conversation) => {
     try {
@@ -745,7 +769,19 @@ export async function createApp({
           throw bad('Select a conversation before sending. Refresh the dashboard if it is out of date.');
         const conversation = conversationFor(input.conversationId ?? 'common', from);
         const attachment = input.attachment === undefined ? undefined : validateAttachment(input.attachment);
-        return send(response, 201, (await postMessage(from, input.text, conversation, { attachment })).message);
+        let meta = {};
+        if (input.choices !== undefined) {
+          // The user answers by a click, and only an agent asks; the user's own message is already the answer.
+          if (from === 'user') throw bad('Only an agent offers choices; they ask the user');
+          meta = { choices: validChoices(input.choices) };
+        }
+        return send(response, 201, (await postMessage(from, input.text, conversation, { attachment, meta })).message);
+      }
+      const choiceMatch = pathname.match(/^\/api\/messages\/([1-9]\d{0,15})\/choice$/);
+      if (request.method === 'POST' && choiceMatch) {
+        const input = await body(request);
+        if (actor(request, input) !== 'user') throw bad('Only the user answers a choice', 403);
+        return send(response, 201, await answerChoice(Number(choiceMatch[1]), input.choice));
       }
       if (request.method === 'POST' && pathname === '/api/agents') {
         const input = await body(request);
