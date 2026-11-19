@@ -184,11 +184,13 @@ function messageReference(reference) {
   return link;
 }
 
-function codeReferenceElement(text) {
+// `archivable` adds the archive button to a visual's reference: only the text of a chat message offers it, since the
+// other places that render Markdown (task previews, descriptions, transcripts) are read, or flattened to plain text.
+function codeReferenceElement(text, archivable = false) {
   const reference = codeReference(text, state);
   if (!reference) return null;
   if (reference.kind === 'agent') return agentReference(reference.id);
-  if (reference.kind === 'visual') return visualsView.reference(reference);
+  if (reference.kind === 'visual') return visualsView.reference(reference, { archivable });
   return reference.kind === 'message' ? messageReference(reference) : taskReference(reference);
 }
 
@@ -201,8 +203,11 @@ function referenceSignature() {
   return `${state.agents.map((agent) => agent.id).join(',')}|${titled(state.tasks ?? [])}|${titled(state.visuals)}|${archivedVisuals}`;
 }
 
-function markdown(className, source, recipients) {
-  return markdownElement(className, source, { recipients, resolveCode: codeReferenceElement });
+function markdown(className, source, recipients, { archivable = false } = {}) {
+  return markdownElement(className, source, {
+    recipients,
+    resolveCode: (text) => codeReferenceElement(text, archivable),
+  });
 }
 
 // Names are re-rendered on every state update; a phase taken from a shared clock keeps the wave continuous and in step.
@@ -2010,7 +2015,7 @@ function messageRow(message, recipients) {
   time.dateTime = message.createdAt;
   time.title = date.toLocaleString();
   header.append(time, node('span', 'message-id', `#${message.id}`));
-  main.append(header, markdown('message-text', message.text, recipients));
+  main.append(header, markdown('message-text', message.text, recipients, { archivable: true }));
   if (message.attachment) main.append(attachments.element(message));
   if (message.choices) main.append(choicesBlock(message));
   row.append(main);

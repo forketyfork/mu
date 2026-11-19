@@ -554,12 +554,13 @@ export function createVisualsView({
       }
       return row;
     },
-    /** A link to a visual for a reference in text, with the button that archives or restores it. */
-    reference(visual) {
-      const group = node('span', 'visual-ref-group');
+    /** A link to a visual for a reference in text; `archivable` adds the button that archives or restores it. */
+    reference(visual, { archivable = false } = {}) {
       const link = visualLink(visual, 'visual-ref');
       link.textContent = visual.title;
       link.title = `Visual ${visual.id} by @${visual.agentId}`;
+      if (!archivable) return link;
+      const group = node('span', 'visual-ref-group');
       // The reference names only what text needs; whether the visual is archived is read from its record.
       group.append(link, ' ', archiveButton(record(visual.id) ?? visual, 'text-button visual-ref-archive'));
       return group;

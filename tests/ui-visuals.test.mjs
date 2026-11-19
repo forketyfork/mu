@@ -569,3 +569,18 @@ test('a visual named in a chat message offers Archive and Restore beside its lin
   assert.deepEqual(calls, [true, false]);
   assert.equal(button().textContent, 'Archive');
 });
+
+test('only a chat message offers Archive beside a visual; other text that names one keeps a plain link', async (t) => {
+  const state = withVisuals(record());
+  state.tasks[0] = {
+    ...state.tasks[0],
+    description: `Read \`${ID}\` first.`,
+    result: `See \`${ID}\` for the plan.`,
+  };
+  const ui = await fixture(t, { initial: state });
+  const card = ui.$('[data-task="task-a"]');
+  assert.equal(card.querySelector('.task-result-preview').textContent, 'See Storage plan for the plan.');
+  assert.equal(card.querySelector('.task-description .visual-ref').textContent, 'Storage plan');
+  assert.equal(card.querySelector('.visual-ref-archive'), null);
+  assert.equal(card.querySelector('.task-description').textContent.trim(), 'Read Storage plan first.');
+});
