@@ -67,7 +67,7 @@ Read back what is stored before you change it, so that you patch the current tex
 ```bash
 node "$MU_CLI" visual show --id vis-1a2b3c4d                  # outline: sections, sizes, block types
 node "$MU_CLI" visual show --id vis-1a2b3c4d --section steps  # the Markdown of one section
-node "$MU_CLI" visual list --conversation ID                  # the visuals of one conversation; without it, every visual you can read
+node "$MU_CLI" visual list --conversation ID                  # the visuals of one conversation; without it, every visual you can read; archived ones are left out (--include-archived)
 ```
 
 ## Answer the user's comments

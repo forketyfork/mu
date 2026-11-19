@@ -64,18 +64,35 @@ test('the user still comments on an archived visual, and its author still change
 });
 
 test('the user and a lead archive; a worker, including the author, does not', async (t) => {
-  const { worker, outsider, lead, visual, path, ids } = await written(t);
+  const { app, user, startTurn, worker, outsider, lead, visual, path, ids } = await written(t);
   for (const caller of [worker, outsider]) {
     const refused = await caller('PATCH', path, { archived: true });
     assert.equal(refused.status, 403);
     assert.match(refused.body.error, /Only the user, and a lead/);
   }
   assert.deepEqual(await ids(), [visual.id], 'a refused request changes nothing');
+  // A lead that is not in the visual's conversation does not archive it either.
+  const room = await user('POST', '/api/conversations', {
+    kind: 'room',
+    id: 'apart',
+    name: 'Apart',
+    from: 'user',
+    members: ['outsider'],
+  });
+  assert.equal(room.status, 201, JSON.stringify(room.body));
+  assert.equal(app.store.conversation('apart').members.includes('lead'), false);
+  startTurn('outsider', 'apart');
+  const apart = await outsider('POST', '/api/visuals', { source: PLAN, conversationId: 'apart' });
+  assert.equal(apart.status, 201, JSON.stringify(apart.body));
+  app.runner.active.clear();
+  const refusedLead = await lead('PATCH', `/api/visuals/${apart.body.id}`, { archived: true });
+  assert.equal(refusedLead.status, 403);
+  assert.equal((await user('GET', `/api/visuals/${apart.body.id}`)).body.archivedAt, undefined);
   assert.equal((await lead('PATCH', path, { archived: true })).status, 200);
-  assert.deepEqual(await ids(), []);
+  assert.deepEqual(await ids('/api/visuals?conversation=work'), []);
   assert.equal((await worker('PATCH', path, { archived: false })).status, 403);
   assert.equal((await lead('PATCH', path, { archived: false })).status, 200);
-  assert.deepEqual(await ids(), [visual.id]);
+  assert.deepEqual(await ids('/api/visuals?conversation=work'), [visual.id]);
 });
 
 test('archiving takes a boolean and nothing else, and names a visual that exists', async (t) => {

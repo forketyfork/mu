@@ -482,3 +482,13 @@ test('a visual is archived from its card and from the viewer, hidden until archi
   await settle();
   assert.match($('#toast')?.textContent ?? '', /Not allowed/);
 });
+
+test('an archived visual opens from its address while archived items are hidden', async (t) => {
+  const ui = await fixture(t, {
+    hash: `#visuals/${ID}`,
+    initial: withVisuals(record({ archivedAt: '2026-11-06T10:00:00Z' })),
+  });
+  assert.equal(ui.$('#visual-viewer').hidden, false);
+  assert.match(ui.$('#visual-meta').textContent, /Archived/);
+  assert.equal(ui.$('#visual-archive').textContent, 'Restore');
+});
