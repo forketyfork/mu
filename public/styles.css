@@ -5631,6 +5631,11 @@ kbd {
   -webkit-box-decoration-break: clone;
 }
 
+.visual-ref-archive {
+  padding: 0;
+  font-size: var(--font-size-13px);
+}
+
 .visual-chip:hover,
 .visual-ref:hover {
   border-color: var(--accent);

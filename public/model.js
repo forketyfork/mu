@@ -32,6 +32,20 @@ export function tasksOfAgents(tasks, agents, statuses) {
   return tasks.filter((task) => task.status !== 'verified' && task.agentIds.some((id) => ids.has(id)));
 }
 
+// The visuals a search finds, by title, ID, author or task title. Archived ones are found only when they are shown.
+export function filterVisuals(visuals, { query = '', showArchived = false, tasks = [] } = {}) {
+  const search = query.trim().toLowerCase();
+  const titles = new Map(tasks.map((task) => [task.id, task.title]));
+  return visuals.filter(
+    (visual) =>
+      (showArchived || !visual.archivedAt) &&
+      (!search ||
+        [visual.title, visual.id, visual.agentId, titles.get(visual.taskId) ?? ''].some((value) =>
+          value.toLowerCase().includes(search),
+        )),
+  );
+}
+
 export function filterAgents(agents, filter, query) {
   const search = query.trim().toLowerCase();
   return agents

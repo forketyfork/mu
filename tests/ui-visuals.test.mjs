@@ -492,3 +492,80 @@ test('an archived visual opens from its address while archived items are hidden'
   assert.match(ui.$('#visual-meta').textContent, /Archived/);
   assert.equal(ui.$('#visual-archive').textContent, 'Restore');
 });
+
+test('the list is searched by title, together with the archived switch, and the Visuals icon always returns to the list', async (t) => {
+  const state = withVisuals(
+    record(),
+    record({ id: 'vis-11111111', title: 'Release notes', taskId: null }),
+    record({ id: 'vis-22222222', title: 'Old storage sketch', taskId: null, archivedAt: '2026-11-06T10:00:00Z' }),
+  );
+  const ui = await fixture(t, { initial: state });
+  const { window, $ } = ui;
+  const listed = () =>
+    [...window.document.querySelectorAll('#visuals-list .visual-card')].map((card) => card.dataset.visual);
+  const search = (text) => {
+    $('#visuals-search').value = text;
+    $('#visuals-search').dispatchEvent(new window.Event('input', { bubbles: true }));
+  };
+  ui.click('.rail-link[data-view="visuals"]');
+  await settle();
+  assert.deepEqual(listed(), [ID, 'vis-11111111']);
+
+  search('STORAGE');
+  assert.deepEqual(listed(), [ID], 'the archived sketch matches but is hidden');
+  assert.equal($('#visuals-archive-toggle').textContent, 'Show 1 archived visual', 'the count follows the search');
+  $('#visuals-archive-toggle').click();
+  await settle();
+  assert.deepEqual(listed().sort(), [ID, 'vis-22222222'].sort());
+  search('release');
+  assert.deepEqual(listed(), ['vis-11111111']);
+  assert.equal($('#visuals-archive-toggle').hidden, true, 'no archived visual matches, so none is offered');
+  search('zzz');
+  assert.equal($('.visuals-empty').textContent, 'No visual matches “zzz”.');
+  search('');
+  assert.equal(listed().length, 3);
+
+  // Opened visual: the icon leaves it for the list, which keeps the search.
+  search('plan');
+  $(`[data-visual="${ID}"] .visual-card-link`).click();
+  await settle();
+  assert.equal($('#visual-viewer').hidden, false);
+  ui.click('.rail-link[data-view="visuals"]');
+  await settle();
+  assert.equal($('#visual-viewer').hidden, true);
+  assert.equal($('#visuals-index').hidden, false);
+  assert.equal(window.location.hash, '#visuals');
+  assert.deepEqual(listed(), [ID]);
+});
+
+test('a visual named in a chat message offers Archive and Restore beside its link', async (t) => {
+  const state = withVisuals(record());
+  state.messages.push({ ...message(3, 'room-a'), text: `See \`${ID}\`.` });
+  const ui = await fixture(t, { initial: state });
+  const { window, $ } = ui;
+  const calls = [];
+  const fetch = window.fetch;
+  window.fetch = async (path, options = {}) => {
+    if (path !== `/api/visuals/${ID}` || options.method !== 'PATCH') return fetch(path, options);
+    const { archived } = JSON.parse(options.body);
+    calls.push(archived);
+    state.visuals = [record({ archivedAt: archived ? '2026-11-06T10:00:00Z' : undefined })];
+    ui.update(structuredClone(state));
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+  window.document.querySelector('.rail-link[data-view="chat"]').click();
+  window.document.querySelector('[data-conversation="room-a"]')?.click();
+  await settle();
+  const button = () => $('.message .visual-ref-archive');
+  assert.equal($('.message .visual-ref').textContent, 'Storage plan');
+  assert.equal(button().textContent, 'Archive');
+  button().click();
+  await settle();
+  assert.deepEqual(calls, [true]);
+  assert.equal(button().textContent, 'Restore', 'the reference follows the archived state');
+  assert.equal($('.message .visual-ref').textContent, 'Storage plan', 'the link still opens an archived visual');
+  button().click();
+  await settle();
+  assert.deepEqual(calls, [true, false]);
+  assert.equal(button().textContent, 'Archive');
+});

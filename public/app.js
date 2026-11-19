@@ -196,7 +196,9 @@ function codeReferenceElement(text) {
 // Message references need no part: a message ID links once Mu has issued it, and text names only issued IDs.
 function referenceSignature() {
   const titled = (items) => items.map((item) => `${item.id}:${item.title}`).join('\n');
-  return `${state.agents.map((agent) => agent.id).join(',')}|${titled(state.tasks ?? [])}|${titled(state.visuals)}`;
+  // A visual's reference offers Archive or Restore, so it follows the archived state as well.
+  const archivedVisuals = state.visuals.map((visual) => `${visual.id}:${visual.archivedAt ?? ''}`).join(',');
+  return `${state.agents.map((agent) => agent.id).join(',')}|${titled(state.tasks ?? [])}|${titled(state.visuals)}|${archivedVisuals}`;
 }
 
 function markdown(className, source, recipients) {
@@ -2504,7 +2506,9 @@ for (const link of $$('.rail-link[data-view]')) {
   link.addEventListener('click', (event) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
-    navigate(link.dataset.view);
+    // The Visuals icon is the way back to the list, also from a visual that is open.
+    if (link.dataset.view === 'visuals') openVisual(null);
+    else navigate(link.dataset.view);
   });
 }
 $$('.rail-link[data-view="chat"]')[0].title = `Team chat (${leadChatShortcutLabel(macKeyboard)} writes to the lead)`;

@@ -5,6 +5,7 @@
 
 import { createAnswersPanel } from './visual-answers.js';
 import { createCommentsPanel } from './visual-comments.js';
+import { filterVisuals } from './model.js';
 
 export const FRAME_PAGE = '/visual/frame.html';
 const LEAD_TITLE = 'Introduction';
@@ -157,10 +158,14 @@ export function createVisualsView({
     const state = getState();
     if (!state) return;
     const all = [...(state.visuals ?? [])].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    const archivedTotal = all.filter((visual) => visual.archivedAt).length;
-    const visuals = showArchived() ? all : all.filter((visual) => !visual.archivedAt);
+    const query = $('visuals-search').value;
+    const found = (show) => filterVisuals(all, { query, showArchived: show, tasks: state.tasks });
+    const visuals = found(showArchived());
+    // What the toggle would add: the archived visuals that match the search.
+    const archivedTotal = found(true).filter((visual) => visual.archivedAt).length;
     const signature = JSON.stringify([
       showArchived(),
+      query,
       visuals.map((visual) => [
         visual.id,
         visual.archivedAt,
@@ -233,9 +238,11 @@ export function createVisualsView({
             node(
               'p',
               'visuals-empty',
-              archivedTotal
-                ? 'Every visual is archived.'
-                : 'No visuals yet. An agent makes one with `visual create` when a plan, a review or an explanation is clearer as a document than as chat.',
+              query.trim()
+                ? `No visual matches “${query.trim()}”.`
+                : archivedTotal
+                  ? 'Every visual is archived.'
+                  : 'No visuals yet. An agent makes one with `visual create` when a plan, a review or an explanation is clearer as a document than as chat.',
             ),
           ]),
     );
@@ -486,6 +493,7 @@ export function createVisualsView({
   $('visual-version-next').addEventListener('click', () => step(1));
   $('visual-version-latest').addEventListener('click', () => navigate(open.id, null));
   $('visual-back').addEventListener('click', () => navigate(null));
+  $('visuals-search').addEventListener('input', renderIndex);
   $('visuals-archive-toggle').addEventListener('click', () => setShowArchived(!showArchived()));
   $('visual-archive').addEventListener('click', () => {
     const visual = record(open.id);
@@ -546,12 +554,15 @@ export function createVisualsView({
       }
       return row;
     },
-    /** A link to a visual for a reference in text. */
+    /** A link to a visual for a reference in text, with the button that archives or restores it. */
     reference(visual) {
+      const group = node('span', 'visual-ref-group');
       const link = visualLink(visual, 'visual-ref');
       link.textContent = visual.title;
       link.title = `Visual ${visual.id} by @${visual.agentId}`;
-      return link;
+      // The reference names only what text needs; whether the visual is archived is read from its record.
+      group.append(link, ' ', archiveButton(record(visual.id) ?? visual, 'text-button visual-ref-archive'));
+      return group;
     },
   };
 }

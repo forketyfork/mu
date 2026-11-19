@@ -339,3 +339,48 @@ test('the chat and the visual viewer fill exactly the height under the header, w
       if (width === 700) await shot(`${name}-height-700`);
     }
 });
+
+test('a visual named in chat has its Archive button on the line, and the Visuals icon leaves an open visual', async (t) => {
+  const seed = await seeded(t);
+  const { evaluate, open, shot } = await openedDashboard(t, seed);
+  const named = seed.visuals[0];
+  const posted = await fetch(`${seed.url}/api/messages`, {
+    method: 'POST',
+    headers: userHeaders(seed.app),
+    body: JSON.stringify({
+      from: 'user',
+      conversationId: 'work',
+      text: `Please read \`${named.id}\` before the review.`,
+    }),
+  });
+  assert.equal(posted.status, 201);
+  await evaluate(`location.hash = '#team-chat'`);
+  await until('the chat', () => evaluate(`!document.getElementById('team-chat').hidden`));
+  await evaluate(`document.querySelector('[data-conversation="work"]').click()`);
+  await until('the reference', () => evaluate(`Boolean(document.querySelector('.message .visual-ref-archive'))`));
+  const line = await evaluate(`(() => {
+    const group = document.querySelector('.message .visual-ref-group');
+    const link = group.querySelector('.visual-ref').getBoundingClientRect();
+    const button = group.querySelector('.visual-ref-archive');
+    const box = button.getBoundingClientRect();
+    const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    return { onButton: top === button, sameLine: Math.abs(box.top - link.top) < 12, label: button.textContent };
+  })()`);
+  assert.deepEqual(line, { onButton: true, sameLine: true, label: 'Archive' });
+  await shot('chat-visual-reference');
+
+  await evaluate(`document.querySelector('.message .visual-ref-archive').click()`);
+  await until('the reference to offer Restore', () =>
+    evaluate(`document.querySelector('.message .visual-ref-archive')?.textContent === 'Restore'`),
+  );
+  await evaluate(`document.querySelector('.message .visual-ref').click()`);
+  await until('the viewer', () => evaluate(`!document.getElementById('visual-viewer').hidden`));
+  assert.match(await evaluate(`document.getElementById('visual-meta').textContent`), /Archived/);
+
+  // A real click on the rail icon leaves the open visual for the list.
+  await evaluate(`document.querySelector('.rail-link[data-view="visuals"]').click()`);
+  await until('the list', () => evaluate(`!document.getElementById('visuals-index').hidden`));
+  assert.equal(await evaluate(`location.hash`), '#visuals');
+  assert.equal(await evaluate(`document.getElementById('visual-viewer').hidden`), true);
+  await open('visuals');
+});

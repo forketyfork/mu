@@ -10,6 +10,7 @@ import {
   conversationMessages,
   defaultConversationId,
   filterAgents,
+  filterVisuals,
   agentLifecycleActions,
   isAgentBusy,
   baselineViewed,
@@ -803,4 +804,28 @@ test('a snippet keeps one line and is cut with an ellipsis at the limit', () => 
   assert.equal(snippet('first\n\n  second   line'), 'first second line');
   assert.equal(snippet('a'.repeat(20), 10), `${'a'.repeat(9)}…`);
   assert.equal(snippet('a'.repeat(10), 10), 'a'.repeat(10));
+});
+
+test('a visual search matches title, ID, author and task title, and finds archived visuals only when they are shown', () => {
+  const visuals = [
+    { id: 'vis-00000001', title: 'Storage plan', agentId: 'alice', taskId: 'task-a' },
+    { id: 'vis-00000002', title: 'Release notes', agentId: 'bob', taskId: null },
+    {
+      id: 'vis-00000003',
+      title: 'Old storage sketch',
+      agentId: 'bob',
+      taskId: null,
+      archivedAt: '2026-11-01T00:00:00Z',
+    },
+  ];
+  const tasks = [{ id: 'task-a', title: 'Migrate the database' }];
+  const ids = (options) => filterVisuals(visuals, { tasks, ...options }).map((visual) => visual.id);
+  assert.deepEqual(ids({}), ['vis-00000001', 'vis-00000002'], 'archived visuals stay out by default');
+  assert.deepEqual(ids({ showArchived: true }), ['vis-00000001', 'vis-00000002', 'vis-00000003']);
+  assert.deepEqual(ids({ query: '  STORAGE ' }), ['vis-00000001'], 'case and padding do not matter');
+  assert.deepEqual(ids({ query: 'storage', showArchived: true }), ['vis-00000001', 'vis-00000003']);
+  assert.deepEqual(ids({ query: 'bob' }), ['vis-00000002']);
+  assert.deepEqual(ids({ query: 'vis-00000002' }), ['vis-00000002']);
+  assert.deepEqual(ids({ query: 'database' }), ['vis-00000001'], "the title of the visual's task counts");
+  assert.deepEqual(ids({ query: 'nothing like it' }), []);
 });

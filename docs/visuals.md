@@ -8,7 +8,7 @@ Ask for one in plain words ("show me the plan as a visual", "explain this PR in 
 
 Visuals appear in three places:
 
-- **Visuals** in the left rail lists all of them as cards in the columns of the task cards, newest change first. A card names its author, version and what waits for you, and links to its task when it has one.
+- **Visuals** in the left rail lists all of them as cards in the columns of the task cards, newest change first. A card names its author, version and what waits for you, and links to its task when it has one. The icon always opens this list, also when a visual is open. **Find a visual…** above the list narrows it to the visuals whose title, ID, author or task title contain what you type.
 - A **task card** shows a chip for each visual of that task.
 - In **chat**, an agent names a visual by its ID, such as `vis-1a2b3c4d`, and the dashboard shows it as a link with the visual's title.
 
@@ -16,9 +16,9 @@ The viewer shows the title, the author and the task above the document, and the 
 
 ## Archive a visual
 
-When you are done with a visual, click **Archive** on its card or in its viewer. It leaves the list, and the task card stops showing its chip, so the list holds what you still use. Nothing else changes: a link to it, such as a visual's ID in chat or a bookmark, still opens it, and you can still comment on it. Its author can still change it, and a new version does not bring it back.
+When you are done with a visual, click **Archive** on its card, in its viewer, or beside its name in a chat message. It leaves the list, and the task card stops showing its chip, so the list holds what you still use. Nothing else changes: a link to it, such as a visual's ID in chat or a bookmark, still opens it, and you can still comment on it. Its author can still change it, and a new version does not bring it back.
 
-**Show N archived visuals** under the list, like **Show archived** in the top bar of the workspace, lists archived visuals too, marked **Archived**. Both are one switch, which the browser remembers. **Restore** on a card or in the viewer puts a visual back.
+**Show N archived visuals** under the list (N counts the archived visuals that match the search), like **Show archived** in the top bar of the workspace, lists archived visuals too, marked **Archived**. Both are one switch, which the browser remembers. **Restore** in the same three places puts a visual back. The chips on a task card only link; archive from the list, the viewer or chat.
 
 Only you archive a visual, since it is your decision that you are finished with it; a lead does it for you when you ask in chat. A worker, including the author of the visual, cannot: it would hide a document that may still wait for you, and an author that wants to retire a visual changes it instead.
 
