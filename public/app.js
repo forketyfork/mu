@@ -2367,9 +2367,15 @@ function updateTaskChoice() {
   if (task) $('agent-conversation').value = task.conversationId;
 }
 
+function leadChatId() {
+  const lead = state?.agents.find((agent) => agent.role === 'lead');
+  return lead ? `dm-${lead.id}` : null;
+}
+
 function openAgentDialog() {
   if (!state) return;
   elements.agentForm.reset();
+  $('agent-manual-note').hidden = !leadChatId();
   showError('agent-error', '');
   $('agent-role').value = state.agents.some((agent) => agent.role === 'lead') ? 'worker' : 'lead';
   $('agent-adapter').replaceChildren(
@@ -2422,6 +2428,7 @@ function openRoomDialog(mode) {
   showError('room-error', '');
   const inviting = mode === 'invite';
   const conversation = currentConversation();
+  $('room-manual-note').hidden = inviting || !leadChatId();
   $('room-dialog-title').textContent = inviting ? `Invite to ${conversation.name}` : 'Create task room';
   $('room-dialog-description').textContent = inviting
     ? 'Selected agents will receive access to this room and its history.'
@@ -2500,6 +2507,12 @@ $('transcript-conversation').addEventListener('change', (event) => {
   $('transcript-turns').replaceChildren();
   void loadTranscript();
 });
+for (const link of $$('[data-open-lead-chat]')) {
+  link.addEventListener('click', () => {
+    const id = leadChatId();
+    if (id) openConversation(id);
+  });
+}
 $('new-room').addEventListener('click', () => openRoomDialog('create'));
 $('invite-members').addEventListener('click', () => openRoomDialog('invite'));
 $('close-room-dialog').addEventListener('click', () => $('room-dialog').close());

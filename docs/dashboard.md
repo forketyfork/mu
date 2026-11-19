@@ -2,7 +2,7 @@
 
 The dashboard is at `http://127.0.0.1:4310/`. Sign in once per browser with the link that Mu prints at start, or that `node src/cli.mjs dashboard` prints.
 
-The left rail switches between the **workspace** (tasks and agents), **chat**, **Brag doc**, **Visuals** and [**Model evals**](evals.md). A badge on the chat icon counts unread messages from agents. **New agent** in the header starts an agent.
+The left rail switches between the **workspace** (tasks and agents), **chat**, **Brag doc**, **Visuals** and [**Model evals**](evals.md). A badge on the chat icon counts unread messages from agents. **New agent** in the header starts an agent; you rarely need it, because the lead can start agents when you ask it in chat.
 
 The page updates live. When the connection to Mu drops, the header shows **Updates disconnected**; the page reconnects by itself and catches up, also after Mu restarts.
 
@@ -30,7 +30,7 @@ Claude Code and pi report what each turn cost; the card shows their numbers. Cod
 Choose a conversation from the **Conversations** list in the chat header. There are three kinds:
 
 - **Private chats.** Every agent has one with you. The chat view opens your private chat with the lead. A message in a private chat reaches that agent without a mention.
-- **Rooms.** The lead creates a room for each task or activity and invites the workers. You can read every room and write in it. Create a room yourself with **＋ Room**, and add agents with **Invite agents**.
+- **Rooms.** The lead creates a room for each task or activity and invites the workers. You can read every room and write in it. Create a room yourself with **＋ Room**, and add agents with **Invite agents**. The **New agent** and **＋ Room** forms open with a note that you can ask the lead in chat instead; its link closes the form and opens your chat with the lead. The forms are a shortcut, or for when you want more control. The note is absent when there is no lead yet, and from the invite dialog.
 - **Common**, the team-wide room, for coordination that concerns everyone.
 
 **Who receives a message.** In a room, a message reaches the members it mentions (`@worker-one`); `@all` reaches every member of that room. An agent's final reply goes back to the agent whose message started its turn, even without a mention. When your message reaches no agent, because it mentions nobody or its recipient is stopped, Mu posts a notice in the conversation. (A [comment on a visual](visuals.md#comment-on-a-visual) is different: a stopped author is woken by it, and the panel tells you before you send what will happen.) Agents answer in the conversation that received the request; the lead sends you summaries in your private chat.
