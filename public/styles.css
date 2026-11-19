@@ -3415,9 +3415,9 @@ kbd {
 
 .manual-note {
   margin: var(--space-16px) 0 0;
-  background: var(--status-blocked-surface);
-  border-color: var(--status-blocked-edge);
-  color: var(--status-blocked-ink);
+  background: var(--status-idle-surface);
+  border-color: var(--status-idle-edge);
+  color: var(--status-idle-ink);
 }
 
 .manual-note[hidden] {
