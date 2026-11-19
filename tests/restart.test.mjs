@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { access, cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, chmod, cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp, ROOT } from '../src/server.mjs';
@@ -441,6 +441,44 @@ test('a start check that cannot spawn its process fails the check instead of end
     startCheck({ root, home: await clean.dir('home'), store, dataDir, node: join(root, 'missing-node') }),
     /failed while starting: .*missing-node could not be spawned \(.*ENOENT/,
   );
+});
+
+test('a start check after a package-manager upgrade runs the stable path of the node that started the service', async (t) => {
+  const clean = cleanup(t);
+  const prefix = await clean.dir('prefix'),
+    root = await clean.dir('checkout'),
+    dataDir = await clean.dir('live');
+  await mkdir(join(root, 'src'));
+  await writeFile(join(root, 'src/server.mjs'), '');
+  const store = new Store(join(dataDir, 'mu.sqlite'));
+  clean.close(() => store.close());
+  const version = async (name, script) => {
+    const bin = join(prefix, 'Cellar/node', name, 'bin');
+    await mkdir(bin, { recursive: true });
+    await writeFile(join(bin, 'node'), script);
+    await chmod(join(bin, 'node'), 0o755);
+  };
+  const ran = join(prefix, 'ran-version');
+  await version('26.13.1', '#!/bin/sh\nexit 1\n');
+  await mkdir(join(prefix, 'opt'));
+  await symlink(join(prefix, 'Cellar/node/26.13.1'), join(prefix, 'opt/node'));
+  // The service keeps the versioned execPath it started with, even after the package manager removes that binary.
+  const started = process.execPath;
+  t.after(() => {
+    process.execPath = started;
+  });
+  process.execPath = join(prefix, 'Cellar/node/26.13.1/bin/node');
+  const service = await import(`../src/service.mjs?started-before-upgrade=${crypto.randomUUID()}`);
+  // brew upgrade: the new version is linked and the old one removed while the service keeps running.
+  await version('27.0.0', `#!/bin/sh\necho 27.0.0 > ${ran}\nexit 3\n`);
+  await rm(join(prefix, 'opt/node'));
+  await symlink(join(prefix, 'Cellar/node/27.0.0'), join(prefix, 'opt/node'));
+  await rm(join(prefix, 'Cellar/node/26.13.1'), { recursive: true });
+  await assert.rejects(
+    service.startCheck({ root, home: await clean.dir('home'), store, dataDir }),
+    /failed while starting: it exited 3 before it announced readiness/,
+  );
+  assert.equal((await readFile(ran, 'utf8')).trim(), '27.0.0');
 });
 
 test('the start check runs on its own port, data directory and broker-less IRC port, without job or turn variables', async (t) => {

@@ -32,7 +32,7 @@ The installer writes nothing and refuses to install when:
 launchd gives a job none of your shell's environment, so the installer records what Mu and the CLIs need:
 
 - `PATH`, `HOME`, `LANG`, `LC_ALL`, `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, and the `MU_HOME`, `MU_PORT`, `MU_DATA_DIR`, `MU_CONFIG` and `MU_IRC_*` variables that are set, with relative paths made absolute;
-- the current `node`. For a Homebrew installation it records the `opt/<formula>` path, which stays valid after `brew upgrade`.
+- the current `node`. For a Homebrew installation it records the `opt/<formula>` path, which stays valid after `brew upgrade`. Any other installation records the path of the binary that ran the installer; if a later upgrade removes that binary (a version manager such as nvm keeps one directory per version), launchd cannot start Mu again, so uninstall and install from the new Node.js.
 
 Name each further variable that your CLIs need with `--env`, for example a proxy address for Claude Code:
 
@@ -59,7 +59,7 @@ After you change `PATH`, the Node.js installation or a recorded variable, uninst
 
 Run `node src/cli.mjs restart`. The lead can run it too.
 
-1. Mu first compares the installed packages with `package-lock.json`, then starts the checkout's current code on a separate port, with a copy of the database. If the packages differ or that start fails, nothing is restarted and the command shows the reason, including when the Node.js binary cannot be started. After a merge that changed the dependencies, run `npm ci` in the checkout, then `restart` again. Mu starts the check from the stable package-manager path, so a Node.js upgrade after the service started does not break it.
+1. Mu first compares the installed packages with `package-lock.json`, then starts the checkout's current code on a separate port, with a copy of the database. If the packages differ or that start fails, nothing is restarted and the command shows the reason, including when the Node.js binary cannot be started. After a merge that changed the dependencies, run `npm ci` in the checkout, then `restart` again. Mu works out the stable package-manager path of its Node.js when it starts, while the versioned binary still exists, and starts the check from it, so a `brew upgrade` after the service started does not break the check, and the restart then runs the new Node.js. With a Node.js installation that has no such path, an upgrade that removes the binary makes the check fail with `could not be spawned`; the service keeps running until you uninstall and install it again.
 2. If the check passes, Mu waits until the lead's current turn has ended, shuts down cleanly, and launchd starts it again. If the lead's turn does not end within 15 minutes, the restart is cancelled.
 3. The new process posts a notice in the conversation where the restart was requested.
 

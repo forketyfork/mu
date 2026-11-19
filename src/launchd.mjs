@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { leftoverError, resolveConfigFile, resolveDataDir, resolveHome } from './home.mjs';
 import { ROOT, loadConfig } from './server.mjs';
-import { LAUNCHD_VARIABLES, TURN_VARIABLES, stableNodePath } from './service.mjs';
+import { LAUNCHD_VARIABLES, SERVICE_NODE, TURN_VARIABLES, stableNodePath } from './service.mjs';
 
 export { stableNodePath };
 
@@ -237,7 +237,7 @@ export async function install({
   allowMissing = [],
   env = process.env,
   root = ROOT,
-  node = stableNodePath(process.execPath),
+  node = SERVICE_NODE,
   run = launchctl,
   home = undefined,
   uid = undefined,

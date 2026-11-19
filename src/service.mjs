@@ -137,8 +137,8 @@ export async function freePort() {
 }
 
 // Versioned package-manager directories can disappear on upgrade. Prefer the stable opt path when it resolves
-// to the same executable that runs the installer. A long-lived service must not hand its own versioned path to a
-// child it starts later: after an upgrade that path no longer exists.
+// to the same executable as the running process. This works only while that versioned binary still exists, so a
+// long-lived service resolves it once, when it loads (SERVICE_NODE), not when it later needs a child.
 export function stableNodePath(execPath) {
   const parts = execPath.split(sep);
   const cellar = parts.lastIndexOf('Cellar');
@@ -150,6 +150,10 @@ export function stableNodePath(execPath) {
     return execPath;
   }
 }
+
+// The node that starts the service's children. process.execPath keeps naming the binary the process started from,
+// even after an upgrade removed it, and then no longer resolves to the stable path.
+export const SERVICE_NODE = stableNodePath(process.execPath);
 
 const tail = (text) => (text.length > OUTPUT_TAIL_CHARS ? `…${text.slice(-OUTPUT_TAIL_CHARS)}` : text);
 
@@ -163,7 +167,7 @@ export async function startCheck({
   dataDir,
   env = process.env,
   timeoutMs = START_CHECK_TIMEOUT_MS,
-  node = stableNodePath(process.execPath),
+  node = SERVICE_NODE,
 }) {
   if (!home) throw new Error('The start check needs the initialized Mu home');
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'mu-check-')));
