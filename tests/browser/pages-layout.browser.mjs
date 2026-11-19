@@ -203,6 +203,29 @@ test('visuals are cards in the columns of the task cards, each with its task ins
   })()`);
   assert.equal(hit.onCardLink, true, JSON.stringify(hit));
 
+  // The archive button lies above the card's stretched link, so a click on it archives and does not open the visual.
+  const archiving = await evaluate(`(() => {
+    const card = document.querySelector('.visual-card');
+    const button = card.querySelector('.visual-card-archive');
+    button.scrollIntoView({ block: 'center' });
+    const box = button.getBoundingClientRect();
+    const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    return { id: card.dataset.visual, onButton: top === button };
+  })()`);
+  assert.equal(archiving.onButton, true, 'the button takes the click, not the link of the card');
+  const listed = (id) => evaluate(`Boolean(document.querySelector('[data-visual="${id}"]'))`);
+  await evaluate(`document.querySelector('[data-visual="${archiving.id}"] .visual-card-archive').click()`);
+  await until('the card to leave the list', async () => !(await listed(archiving.id)));
+  assert.equal(await evaluate(`location.hash`), '#visuals', 'archiving does not open the visual');
+  await evaluate(`document.getElementById('visuals-archive-toggle').click()`);
+  await until('the archived card', () => listed(archiving.id));
+  await shot('visuals-archived-1500');
+  await evaluate(`document.querySelector('[data-visual="${archiving.id}"] .visual-card-archive').click()`);
+  await evaluate(`document.getElementById('visuals-archive-toggle')?.click()`);
+  await until('the restored card', async () =>
+    evaluate(`!document.querySelector('[data-visual="${archiving.id}"]')?.classList.contains('archived')`),
+  );
+
   // The task link goes to the task, not to the visual that holds it.
   const withTask = wide.find((card) => card.task);
   await evaluate(`document.querySelector('[data-visual="${withTask.id}"] .task-ref').click()`);

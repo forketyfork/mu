@@ -54,6 +54,8 @@ export function safeLink(href) {
  * @param {(id: string, version?: number | null) => void} options.navigate Shows a visual, or the list for a null ID.
  * @param {(id: string, version?: number | null) => string} options.hashOf
  * @param {(agent: object) => boolean} options.isBusy
+ * @param {() => boolean} options.showArchived Whether the user asked to see archived items; the dashboard's one switch.
+ * @param {(show: boolean) => void} options.setShowArchived
  * @param {(message: string) => void} options.notify Tells the user something that was done for them, for a few seconds.
  * @param {(key: any) => void} options.onKey Receives a key that the frame took from the browser, as the frame sent it.
  */
@@ -67,6 +69,8 @@ export function createVisualsView({
   navigate,
   hashOf,
   isBusy,
+  showArchived,
+  setShowArchived,
   notify,
   onKey,
 }) {
@@ -128,13 +132,38 @@ export function createVisualsView({
     return link;
   }
 
+  async function setArchived(visual, archived) {
+    try {
+      await request(`/api/visuals/${encodeURIComponent(visual.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ archived }),
+      });
+      notify(archived ? `Archived “${visual.title}”.` : `Restored “${visual.title}”.`);
+    } catch (error) {
+      notify(error.message);
+    }
+  }
+  // Both buttons name the visual they act on for assistive technology, since a list holds one of each.
+  function archiveButton(visual, className) {
+    const archived = Boolean(visual.archivedAt);
+    const button = node('button', className, archived ? 'Restore' : 'Archive');
+    button.type = 'button';
+    button.setAttribute('aria-label', `${archived ? 'Restore' : 'Archive'} ${visual.title}`);
+    button.addEventListener('click', () => setArchived(visual, !archived));
+    return button;
+  }
+
   function renderIndex() {
     const state = getState();
     if (!state) return;
-    const visuals = [...(state.visuals ?? [])].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const all = [...(state.visuals ?? [])].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const archivedTotal = all.filter((visual) => visual.archivedAt).length;
+    const visuals = showArchived() ? all : all.filter((visual) => !visual.archivedAt);
     const signature = JSON.stringify([
+      showArchived(),
       visuals.map((visual) => [
         visual.id,
+        visual.archivedAt,
         visual.revision,
         visual.commentRevision,
         visual.answerRevision,
@@ -146,11 +175,12 @@ export function createVisualsView({
     indexSignature = signature;
     $('visuals-count').textContent = String(visuals.length);
     const cards = visuals.map((visual) => {
-      const card = node('article', 'visual-card');
+      const card = node('article', `visual-card${visual.archivedAt ? ' archived' : ''}`);
       card.dataset.visual = visual.id;
       const title = visualLink(visual, 'visual-card-link');
       title.append(node('strong', 'visual-card-title', visual.title));
       const meta = node('span', 'visual-card-meta');
+      if (visual.archivedAt) meta.append(node('span', 'archived-tag', 'Archived'));
       meta.append(
         node('span', 'visual-card-author', `@${visual.agentId}`),
         node('span', 'visual-version-pill', `v${visual.version}`),
@@ -193,6 +223,7 @@ export function createVisualsView({
         reference.append(task ? taskReference(task) : document.createTextNode(visual.taskId));
         card.append(reference);
       }
+      card.append(archiveButton(visual, 'text-button visual-card-archive'));
       return card;
     });
     $('visuals-list').replaceChildren(
@@ -202,10 +233,17 @@ export function createVisualsView({
             node(
               'p',
               'visuals-empty',
-              'No visuals yet. An agent makes one with `visual create` when a plan, a review or an explanation is clearer as a document than as chat.',
+              archivedTotal
+                ? 'Every visual is archived.'
+                : 'No visuals yet. An agent makes one with `visual create` when a plan, a review or an explanation is clearer as a document than as chat.',
             ),
           ]),
     );
+    const toggle = $('visuals-archive-toggle');
+    toggle.hidden = !archivedTotal;
+    toggle.textContent = showArchived()
+      ? 'Hide archived visuals'
+      : `Show ${archivedTotal} archived ${archivedTotal === 1 ? 'visual' : 'visuals'}`;
   }
 
   function showError(message) {
@@ -231,6 +269,7 @@ export function createVisualsView({
       meta.append(node('span', '', 'by'), agent ? agentReference(agentId) : node('span', '', `@${agentId}`));
       if (agent && isBusy(agent)) meta.append(node('span', 'visual-working', 'working'));
     }
+    if (visual?.archivedAt) meta.append(node('span', 'archived-tag', 'Archived'));
     const task = state.tasks.find((item) => item.id === (open.data?.taskId ?? visual?.taskId));
     if (task) meta.append(node('span', '', 'for'), taskReference(task));
     if (shown) meta.append(node('span', 'visual-updated', `updated ${time(shown.updatedAt)}`));
@@ -245,6 +284,8 @@ export function createVisualsView({
     $('visual-version-latest').classList.toggle('has-news', !following && latest > number);
     $('visual-version-latest').textContent = !following && latest > number ? `Newest: v${latest}` : 'Follow newest';
     $('visual-following').hidden = !following;
+    $('visual-archive').textContent = visual?.archivedAt ? 'Restore' : 'Archive';
+    $('visual-archive').hidden = !visual;
   }
 
   function renderOutline() {
@@ -445,6 +486,11 @@ export function createVisualsView({
   $('visual-version-next').addEventListener('click', () => step(1));
   $('visual-version-latest').addEventListener('click', () => navigate(open.id, null));
   $('visual-back').addEventListener('click', () => navigate(null));
+  $('visuals-archive-toggle').addEventListener('click', () => setShowArchived(!showArchived()));
+  $('visual-archive').addEventListener('click', () => {
+    const visual = record(open.id);
+    if (visual) void setArchived(visual, !visual.archivedAt);
+  });
   $('visual-link-dismiss').addEventListener('click', hideLink);
   $('visual-link-open').addEventListener('click', () => setTimeout(hideLink));
 
@@ -483,7 +529,9 @@ export function createVisualsView({
     },
     /** The visuals of a task, as links for its card; null when it has none. */
     taskVisuals(taskId) {
-      const visuals = (getState()?.visuals ?? []).filter((visual) => visual.taskId === taskId);
+      const visuals = (getState()?.visuals ?? []).filter(
+        (visual) => visual.taskId === taskId && (showArchived() || !visual.archivedAt),
+      );
       if (!visuals.length) return null;
       const row = node('div', 'task-visuals');
       row.setAttribute('aria-label', 'Visuals');

@@ -67,7 +67,7 @@ After you verify a task, Mu tells the lead, and the lead retires the task's work
 
 You can stop any agent from its card at any time. A stopped agent, or one in `error`, takes no turns until you resume it from its card (the same as `node src/cli.mjs status --id ID --status idle`). Before you resume a failed agent, look at its work: its CLI process may have left changes behind.
 
-**Archived items.** By default the dashboard hides verified tasks, workers whose tasks are all verified, their private chats, and rooms whose tasks are all verified. Anything still tied to unverified work stays visible. The lead, its private chat and the common room are never hidden. Turn on **Show archived** in the top bar to see everything.
+**Archived items.** By default the dashboard hides verified tasks, workers whose tasks are all verified, their private chats, and rooms whose tasks are all verified. Anything still tied to unverified work stays visible. The lead, its private chat and the common room are never hidden. Turn on **Show archived** in the top bar to see everything. The same switch lists the [visuals](visuals.md#archive-a-visual) that you archived yourself.
 
 ## Waiting for you
 
@@ -107,7 +107,7 @@ The lead can add, edit, move and link cards for you, and checks off or deletes t
 
 ## Visuals
 
-**Visuals** in the left rail lists the documents that agents wrote for you as cards, newest change first, each with a link to its task; a task card links to its visuals, and a visual's ID in chat is a link. The viewer follows the newest version as the agent rewrites sections, and steps back through every earlier version. Select text in a visual to comment on it, and answer its questions in place; comments and answers go to the agent that wrote the visual. See [Visuals](visuals.md).
+**Visuals** in the left rail lists the documents that agents wrote for you as cards, newest change first, each with a link to its task; a task card links to its visuals, and a visual's ID in chat is a link. **Archive** on a card hides a visual you are done with; **Show N archived visuals** brings it back into the list (see [Archive a visual](visuals.md#archive-a-visual)). The viewer follows the newest version as the agent rewrites sections, and steps back through every earlier version. Select text in a visual to comment on it, and answer its questions in place; comments and answers go to the agent that wrote the visual. See [Visuals](visuals.md).
 
 ## Brag doc
 

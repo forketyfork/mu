@@ -413,3 +413,72 @@ test('a visual that cannot be loaded says why', async (t) => {
   assert.equal(ui.$('#visual-error').hidden, false);
   assert.equal(ui.$('#visual-error').textContent, `${ID} has no version 9`);
 });
+
+test('a visual is archived from its card and from the viewer, hidden until archived items are shown, and restored', async (t) => {
+  const loose = record({ id: 'vis-11111111', title: 'Loose notes', taskId: null, sectionCount: 1 });
+  let state = withVisuals(record(), loose);
+  const ui = await fixture(t, { initial: state });
+  const { window, $ } = ui;
+  // The service applies a change of the archive and tells the dashboard, as it does through the stream.
+  const calls = [];
+  const fetch = window.fetch;
+  window.fetch = async (path, options = {}) => {
+    const match = /^\/api\/visuals\/(vis-[0-9a-f]{8})$/.exec(path);
+    if (!match || options.method !== 'PATCH') return fetch(path, options);
+    const { archived } = JSON.parse(options.body);
+    calls.push([match[1], archived]);
+    state = {
+      ...state,
+      visuals: state.visuals.map((visual) =>
+        visual.id === match[1] ? { ...visual, archivedAt: archived ? '2026-11-06T10:00:00Z' : undefined } : visual,
+      ),
+    };
+    ui.update(state);
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+  const listed = () =>
+    [...window.document.querySelectorAll('#visuals-list .visual-card')].map((card) => card.dataset.visual);
+  ui.click('.rail-link[data-view="visuals"]');
+  await settle();
+  assert.equal($('#visuals-archive-toggle').hidden, true, 'nothing is archived, so nothing is offered');
+
+  $(`[data-visual="${ID}"] .visual-card-archive`).click();
+  await settle();
+  assert.deepEqual(calls, [[ID, true]]);
+  assert.deepEqual(listed(), ['vis-11111111']);
+  assert.equal($('#visuals-count').textContent, '1');
+  assert.equal($('[data-task="task-a"] .visual-chip'), null, 'the task card stops linking an archived visual');
+  assert.equal($('#visuals-archive-toggle').textContent, 'Show 1 archived visual');
+
+  // The one switch of the dashboard shows archived visuals, and tasks and chats with them.
+  $('#visuals-archive-toggle').click();
+  await settle();
+  assert.equal(window.localStorage.getItem('mu:show-archived'), 'true');
+  assert.equal($('#show-archived').checked, true);
+  assert.deepEqual(listed().sort(), [ID, 'vis-11111111'].sort());
+  assert.equal($(`[data-visual="${ID}"] .archived-tag`).textContent, 'Archived');
+  assert.equal($(`[data-visual="${ID}"] .visual-card-archive`).textContent, 'Restore');
+  assert.equal($('[data-task="task-a"] .visual-chip').getAttribute('href'), `#visuals/${ID}`);
+  assert.equal($('#visuals-archive-toggle').textContent, 'Hide archived visuals');
+
+  // An archived visual opens from its link, says that it is archived, and is restored from its viewer.
+  $(`[data-visual="${ID}"] .visual-card-link`).click();
+  await settle();
+  assert.match($('#visual-meta').textContent, /Archived/);
+  assert.equal($('#visual-archive').textContent, 'Restore');
+  $('#visual-archive').click();
+  await settle();
+  assert.deepEqual(calls.at(-1), [ID, false]);
+  assert.doesNotMatch($('#visual-meta').textContent, /Archived/);
+  assert.equal($('#visual-archive').textContent, 'Archive');
+  $('#visual-archive').click();
+  await settle();
+  assert.deepEqual(calls.at(-1), [ID, true]);
+  assert.equal($('#visual-archive').textContent, 'Restore');
+
+  // The service refuses: the user is told.
+  window.fetch = async () => ({ ok: false, status: 403, json: async () => ({ error: 'Not allowed' }) });
+  $('#visual-archive').click();
+  await settle();
+  assert.match($('#toast')?.textContent ?? '', /Not allowed/);
+});

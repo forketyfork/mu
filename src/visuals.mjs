@@ -339,6 +339,22 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
     return next;
   };
 
+  // Archiving hides a visual from the default list; nothing else about it changes, so its links, comments and answers
+  // keep working. It is the user's judgment that a visual is done, so only the user and a lead on the user's behalf
+  // archive and restore; a worker that wants to retire its visual changes it instead.
+  const archive = (id, input, from) => {
+    const visual = get(id);
+    if (from !== 'user' && !(store.agent(from)?.role === 'lead' && canRead(visual, from)))
+      throw bad("Only the user, and a lead of the visual's conversation on the user's behalf, archive a visual", 403);
+    for (const key of Object.keys(input)) if (!['from', 'archived'].includes(key)) throw bad(`Unknown field ${key}`);
+    if (typeof input.archived !== 'boolean') throw bad('archived must be true or false');
+    if (input.archived === Boolean(visual.archivedAt)) return recordFor(visual, from);
+    const { archivedAt: _archivedAt, ...open } = visual;
+    const next = input.archived ? { ...open, archivedAt: new Date().toISOString() } : open;
+    save(next);
+    return recordFor(next, from);
+  };
+
   const patch = (id, input, from) => {
     author(from);
     const visual = get(id);
@@ -544,6 +560,7 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
       return true;
     }
     if (request.method === 'GET' && !id) {
+      const withArchived = query.get('include') === 'archived';
       const filters = [
         ['task', 'taskId'],
         ['conversation', 'conversationId'],
@@ -555,7 +572,9 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
         list()
           .filter(
             (visual) =>
-              canRead(visual, request.caller) && filters.every(([name, field]) => visual[field] === query.get(name)),
+              canRead(visual, request.caller) &&
+              (withArchived || !visual.archivedAt) &&
+              filters.every(([name, field]) => visual[field] === query.get(name)),
           )
           .map((visual) => recordFor(visual, request.caller)),
       );
@@ -572,7 +591,8 @@ export function createVisuals({ store, runner, tasks, sendAsUser }) {
     }
     if (request.method === 'PATCH' && id) {
       const input = await body(request);
-      send(response, 200, patch(id, input, actor(request, input)));
+      const from = actor(request, input);
+      send(response, 200, 'archived' in input ? archive(id, input, from) : patch(id, input, from));
       return true;
     }
     throw bad('Unsupported visual operation', 405);

@@ -4937,6 +4937,18 @@ kbd {
   pointer-events: auto;
 }
 
+.visual-card.archived {
+  opacity: 0.75;
+}
+
+/* Raised above the card's stretched title link, which would otherwise take the click. */
+.visual-card-archive {
+  position: relative;
+  align-self: flex-start;
+  padding: 0;
+  font-size: var(--font-size-14px);
+}
+
 .visual-card-task-label {
   color: var(--task-assignment-ink);
 }

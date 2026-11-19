@@ -61,7 +61,10 @@ Usage: node src/cli.mjs COMMAND [options]
   visual answers  --id ID [--version N]
                   (the answers that the user sent to the questions of the visual's forms, by field ID, the
                    questions without an answer, and the sections that the sent answers hide)
-  visual list     [--task-id ID] [--conversation ID]
+  visual list     [--task-id ID] [--conversation ID] [--include-archived]
+                  (archived visuals are left out unless asked for)
+  visual archive  --id ID  (the user, or a lead on the user's request; the visual leaves the default list and stays readable)
+  visual unarchive --id ID  (same; puts an archived visual back)
   visual guide    (prints the visuals skill: when to write a visual, its format and how to revise it)
   inbox           [--id ID] [--wait SECONDS]
   ack             [--id ID] --message MESSAGE_ID
@@ -145,7 +148,9 @@ const commandOptions = {
   'visual:comments': ['id', 'version', 'all'],
   'visual:answers': ['id', 'version'],
   'visual:show': ['id', 'section', 'source', 'version'],
-  'visual:list': ['task-id', 'conversation', 'room'],
+  'visual:list': ['task-id', 'conversation', 'room', 'include-archived'],
+  'visual:archive': ['id', 'from'],
+  'visual:unarchive': ['id', 'from'],
   'visual:guide': [],
   inbox: ['id', 'wait'],
   ack: ['id', 'message'],
@@ -397,6 +402,7 @@ export async function main(
   for (const flag of [
     'include-verified',
     'include-checked',
+    'include-archived',
     'new-session',
     'dry-run',
     'adopt',
@@ -736,8 +742,15 @@ export async function main(
       const query = new URLSearchParams();
       if (values['task-id']) query.set('task', values['task-id']);
       if (selectedConversation) query.set('conversation', selectedConversation);
+      if (values['include-archived']) query.set('include', 'archived');
       return request(url, `/api/visuals${query.size ? `?${query}` : ''}`);
     }
+    case 'visual:archive':
+    case 'visual:unarchive':
+      return request(url, `/api/visuals/${encodeURIComponent(required(values.id, '--id'))}`, {
+        method: 'PATCH',
+        body: { archived: command === 'visual:archive', from: values.from ?? env.MU_AGENT_ID ?? 'user' },
+      });
     case 'inbox': {
       const wait = integer(values.wait ?? '0', '--wait', 0, 25);
       return request(url, `/api/agents/${id()}/inbox?wait=${wait}`);

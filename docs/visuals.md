@@ -14,6 +14,14 @@ Visuals appear in three places:
 
 The viewer shows the title, the author and the task above the document, and the list of sections on the left. Click a section to scroll to it; it flashes, so you find it also when it was in view already. The section you are reading is marked. The document follows the theme and the text size of the [reading settings](dashboard.md#reading-settings).
 
+## Archive a visual
+
+When you are done with a visual, click **Archive** on its card or in its viewer. It leaves the list, and the task card stops showing its chip, so the list holds what you still use. Nothing else changes: a link to it, such as a visual's ID in chat or a bookmark, still opens it, and you can still comment on it. Its author can still change it, and a new version does not bring it back.
+
+**Show N archived visuals** under the list, like **Show archived** in the top bar of the workspace, lists archived visuals too, marked **Archived**. Both are one switch, which the browser remembers. **Restore** on a card or in the viewer puts a visual back.
+
+Only you archive a visual, since it is your decision that you are finished with it; a lead does it for you when you ask in chat. A worker, including the author of the visual, cannot: it would hide a document that may still wait for you, and an author that wants to retire a visual changes it instead.
+
 ## Versions
 
 Each turn in which the agent changes a visual makes one new version. The header shows which version you are reading.
@@ -144,7 +152,7 @@ Limits: 200 sections per visual, 128 KiB per section, and 1 MiB for all sections
 
 ## Where visuals are stored
 
-In the database in the data directory (`~/.mu/data/mu.sqlite` by default), with every version, every comment and every answer. The service alone writes them.
+In the database in the data directory (`~/.mu/data/mu.sqlite` by default), with every version, every comment and every answer. The service alone writes them. Archiving a visual keeps all of it.
 
 ## Safety
 

@@ -725,6 +725,8 @@ const visualsView = createVisualsView({
   navigate: openVisual,
   hashOf: visualHash,
   isBusy: isAgentBusy,
+  showArchived: () => showArchived,
+  setShowArchived,
   notify: toast,
   onKey: (key) => {
     if (isLeadChatShortcut(key, macKeyboard)) focusLeadChat();
@@ -1901,6 +1903,7 @@ function setShowArchived(value) {
   renderAgents();
   renderConversations();
   refreshBusyAgents();
+  visualsView.update();
 }
 
 function revealTask(id) {

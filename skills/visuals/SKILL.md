@@ -46,7 +46,7 @@ export const rev = (section) => hash(section).slice(0, 16);
 - An image must be a `data:` URL of a PNG, JPEG, GIF or WebP; the dashboard loads nothing from the network. Raw HTML is removed. A link opens only after the user confirms its address.
 - The reply names the visual (`vis-…`) and its sections. Mention the visual to the user by its ID as a code span, `` `vis-1a2b3c4d` ``: the dashboard turns it into a link.
 
-The visual belongs to the conversation of your turn and to its task. Only you, its author, can change it.
+The visual belongs to the conversation of your turn and to its task. Only you, its author, can change it. The user archives a visual they are done with: `visual list` then leaves it out (`--include-archived` lists it), but it stays readable and you can still change it. You cannot archive.
 
 ## Revise it
 
