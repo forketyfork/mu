@@ -123,9 +123,10 @@ export function createTasks({ store, chat, runner }) {
   };
   // Verification retires the task's workers itself, because it needs no judgment. The notice mentions @lead only when a worker was skipped,
   // so a routine verification does not start a lead turn that reads the whole lead context only to repeat the outcome.
+  // The task is named by its ID in a code span only: the dashboard renders that span as the task's title, so a title beside it would show twice.
   const verificationNotice = (task, { retiredAgentIds, alreadyRetiredAgentIds, skipped }) => {
     const retired = [...retiredAgentIds, ...alreadyRetiredAgentIds].join(', ');
-    const head = `The user verified task ${task.id}: ${task.title.replaceAll('@', '＠')}. Authoritative task status is verified.`;
+    const head = `The user verified task \`${task.id}\`. Authoritative task status is verified.`;
     const outcome = retired
       ? ` Mu retired its workers (${retired}); their history is kept.`
       : ' The task has no workers to retire.';

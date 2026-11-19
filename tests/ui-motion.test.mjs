@@ -124,3 +124,19 @@ test('task references use instant scrolling under reduced motion and still revea
     assert.equal(window.document.activeElement.classList.contains('revealed'), true);
   }
 });
+
+test('a verification notice shows the task once, as its linked title with the ID on hover', async (t) => {
+  const { $, update } = await fixture(t, { hash: '#team-chat' });
+  const next = initialState();
+  const { id, title } = next.tasks[0];
+  const notice = `The user verified task \`${id}\`. Authoritative task status is verified. The task has no workers to retire.`;
+  next.messages.push({ ...message(3), from: 'system', text: notice });
+  update(next);
+  const rendered = $('#messages .message:last-child');
+  const links = rendered.querySelectorAll('.task-ref');
+  assert.equal(links.length, 1);
+  assert.equal(links[0].textContent, title);
+  assert.equal(links[0].title, id);
+  assert.equal(rendered.textContent.split(title).length - 1, 1, 'the title is written once');
+  assert.ok(!rendered.textContent.includes(id), 'the ID is not written beside the title');
+});

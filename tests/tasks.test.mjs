@@ -71,7 +71,10 @@ test('only explicit user verification can authorize retirement of a completed ta
   assert.deepEqual(verified.retiredAgentIds, ['worker']);
   assert.equal(sent[0].from, 'system');
   assert.equal(sent[0].conversationId, 'task-room');
-  assert.match(sent[0].text, /^The user verified task issue.* Mu retired its workers \(worker\)/);
+  assert.match(
+    sent[0].text,
+    /^The user verified task `issue`\. Authoritative task status is verified\. Mu retired its workers \(worker\); their history is kept\.$/,
+  );
   assert.equal(store.inbox('lead').length, 0, 'a routine verification does not wake the lead');
   assert.equal(store.inbox('worker').length, 0);
   assert.throws(() => tasks.update('issue', { result: 'Changed after human approval' }, 'lead'), { status: 409 });
@@ -127,7 +130,7 @@ test('retirement retains workers with other unverified assignments or pending wo
   assert.deepEqual(stopped, ['worker'], 'verification already retired the free worker and kept the others');
   assert.match(
     sent[0].text,
-    /^@lead The user verified task issue.* Mu retired its workers \(worker\); their history is kept\. Mu did not retire shared \(Still assigned to unverified tasks: other-task\), busy \(Agent has pending work/,
+    /^@lead The user verified task `issue`\. Authoritative task status is verified\. Mu retired its workers \(worker\); their history is kept\. Mu did not retire shared \(Still assigned to unverified tasks: other-task\), busy \(Agent has pending work/,
   );
   assert.equal(store.inbox('lead').length, 1, "a skipped worker is the lead's to follow up");
   assert.throws(() => tasks.guardAgentStop('lead', 'shared'), /unverified tasks: other-task/);
@@ -206,7 +209,7 @@ test('retirement retires a failed managed worker whose pending messages all belo
   );
 });
 
-test('task metadata is scoped, Markdown is preserved, and notification titles cannot broadcast', async (t) => {
+test('task metadata is scoped, Markdown is preserved, and the verification notice does not carry the title', async (t) => {
   const { store, tasks, sent } = fixture();
   t.after(() => store.close());
   assert.throws(() => tasks.create({ ...input('invalid'), agentIds: ['lead'] }, 'lead'), /registered workers/);
@@ -219,7 +222,8 @@ test('task metadata is scoped, Markdown is preserved, and notification titles ca
   assert.equal(task.sourceConversationId, 'dm-lead');
   tasks.update('issue', { status: 'ready', result: 'A **Markdown** result' }, 'lead');
   await tasks.verify('issue', 'user');
-  assert.doesNotMatch(sent[0].text, /@all|@worker/);
+  assert.doesNotMatch(sent[0].text, /@all|@worker|Inspect/, 'the notice names the task by its ID only');
+  assert.match(sent[0].text, /^The user verified task `issue`\. /);
   assert.equal(store.inbox('worker').length, 0);
   assert.equal(tasks.get('issue').status, 'verified');
 });
