@@ -15,7 +15,7 @@ import { RESTART_EXIT_CODE, RESTART_FILE, codeDigest, codeState, launchdJob, sta
 import { testIdentity } from './identity-fixture.mjs';
 import { offlinePricing } from './offline-pricing.mjs';
 import { userHeaders } from './identity-fixture.mjs';
-import { freePort, listenLocal } from './isolation.mjs';
+import { freePort, listenLocal, shortTempDir } from './isolation.mjs';
 import { initializeHome } from '../src/home.mjs';
 
 class FakeChat extends EventEmitter {
@@ -479,6 +479,29 @@ test('a start check after a package-manager upgrade runs the stable path of the 
     /failed while starting: it exited 3 before it announced readiness/,
   );
   assert.equal((await readFile(ran, 'utf8')).trim(), '27.0.0');
+});
+
+test('a demo agent started after a package-manager upgrade runs the stable path of the node that started the service', async (t) => {
+  const prefix = await shortTempDir(t, 'demo-upgrade');
+  const cellar = (name) => join(prefix, 'Cellar/node', name);
+  await mkdir(join(cellar('26.13.1'), 'bin'), { recursive: true });
+  await writeFile(join(cellar('26.13.1'), 'bin/node'), '#!/bin/sh\n');
+  await mkdir(join(prefix, 'opt'));
+  await symlink(cellar('26.13.1'), join(prefix, 'opt/node'));
+  // A fresh process stands in for the service: it loads with the versioned execPath, then the upgrade happens.
+  const script = `
+    import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+    process.execPath = ${JSON.stringify(join(cellar('26.13.1'), 'bin/node'))};
+    const { commandFor } = await import(${JSON.stringify(join(ROOT, 'src/adapters.mjs'))});
+    mkdirSync(${JSON.stringify(join(cellar('27.0.0'), 'bin'))}, { recursive: true });
+    writeFileSync(${JSON.stringify(join(cellar('27.0.0'), 'bin/node'))}, '#!/bin/sh\\n');
+    rmSync(${JSON.stringify(join(prefix, 'opt/node'))});
+    symlinkSync(${JSON.stringify(cellar('27.0.0'))}, ${JSON.stringify(join(prefix, 'opt/node'))});
+    rmSync(${JSON.stringify(cellar('26.13.1'))}, { recursive: true });
+    console.log(commandFor({ adapter: 'demo' }, ${JSON.stringify(ROOT)}).command);
+  `;
+  const output = execFileSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8' });
+  assert.equal(output.trim(), join(prefix, 'opt/node/bin/node'));
 });
 
 test('the start check runs on its own port, data directory and broker-less IRC port, without job or turn variables', async (t) => {

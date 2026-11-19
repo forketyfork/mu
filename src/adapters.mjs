@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { splitChoices } from './choices.mjs';
 import { privateUserPaths, sandboxPi } from './sandbox.mjs';
+import { SERVICE_NODE } from './service.mjs';
 
 // Adapters whose CLI takes a model per process; other adapters reject a per-agent model.
 export const MODEL_ADAPTERS = ['claude', 'codex', 'pi'];
@@ -185,7 +186,7 @@ export function commandFor(agent, root, custom = {}, cliArgs = {}, options = {})
       format: 'pi',
     };
   if (agent.adapter === 'demo')
-    return { command: process.execPath, args: [join(root, 'scripts/demo-agent.mjs')], format: 'text' };
+    return { command: SERVICE_NODE, args: [join(root, 'scripts/demo-agent.mjs')], format: 'text' };
   const config = custom[agent.adapter];
   if (!config) throw new Error(`No executable adapter configured for ${agent.adapter}`);
   return {
