@@ -161,6 +161,40 @@ test('lead turn omits the card block when there are no cards', async (t) => {
   assert.ok(prompts[1].includes('wait-00000001 — Approve the release\n'));
 });
 
+test('lead turns name stale service code in every conversation until the code is current again', async (t) => {
+  const store = new Store();
+  store.createAgent({ id: 'lead', role: 'lead', adapter: 'claude', cwd: ROOT, task: 'Coordinate' });
+  store.createAgent({ id: 'worker', role: 'worker', adapter: 'claude', cwd: ROOT, task: 'Work' });
+  let code = { state: 'stale', message: 'Mu runs old code: the checkout changed.' };
+  const { runner } = await runnerFor(t, store, { serviceCode: async () => code });
+  const prompts = [];
+  runner.execute = async (command, agent, _message, value) => {
+    prompts.push({ agent: agent.id, value });
+    return leadOutput(command.format, 'NO_REPLY');
+  };
+
+  await turn(runner, store, 'stale-direct', 'Hello');
+  assert.ok(prompts[0].value.includes('Mu runs old code: the checkout changed. Pick the moment as mu-changes.md'));
+
+  store.createConversation({ id: 'stale-room', kind: 'room', name: 'Stale room', members: ['lead', 'worker'] });
+  store.addMessage('stale-room-worker', 'worker', '@lead Merged', 'stale-room');
+  runner.kick();
+  await until(() => prompts.length === 2 && !runner.active.size && store.agent('lead').status === 'idle');
+  assert.ok(prompts[1].value.includes('Mu runs old code'));
+
+  store.addMessage('stale-worker-turn', 'lead', '@worker Report', 'stale-room');
+  runner.kick();
+  await until(() => prompts.length === 3 && !runner.active.size && store.agent('worker').status === 'idle');
+  assert.equal(prompts[2].agent, 'worker');
+  assert.doesNotMatch(prompts[2].value, /Mu runs old code/);
+
+  for (const state of ['current', 'unknown']) {
+    code = { state, message: `Code is ${state}.` };
+    await turn(runner, store, `code-${state}`, 'Again');
+    assert.doesNotMatch(prompts.at(-1).value, /Code is|mu-changes\.md in your skill/);
+  }
+});
+
 test('lead direct chat carries shortened messages from other sessions and does not repeat its own replies', async (t) => {
   const store = new Store();
   store.createAgent({ id: 'lead', role: 'lead', adapter: 'claude', cwd: ROOT, task: 'Coordinate' });

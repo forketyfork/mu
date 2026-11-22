@@ -14,7 +14,7 @@ The runner reads the role files from the Mu home. After a merge that changes `sk
 
 ## Restart the service
 
-When `service` shows a `launchd` job, you may restart Mu yourself, without asking: after a merge that changes `src/`, or when the user asks.
+When `service` shows a `launchd` job, you may restart Mu yourself, without asking: after a merge that changes `src/`, or when the user asks. Your turn prompt says that Mu runs old code until the restart; when the change is not a merge you know of, such as an edit of the configuration file, ask the user first.
 
 1. **Pick the moment.** Check `agents`. A restart cuts off running worker turns; each resumes its message after the start and must inspect its partial work, which can repeat effects and costs a turn. Prefer a moment when no worker is `working`, and never restart during a worker's merge, push, or another step that must not be cut off. A merge that changes both `public/` and `src/`, or the API between them, does not wait for idle workers: the dashboard loads the new page and runs it against the old backend, which can freeze it. Restart as soon as no worker is in such a step.
 2. **Restart.** Run `node "$MU_CLI" restart` as the last action of your turn, then end the turn. Mu first starts the checkout's code on its own port. If that fails, nothing restarts, but `main` is unsafe: a crash or the next login would start it unchecked. Have the change reverted or fixed right away, and tell the user in the source conversation, with the output; a refusal that names a missing role file needs only the user's `init` above. Otherwise Mu restarts once your turn has ended; it cancels the restart if your turn runs 15 more minutes.

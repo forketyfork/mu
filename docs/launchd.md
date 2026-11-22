@@ -74,7 +74,7 @@ When the check fails, `main` holds code that does not start. Fix or revert it so
 `node src/cli.mjs service` shows the running process, its start time, and `code.state`:
 
 - `current`: the checkout holds the code that the process loaded.
-- `stale`: the source files, `package.json`, `package-lock.json` or the configuration file changed since the start. The message names the Git commit that was loaded and the current one, or says that uncommitted changes differ. A merge after the last start shows as `stale` until the next restart.
+- `stale`: the source files, `package.json`, `package-lock.json` or the configuration file changed since the start. The message names the Git commit that was loaded and the current one, or says that uncommitted changes differ. A merge after the last start shows as `stale` until the next restart. While it is `stale`, every turn of the lead names it, so the lead restarts or tells you.
 - `unknown`: the code cannot be read; the message says why.
 
 ### Merges by the lead

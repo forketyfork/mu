@@ -195,6 +195,7 @@ export async function createApp({
       if (!tasks || !waiting) throw new Error('Lead task context is not ready');
       return { tasks: tasks.list(), waiting: waiting.list() };
     },
+    serviceCode: async () => codeState(loadedCode, await codeSnapshot(root, { configFile })),
   });
   const tasks = createTasks({ store, chat, runner });
   leadPromptState.tasks = tasks;

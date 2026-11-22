@@ -97,6 +97,14 @@ function openWaitingCards(context) {
   return `Open "Waiting for you" cards:\n${listing}${omittedNote}\nIf the user's message settles a card, remove it in this turn.\n`;
 }
 
+// Each lead session runs in its own conversation, so the session that merged a change to the service may not be the one
+// the user talks to next; restarts waited hours while the direct-chat session did not know the code was stale.
+/** @param {{state: string, message: string}} code */
+function staleCodeReminder(code) {
+  if (code.state !== 'stale') return '';
+  return `${code.message} Pick the moment as mu-changes.md in your skill says; if you cannot restart Mu yourself, tell the user that it needs a restart.\n`;
+}
+
 function shortenDirectMessage(text) {
   const plain = text.replace(/\s+/g, ' ').trim();
   const characters = Array.from(plain);
@@ -128,6 +136,7 @@ export class Runner {
     codexSandbox = /** @type {import('./sandbox.mjs').CodexSandbox} */ ({}),
     privatePaths = null,
     leadTaskContext = () => ({ tasks: [], waiting: [] }),
+    serviceCode = async () => ({ state: 'current', message: '' }),
   }) {
     if (!identity) throw new Error('The runner needs the identity service that issues turn credentials');
     if (!home) throw new Error('The runner needs the initialized Mu home');
@@ -150,6 +159,8 @@ export class Runner {
     this.privatePathsGiven = privatePaths;
     /** @type {() => LeadTaskContext} */
     this.leadTaskContext = leadTaskContext;
+    /** @type {() => Promise<{state: string, message: string}>} */
+    this.serviceCode = serviceCode;
     this.active = new Map();
     this.closed = false;
     // A scheduled restart pauses new turns: one started now would only be interrupted.
@@ -289,6 +300,7 @@ export class Runner {
       agent.role === 'lead' && conversationId === 'dm-lead' && batch.some((item) => item.from === 'user')
         ? openWaitingCards(this.leadTaskContext())
         : '';
+    const codeReminder = agent.role === 'lead' ? staleCodeReminder(await this.serviceCode()) : '';
     const sections = `The sections of your ${skillName} skill are the other files in ${skillDir}; read one when the skill names its situation.\n`;
     const skill = skillKnown
       ? `Your ${skillName} skill is unchanged since an earlier turn of this session gave you its full text; keep following it. If that text is no longer in your context, read ${skillPath}. ${sections}`
@@ -306,7 +318,7 @@ export class Runner {
     const directChatContext =
       agent.role === 'lead' && conversationId === 'dm-lead' ? this.directChatContext(agent, batch) : null;
     const memoryText = memory ? memoryPrompt(memory, { known: memoryKnown }) : '';
-    const prompt = `${skill}\n${memoryText}${agent.sessionId ? 'Continue your existing session for this conversation.\n' : 'This is a new session for this conversation.\n'}${largeContext}${taskReminder}${cardReminder}${directChatContext?.text || ''}Mu's projects and local clones are listed in ${join(this.home, 'projects.md')}.\n${resumedAfterShutdown ? `The Mu service shut down while you were handling ${describeMessages(interrupted)} and terminated that turn before it finished. Inspect the state of the work you had started, such as files, branches, processes, and messages already posted, then complete the request without repeating effects that already happened.\n` : ''}\nYour identity: @${agent.id}; role: ${agent.role}. Workspace: ${agent.cwd}. Task: ${assignment}.\nConversation: ${conversationId} (${conversation.kind}, ${conversation.name}). Members: ${conversation.members.map((id) => '@' + id).join(', ')}.${conversation.sourceConversationId ? ` The request originated in ${conversation.sourceConversationId}; the lead should send the user a final summary there using Mu chat.` : ''}\nMu CLI: ${join(this.root, 'src/cli.mjs')}. Service: ${access.url}. Environment MU_CLI, MU_AGENT_ID, MU_LEAD_ID, MU_URL, MU_TOKEN_FILE and MU_CONVERSATION_ID are available; the file named by MU_TOKEN_FILE holds your credential for this turn, and Mu accepts nothing you send as another identity.\nThis managed runner delivers the queued chat messages of this conversation together in one turn, oldest first, and acknowledges them after you finish; answer them in one final reply, and do not call inbox or ack yourself. All communication, assignments and follow-ups must use Mu chat. A harness reminder to tell the user what you are doing is answered with one short line of plain text, never with a chat message. Your final reply is automatically posted to ${conversationId}; do not duplicate it with a say command. Keep it focused, but retain necessary evidence. The transport accepts up to ${MAX_MESSAGE_BYTES} UTF-8 bytes per message. The user has identity @user. In a direct conversation, reply to the user; do not move private content to a task room or common chat. Do not reply merely to acknowledge another agent's acknowledgement: return exactly NO_REPLY when no response is needed.\n${batch.length > 1 ? `${batch.length} chat messages are queued for you in this conversation, oldest first.\n\n` : ''}${batch.map((item) => `Incoming chat message #${item.id} from ${senderName(item.from)}:\n${plainMessageText(item)}`).join('\n\n')}`;
+    const prompt = `${skill}\n${memoryText}${agent.sessionId ? 'Continue your existing session for this conversation.\n' : 'This is a new session for this conversation.\n'}${largeContext}${codeReminder}${taskReminder}${cardReminder}${directChatContext?.text || ''}Mu's projects and local clones are listed in ${join(this.home, 'projects.md')}.\n${resumedAfterShutdown ? `The Mu service shut down while you were handling ${describeMessages(interrupted)} and terminated that turn before it finished. Inspect the state of the work you had started, such as files, branches, processes, and messages already posted, then complete the request without repeating effects that already happened.\n` : ''}\nYour identity: @${agent.id}; role: ${agent.role}. Workspace: ${agent.cwd}. Task: ${assignment}.\nConversation: ${conversationId} (${conversation.kind}, ${conversation.name}). Members: ${conversation.members.map((id) => '@' + id).join(', ')}.${conversation.sourceConversationId ? ` The request originated in ${conversation.sourceConversationId}; the lead should send the user a final summary there using Mu chat.` : ''}\nMu CLI: ${join(this.root, 'src/cli.mjs')}. Service: ${access.url}. Environment MU_CLI, MU_AGENT_ID, MU_LEAD_ID, MU_URL, MU_TOKEN_FILE and MU_CONVERSATION_ID are available; the file named by MU_TOKEN_FILE holds your credential for this turn, and Mu accepts nothing you send as another identity.\nThis managed runner delivers the queued chat messages of this conversation together in one turn, oldest first, and acknowledges them after you finish; answer them in one final reply, and do not call inbox or ack yourself. All communication, assignments and follow-ups must use Mu chat. A harness reminder to tell the user what you are doing is answered with one short line of plain text, never with a chat message. Your final reply is automatically posted to ${conversationId}; do not duplicate it with a say command. Keep it focused, but retain necessary evidence. The transport accepts up to ${MAX_MESSAGE_BYTES} UTF-8 bytes per message. The user has identity @user. In a direct conversation, reply to the user; do not move private content to a task room or common chat. Do not reply merely to acknowledge another agent's acknowledgement: return exactly NO_REPLY when no response is needed.\n${batch.length > 1 ? `${batch.length} chat messages are queued for you in this conversation, oldest first.\n\n` : ''}${batch.map((item) => `Incoming chat message #${item.id} from ${senderName(item.from)}:\n${plainMessageText(item)}`).join('\n\n')}`;
     let result, command;
     try {
       command = commandFor(agent, this.root, this.custom, this.cliArgsFor(agent), {
