@@ -44,7 +44,7 @@ node src/cli.mjs room invite --conversation issue-42 --members worker-two
 node src/cli.mjs room list
 ```
 
-- `chat` is a chat client for you in the terminal; it runs no model.
+- `chat` is a chat client for you in the terminal; it runs no model. It shows the conversation's latest 20 messages and then each new one within about a second; `history` reads further back.
 - `say` posts to `--conversation` (alias `--room`), else to `MU_CONVERSATION_ID`, else to the common room. A private chat with an agent is `dm-<agent id>`. Sending to an unknown conversation, or to a room you are not a member of, fails.
 - `room create` records the conversation it was created from; `--source-conversation ID` sets it explicitly, so that the lead reports back to your original chat.
 - Messages can hold up to 64 KiB of UTF-8 text.

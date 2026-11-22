@@ -314,25 +314,52 @@ async function htmlAttachment(file, title) {
   return { type: 'html', title: title ?? basename(file, extname(file)), html };
 }
 
-async function terminalChat(url, conversationId, token) {
+const CHAT_POLL_MS = 1000;
+const CHAT_BACKLOG = 20;
+
+// Reads one conversation only: its latest messages at the start, then the messages after the last one shown. The
+// whole state holds the latest messages of every conversation, so asking for it every second made the service read
+// and send megabytes to show one new line.
+/**
+ * @param {string} url
+ * @param {string} conversationId
+ * @param {string} token
+ * @param {{input?: NodeJS.ReadableStream, output?: NodeJS.WritableStream, pollMs?: number}} [terminal]
+ */
+async function terminalChat(
+  url,
+  conversationId,
+  token,
+  { input: source = process.stdin, output = process.stdout, pollMs = CHAT_POLL_MS } = {},
+) {
   const request = send;
-  const initial = await request(url, '/api/state', { token });
-  const conversation = initial.conversations.find((item) => item.id === conversationId);
+  const conversation = (await request(url, '/api/conversations', { token })).find((item) => item.id === conversationId);
   if (!conversation) throw new Error(`Unknown conversation: ${conversationId}. Use room list to see conversations.`);
+  const history = async (query, signal) =>
+    (
+      await request(url, `/api/conversations/${encodeURIComponent(conversationId)}/messages?${query}`, {
+        signal,
+        token,
+      })
+    ).messages;
   let lastId = 0;
   const show = (messages) => {
     for (const message of messages) {
       if (message.id > lastId) {
-        process.stdout.write(`${message.from}: ${plainMessageText(message)}\n`);
+        output.write(`${message.from}: ${plainMessageText(message)}\n`);
         lastId = message.id;
       }
     }
   };
-  show(initial.messages.filter((message) => message.conversationId === conversationId).slice(-20));
-  process.stdout.write(
+  show(await history(`limit=${CHAT_BACKLOG}`));
+  output.write(
     `${conversation.name} (${conversationId}). ${conversation.kind === 'direct' ? 'Messages are delivered directly; no mention is needed.' : 'Mention an agent or @all to deliver a message.'} Type /quit to leave.\n`,
   );
-  const input = createInterface({ input: process.stdin, output: process.stdout, terminal: process.stdin.isTTY });
+  const input = createInterface({
+    input: source,
+    output,
+    terminal: /** @type {{isTTY?: boolean}} */ (source).isTTY,
+  });
   input.setPrompt('you> ');
   input.prompt();
   let closed = false;
@@ -344,15 +371,14 @@ async function terminalChat(url, conversationId, token) {
   });
   const poll = (async () => {
     while (!closed) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
       if (closed) break;
       try {
-        const state = await request(url, '/api/state', { signal: controller.signal, token });
-        const fresh = state.messages.filter(
-          (message) => message.conversationId === conversationId && message.id > lastId,
-        );
+        // A page holds the oldest messages after the cursor, so more than a page of new messages arrives over
+        // the next polls, in order and without a gap.
+        const fresh = await history(`after=${lastId}`, controller.signal);
         if (fresh.length) {
-          process.stdout.write('\n');
+          output.write('\n');
           show(fresh);
           input.prompt(true);
         }
@@ -383,7 +409,7 @@ async function terminalChat(url, conversationId, token) {
 export async function main(
   argv = process.argv.slice(2),
   env = process.env,
-  { restartTimeoutMs = RESTART_TIMEOUT_MS } = {},
+  { restartTimeoutMs = RESTART_TIMEOUT_MS, terminal = undefined } = {},
 ) {
   let [command, ...args] = argv;
   if (!command || command === '--help' || command === '-h' || command === 'help') {
@@ -834,7 +860,7 @@ export async function main(
     case 'chat':
       if (values.to && selectedConversation) throw new Error('Use either --to or --conversation.');
       if (values.to && !/^[a-z][a-z0-9-]{0,23}$/.test(values.to)) throw new Error('Invalid chat recipient.');
-      await terminalChat(url, selectedConversation ?? `dm-${values.to ?? 'lead'}`, token);
+      await terminalChat(url, selectedConversation ?? `dm-${values.to ?? 'lead'}`, token, terminal);
       return undefined;
   }
 }
