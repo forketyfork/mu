@@ -168,9 +168,10 @@ test('lead turns name stale service code in every conversation until the code is
   let code = { state: 'stale', message: 'Mu runs old code: the checkout changed.' };
   const { runner } = await runnerFor(t, store, { serviceCode: async () => code });
   const prompts = [];
-  runner.execute = async (command, agent, _message, value) => {
+  runner.execute = async (command, agent, message, value) => {
     prompts.push({ agent: agent.id, value });
-    return leadOutput(command.format, 'NO_REPLY');
+    const sessionId = `session-${agent.id}-${message.conversationId}`;
+    return readTurn(command.format, JSON.stringify({ type: 'result', result: 'NO_REPLY', session_id: sessionId }));
   };
 
   await turn(runner, store, 'stale-direct', 'Hello');
@@ -188,9 +189,15 @@ test('lead turns name stale service code in every conversation until the code is
   assert.equal(prompts[2].agent, 'worker');
   assert.doesNotMatch(prompts[2].value, /Mu runs old code/);
 
+  await turn(runner, store, 'stale-direct-again', 'Still there?');
+  assert.equal(prompts[3].agent, 'lead');
+  assert.ok(prompts[3].value.includes('Continue your existing session for this conversation.'));
+  assert.ok(prompts[3].value.includes('Mu runs old code: the checkout changed. Pick the moment as mu-changes.md'));
+
   for (const state of ['current', 'unknown']) {
     code = { state, message: `Code is ${state}.` };
     await turn(runner, store, `code-${state}`, 'Again');
+    assert.ok(prompts.at(-1).value.includes('Continue your existing session for this conversation.'));
     assert.doesNotMatch(prompts.at(-1).value, /Code is|mu-changes\.md in your skill/);
   }
 });
