@@ -353,10 +353,11 @@ function nestedRepositories(base, depth = NESTED_REPOSITORY_DEPTH) {
   ];
 }
 
-// The file that spawning `name` runs: the first executable file of that name on the search path, whose relative
-// directories count from cwd, as they do for the child. Null when there is none.
-/** @returns {string|null} */
-export function commandPath(name, searchPath = process.env.PATH || '', cwd = process.cwd()) {
+// The file that spawning `name` runs: the first executable file of that name on the search path, whose empty and
+// relative directories count from cwd, as they do for the child. Without a search path, libuv searches /usr/bin
+// and /bin. Null when there is none.
+/** @param {string} name @param {string} [searchPath] @param {string} [cwd] @returns {string|null} */
+export function commandPath(name, searchPath = process.env.PATH ?? '/usr/bin:/bin', cwd = process.cwd()) {
   for (const directory of searchPath.split(delimiter)) {
     const candidate = resolve(cwd, directory || '.', name);
     try {
@@ -373,11 +374,12 @@ export function commandPath(name, searchPath = process.env.PATH || '', cwd = pro
 // the path it was started as, with the turn's profile. Codex's standalone installer puts the executable under
 // ~/.codex/packages, inside a private path, and links it from ~/.local/bin, so the profile kept Codex from
 // running itself and every turn failed at its start ("execvp() of ... failed: Operation not permitted").
-// Resolving that path reads each symbolic link on the way and then the file, so for each private path that
-// the resolution enters, the entry directly inside it on the way is readable again: ~/.codex/packages for the
-// standalone install, which holds programs, not conversations. Naming a deeper link does not reopen it,
-// because Codex resolves the paths of a profile before it matches them.
-/** @returns {string[]} */
+// Resolving that path reads each symbolic link on the way and then the file. A link cannot be reopened by its
+// own path, because Codex resolves the paths of a profile before it matches them; the directory that holds it
+// can. So for each private path that the resolution enters, the entry directly inside it on the way is readable
+// again, one rule however deep the links sit: ~/.codex/packages for the standalone install, which holds programs
+// and version markers, not conversations. It stays read-only, and an approved escalation keeps only the deny.
+/** @param {string|null} executable @param {string[]} privatePaths @returns {string[]} */
 export function executableAccess(executable, privatePaths) {
   if (!executable) return [];
   const reopened = new Set();
