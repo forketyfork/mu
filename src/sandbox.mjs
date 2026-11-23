@@ -1,7 +1,18 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync } from 'node:fs';
+import {
+  accessSync,
+  constants,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  readlinkSync,
+  realpathSync,
+  statSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { delimiter, dirname, join, relative, resolve } from 'node:path';
 import { pathIsWithin } from './paths.mjs';
 
 // Entries that hold code other programs run outside the sandbox: git metadata and hooks, and the
@@ -342,6 +353,42 @@ function nestedRepositories(base, depth = NESTED_REPOSITORY_DEPTH) {
   ];
 }
 
+// The file that spawning `name` runs: the first executable file of that name on the search path, whose relative
+// directories count from cwd, as they do for the child. Null when there is none.
+/** @returns {string|null} */
+export function commandPath(name, searchPath = process.env.PATH || '', cwd = process.cwd()) {
+  for (const directory of searchPath.split(delimiter)) {
+    const candidate = resolve(cwd, directory || '.', name);
+    try {
+      accessSync(candidate, constants.X_OK);
+      if (statSync(candidate).isFile()) return candidate;
+    } catch {
+      // Not here; spawning would try the next directory too.
+    }
+  }
+  return null;
+}
+
+// Codex 0.163 loads the instructions through a helper: it runs its own executable again under sandbox-exec, by
+// the path it was started as, with the turn's profile. Codex's standalone installer puts the executable under
+// ~/.codex/packages, inside a private path, and links it from ~/.local/bin, so the profile kept Codex from
+// running itself and every turn failed at its start ("execvp() of ... failed: Operation not permitted").
+// Resolving that path reads each symbolic link on the way and then the file, so for each private path that
+// the resolution enters, the entry directly inside it on the way is readable again: ~/.codex/packages for the
+// standalone install, which holds programs, not conversations. Naming a deeper link does not reopen it,
+// because Codex resolves the paths of a profile before it matches them.
+/** @returns {string[]} */
+export function executableAccess(executable, privatePaths) {
+  if (!executable) return [];
+  const reopened = new Set();
+  for (const entry of resolution(resolve(executable)).entries)
+    for (const path of privatePaths) {
+      if (entry === path || !isWithin(entry, path)) continue;
+      reopened.add(join(path, relative(path, entry).split('/')[0]));
+    }
+  return [...reopened];
+}
+
 // What a Codex agent may write beyond its working directory, and what stays read-only inside that.
 // writableRoots come from the configuration. The agent's repository, found from its working directory,
 // gets the git entries that fetching, creating a worktree, and committing in a linked worktree need.
@@ -355,8 +402,17 @@ function nestedRepositories(base, depth = NESTED_REPOSITORY_DEPTH) {
 // Inside a writable root Mu lists nothing more: everything there, other worktrees included, is writable
 // work, and Codex builds each command's sandbox in time that grows faster than the number of listed
 // paths, so listing each directory of a root cost seconds per command. Paths are real paths, because
-// the sandbox matches those.
-export function codexAccess({ cwd, writableRoots = [], dataDir, home, role, privatePaths = privateUserPaths() }) {
+// the sandbox matches those. The part of a private path that holds the Codex executable, which
+// executableAccess finds, is readable.
+export function codexAccess({
+  cwd,
+  writableRoots = [],
+  dataDir,
+  home,
+  role,
+  privatePaths = privateUserPaths(),
+  executable = null,
+}) {
   if (!home) throw new Error('The Codex sandbox needs the Mu home');
   const roots = writableRoots.map((path) => realpathSync(path));
   const directory = realpathSync(cwd);
@@ -402,6 +458,7 @@ export function codexAccess({ cwd, writableRoots = [], dataDir, home, role, priv
   // An explicit entry, so that no broader writable entry decides for the home.
   readOnly.push(...homeRules.readOnly, ...homeAncestorsWithin(resolve(home), [directory, ...roots]));
   writable.push(...homeRules.writable);
+  readOnly.push(...executableAccess(executable, privatePaths));
   return {
     writable: [...new Set(writable)],
     readOnly: [...new Set(readOnly)],

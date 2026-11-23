@@ -10,7 +10,7 @@ import { DEFAULTS } from './home.mjs';
 import { memoryPrompt, readLeadMemoryIndex } from './memory.mjs';
 import { mentions } from './store.mjs';
 import { CodexRollouts } from './codex-rollout.mjs';
-import { codexAccess, privateUserPaths } from './sandbox.mjs';
+import { codexAccess, commandPath, privateUserPaths } from './sandbox.mjs';
 import { LAUNCHD_VARIABLES, withoutVariables } from './service.mjs';
 
 const LIVE_USAGE_INTERVAL_MS = 5000;
@@ -193,6 +193,8 @@ export class Runner {
         role: agent.role,
         privatePaths,
         writableRoots: this.codexSandbox.writableRoots || [],
+        // The executable that the turn's spawn of codex finds, with the service's search path.
+        executable: commandPath('codex', process.env.PATH, agent.cwd),
       }),
     };
   }

@@ -53,7 +53,8 @@ export function muCommand(root) {
 
 // A Codex permission profile equivalent to workspace-write with network access, plus the writable,
 // read-only and unreadable paths that codexAccess chooses, except that Mu's data directory and the storage in
-// privateUserPaths are unreadable, apart from the agent's own credential file. In Codex the most
+// privateUserPaths are unreadable, apart from the agent's own credential file and, among the read-only paths, the
+// part of a private path that holds the Codex executable. In Codex the most
 // specific path wins; for the same path, a later entry here replaces an earlier one. Paths must be real
 // paths, because the sandbox matches those. TOML basic strings accept JSON string escapes.
 export function codexPermissions({

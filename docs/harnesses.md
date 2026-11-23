@@ -50,7 +50,7 @@ These stay read-only, because Git or another CLI runs code from them outside the
 - the `.git`, `.claude`, `.codex`, `.pi` and `.agents` entries of the working directory, of its repository's top level and of each writable root;
 - the Mu home. Its `memory/` is unreadable, except that a Codex lead can read and write `memory/lead/`.
 
-Mu's data directory, your credential and the CLIs' state directories are unreadable; see [Security model](security.md#what-sandboxed-agents-can-read).
+Mu's data directory, your credential and the CLIs' state directories are unreadable; see [Security model](security.md#what-sandboxed-agents-can-read). When the `codex` that Mu finds on the service's `PATH` lives inside one of them, as Codex's standalone installer puts it under `~/.codex/packages`, that directory is readable: Codex runs its own executable again inside the sandbox to load the instructions, and without it every turn fails at the start with `sandbox-exec: execvp() of ... failed: Operation not permitted`.
 
 Mu lists these paths before each turn, so they protect only what existed at the start of the turn. A worktree or repository that a Codex agent creates during a turn can contain Git configuration, hooks or CLI settings of its choice, which run when Git or an unsandboxed agent starts there later.
 

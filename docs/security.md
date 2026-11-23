@@ -54,7 +54,7 @@ pi and Codex agents can read most of the file system, but not:
 
 - Mu's data directory: the database, the credentials, the other agents' pi directories (each agent's own credential and socket excepted);
 - the home's `memory/` directory, except `memory/lead/` for a Codex or pi lead;
-- the state of Claude Code and Codex (`~/.claude`, `~/.claude.json`, `/tmp/claude-<uid>`, `~/.codex`) and pi's sessions, which hold transcripts and prompts;
+- the state of Claude Code and Codex (`~/.claude`, `~/.claude.json`, `/tmp/claude-<uid>`, `~/.codex`) and pi's sessions, which hold transcripts and prompts. A Codex agent can read the part of these that holds the Codex program, such as `~/.codex/packages` for Codex's standalone installer, because Codex runs its own executable again inside the sandbox;
 - the profile directories of common browsers, where the dashboard keeps its credential.
 
 They can read the home's `skills/`, `projects.md` and `config.json`, but not write them. They can also read other processes' environments and command lines, so Mu never puts a credential or a prompt in an environment. A running `say` or `spawn --task` shows its text on its command line; `say --file` avoids that.
