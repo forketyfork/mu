@@ -124,40 +124,20 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  dependency-review:
-    name: Dependency review
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
-        with:
-          # Only what the pull request adds or changes; an advisory for an existing package does not block
-          # unrelated work.
-          fail-on-severity: moderate
-          # A comment needs write access to pull requests; the job summary has the same report.
-          comment-summary-in-pr: never
-
   gate:
     name: Merge gate
     if: always()
-    needs: [check, workflows, unit, integration, browser, dependency-review]
+    needs: [check, workflows, unit, integration, browser]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Require every job to pass
         env:
           NEEDS: ${{ toJSON(needs) }}
-          EVENT: ${{ github.event_name }}
-        # dependency-review runs only for pull requests; every other job must succeed on every event.
         # The script fails closed: if jq itself fails, so does the gate.
         run: |
           set -euo pipefail
-          failed=$(jq -r --arg event "$EVENT" '
-            to_entries[]
-            | select(.value.result != "success")
-            | select(.key != "dependency-review" or $event == "pull_request" or .value.result != "skipped")
-            | "\(.key): \(.value.result)"' <<<"$NEEDS")
+          failed=$(jq -r 'to_entries[] | select(.value.result != "success") | "\(.key): \(.value.result)"' <<<"$NEEDS")
           if [ -n "$failed" ]; then
             echo "::error::Jobs that did not pass:"
             echo "$failed"

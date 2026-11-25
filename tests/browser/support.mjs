@@ -110,8 +110,8 @@ const STDERR_TAIL = 600;
 // A browser that exits before DevTools answers has crashed or been refused at launch. The usual refuser is the sandbox of
 // an agent: Chrome needs system services at start (LaunchServices, the window server), a Codex agent's Seatbelt profile
 // does not allow them, and Chrome aborts in _RegisterApplication. Asking Codex to run the command outside its sandbox
-// does not lift this, because Mu's profile has deny entries and the command stays under Seatbelt. A skip would pass the
-// check the pre-commit hook exists for, so the failure names the cause and what to do instead.
+// does not lift this, because Mu's profile has deny entries and the command stays under Seatbelt. A skip would read as a
+// pass, so the failure names the cause and what to do instead.
 function earlyExit(chrome, { code, signal, stderr, elapsed }) {
   const how = signal ? `signal ${signal}` : `code ${code}`;
   const output = stderr.trim();
@@ -141,6 +141,9 @@ export async function startBrowser(t, { chrome: binary = CHROME, args = [] } = {
       '--no-first-run',
       '--no-default-browser-check',
       '--window-size=1500,1000',
+      // The checks expect motion unless they emulate the wish for less; without this, a system set to reduce motion, as
+      // GitHub's macOS runners are, makes the browser report it to every page. Emulation still overrides the switch.
+      '--force-prefers-no-reduced-motion',
       ...args,
       'about:blank',
     ],

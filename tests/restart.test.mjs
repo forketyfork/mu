@@ -15,7 +15,7 @@ import { RESTART_EXIT_CODE, RESTART_FILE, codeDigest, codeState, launchdJob, sta
 import { testIdentity } from './identity-fixture.mjs';
 import { offlinePricing } from './offline-pricing.mjs';
 import { userHeaders } from './identity-fixture.mjs';
-import { freePort, listenLocal, shortTempDir } from './isolation.mjs';
+import { freePort, listenLocal, shortTempDir, macOSOnly } from './isolation.mjs';
 import { initializeHome } from '../src/home.mjs';
 
 class FakeChat extends EventEmitter {
@@ -816,31 +816,35 @@ test('a shutdown for another reason while the restart waits writes no restart re
   assert.equal(await exists(join(dataDir, RESTART_FILE)), false);
 });
 
-test('signalling a turn whose process has exited but is not yet reaped does not throw', async (t) => {
-  const runner = new Runner({
-    home: ROOT,
-    identity: testIdentity(t),
-    store: new Store(),
-    chat: { state: { connected: false } },
-    root: ROOT,
-    url: 'http://127.0.0.1:4310',
-  });
-  const child = spawn(process.execPath, ['-e', ''], { detached: true, stdio: 'ignore' });
-  await new Promise((resolve) => child.once('spawn', resolve));
-  // Probing synchronously keeps the event loop from reaping the child, so its group stays in the state that refuses signals.
-  let refusal = null;
-  for (const end = Date.now() + 10000; Date.now() < end && !refusal;) {
-    try {
-      process.kill(-child.pid, 0);
-    } catch (error) {
-      refusal = error.code;
+test(
+  'signalling a turn whose process has exited but is not yet reaped does not throw',
+  { skip: macOSOnly('only macOS refuses a signal to the process group of an exited, unreaped leader') },
+  async (t) => {
+    const runner = new Runner({
+      home: ROOT,
+      identity: testIdentity(t),
+      store: new Store(),
+      chat: { state: { connected: false } },
+      root: ROOT,
+      url: 'http://127.0.0.1:4310',
+    });
+    const child = spawn(process.execPath, ['-e', ''], { detached: true, stdio: 'ignore' });
+    await new Promise((resolve) => child.once('spawn', resolve));
+    // Probing synchronously keeps the event loop from reaping the child, so its group stays in the state that refuses signals.
+    let refusal = null;
+    for (const end = Date.now() + 10000; Date.now() < end && !refusal;) {
+      try {
+        process.kill(-child.pid, 0);
+      } catch (error) {
+        refusal = error.code;
+      }
     }
-  }
-  assert.equal(refusal, 'EPERM', 'macOS refuses a signal to the group of an exited, unreaped leader');
-  assert.equal(child.exitCode, null);
-  assert.doesNotThrow(() => runner.signal({ child }, 'SIGTERM'));
-  await new Promise((resolve) => (child.exitCode !== null ? resolve() : child.once('exit', resolve)));
-});
+    assert.equal(refusal, 'EPERM', 'macOS refuses a signal to the group of an exited, unreaped leader');
+    assert.equal(child.exitCode, null);
+    assert.doesNotThrow(() => runner.signal({ child }, 'SIGTERM'));
+    await new Promise((resolve) => (child.exitCode !== null ? resolve() : child.once('exit', resolve)));
+  },
+);
 
 test('closing the runner terminates every turn and marks each for resumption even when one signal fails', (t) => {
   const runner = new Runner({

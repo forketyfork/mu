@@ -1,7 +1,7 @@
 // A check of HTML attachments in a real browser, for what JSDOM cannot show: the sandbox and the policy of the frame
 // that runs an agent's page, and how the dashboard sizes, enlarges and keeps that frame. It starts a throwaway Mu app
 // with a fake chat and drives headless Chrome over the DevTools protocol; `npm run test:browser` runs it, and so does
-// the pre-commit hook when a commit touches what it covers.
+// continuous integration on every pull request.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';

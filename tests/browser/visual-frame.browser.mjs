@@ -1,8 +1,8 @@
 // A check of the visual frame in a real browser, for what JSDOM cannot show: the sandbox, the content security
 // policies, module loading from an opaque origin, Mermaid and the highlighter. It starts a throwaway Mu app with a
 // fake chat and drives headless Chrome over the DevTools protocol. It is not part of `npm test`, because it needs
-// Google Chrome; `npm run test:browser` runs it, and so does the pre-commit hook when a commit touches what it
-// covers. CHROME names the browser binary (see support.mjs); the screenshots go to the directory in SHOTS, when it is set.
+// Google Chrome; `npm run test:browser` runs it, and so does continuous integration on
+// every pull request. CHROME names the browser binary (see support.mjs); the screenshots go to the directory in SHOTS, when it is set.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';

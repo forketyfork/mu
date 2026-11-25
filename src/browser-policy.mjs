@@ -1,6 +1,6 @@
 // What a browser may do with Mu's pages: the content security policy of the dashboard, and the policy and the files
-// of the frame that draws a visual. The frame check in tests/browser/ covers this file in a real browser, and the
-// pre-commit hook runs that check when this file changes.
+// of the frame that draws a visual. The frame check in tests/browser/ covers this file in a real browser, and
+// continuous integration runs that check on every pull request.
 import { CODE_LANGUAGES } from './visual-format.mjs';
 
 // See "Visuals" in docs/architecture.md. The dashboard may embed only Mu's own pages, and the frame-src rule also

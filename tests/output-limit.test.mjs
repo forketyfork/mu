@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { AgentSockets } from '../src/identity.mjs';
 import { CodexRollouts } from '../src/codex-rollout.mjs';
@@ -8,7 +9,7 @@ import { Store } from '../src/store.mjs';
 import { ROOT } from '../src/server.mjs';
 import { offlinePricing } from './offline-pricing.mjs';
 import { testIdentity } from './identity-fixture.mjs';
-import { shortTempDir, FAKE_PRIVATE_PATHS, temporaryMuHome } from './isolation.mjs';
+import { shortTempDir, FAKE_PRIVATE_PATHS, temporaryMuHome, macOSOnly } from './isolation.mjs';
 
 const STREAM_AGENT = join(ROOT, 'tests/stream-agent.mjs');
 // 80 tool results of 64 KiB make 5 MiB of output, more than the whole-output limit the runner once applied.
@@ -38,7 +39,9 @@ async function streamTurn(t, adapter, spec, agent = {}) {
       sent.push({ from, text, conversationId });
     },
   };
-  const custom = { fixture: { command: process.execPath, args: [STREAM_AGENT, JSON.stringify(spec)] } };
+  const specFile = join(dataDir, 'stream-spec.json');
+  await writeFile(specFile, JSON.stringify(spec));
+  const custom = { fixture: { command: process.execPath, args: [STREAM_AGENT, specFile] } };
   const runner = new Runner({
     home: await temporaryMuHome(t),
     identity: testIdentity(t),
@@ -56,9 +59,7 @@ async function streamTurn(t, adapter, spec, agent = {}) {
   const execute = runner.execute.bind(runner);
   runner.execute = (command, ...rest) =>
     execute(
-      adapter === 'fixture'
-        ? command
-        : { ...command, command: process.execPath, args: [STREAM_AGENT, JSON.stringify(spec)] },
+      adapter === 'fixture' ? command : { ...command, command: process.execPath, args: [STREAM_AGENT, specFile] },
       ...rest,
     );
   const signals = [];
@@ -160,64 +161,72 @@ test('a Codex turn whose command outputs pass 4 MiB delivers its final reply', a
   assert.equal(worker.usage['dm-worker'].sessions['codex-long'].totalTokens, 520);
 });
 
-test('a pi turn whose tool results pass 4 MiB delivers its final reply and adds up its spend', async (t) => {
-  const tokens = (cost) => ({
-    input: 1000,
-    output: 20,
-    cacheRead: 0,
-    cacheWrite: 0,
-    totalTokens: 1020,
-    cost: { total: cost },
-  });
-  const { sent, worker } = await streamTurn(
-    t,
-    'pi',
-    {
-      before: [
-        { type: 'session', version: 3, id: 'pi-long', cwd: ROOT },
-        {
-          type: 'message_end',
-          message: {
-            role: 'assistant',
-            content: [{ type: 'toolCall', id: 'call_1', name: 'bash', arguments: { command: 'cat big.log' } }],
-            model: 'gemini-3.5-flash-lite',
-            usage: tokens(0.25),
-            stopReason: 'toolUse',
+test(
+  'a pi turn whose tool results pass 4 MiB delivers its final reply and adds up its spend',
+  { skip: macOSOnly('the pi adapter runs pi inside the macOS Seatbelt sandbox and refuses elsewhere') },
+  async (t) => {
+    const tokens = (cost) => ({
+      input: 1000,
+      output: 20,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 1020,
+      cost: { total: cost },
+    });
+    const { sent, worker } = await streamTurn(
+      t,
+      'pi',
+      {
+        before: [
+          { type: 'session', version: 3, id: 'pi-long', cwd: ROOT },
+          {
+            type: 'message_end',
+            message: {
+              role: 'assistant',
+              content: [{ type: 'toolCall', id: 'call_1', name: 'bash', arguments: { command: 'cat big.log' } }],
+              model: 'gemini-3.5-flash-lite',
+              usage: tokens(0.25),
+              stopReason: 'toolUse',
+            },
+          },
+        ],
+        filler: {
+          count: TOOL_EVENTS,
+          event: {
+            type: 'tool_execution_end',
+            toolCallId: 'call_1',
+            toolName: 'bash',
+            result: { content: [{ type: 'text', text: toolOutput }] },
+            isError: false,
           },
         },
-      ],
-      filler: {
-        count: TOOL_EVENTS,
-        event: {
-          type: 'tool_execution_end',
-          toolCallId: 'call_1',
-          toolName: 'bash',
-          result: { content: [{ type: 'text', text: toolOutput }] },
-          isError: false,
-        },
+        after: [
+          {
+            type: 'message_end',
+            message: {
+              role: 'assistant',
+              content: [{ type: 'text', text: reply }],
+              model: 'gemini-3.5-flash-lite',
+              usage: tokens(0.5),
+              stopReason: 'stop',
+            },
+          },
+          { type: 'agent_end', messages: [] },
+        ],
       },
-      after: [
-        {
-          type: 'message_end',
-          message: {
-            role: 'assistant',
-            content: [{ type: 'text', text: reply }],
-            model: 'gemini-3.5-flash-lite',
-            usage: tokens(0.5),
-            stopReason: 'stop',
-          },
-        },
-        { type: 'agent_end', messages: [] },
-      ],
-    },
-    { model: 'google-vertex/gemini-3.5-flash-lite' },
-  );
-  assert.equal(worker.lastError, null);
-  assert.equal(worker.status, 'idle');
-  assert.deepEqual(sent, [{ from: 'worker', text: reply, conversationId: 'dm-worker' }]);
-  assert.equal(worker.sessionIds['dm-worker'], 'pi-long');
-  assert.deepEqual(worker.usage['dm-worker'].sessions['pi-long'], { adapter: 'pi', costUsd: 0.75, totalTokens: 2040 });
-});
+      { model: 'google-vertex/gemini-3.5-flash-lite' },
+    );
+    assert.equal(worker.lastError, null);
+    assert.equal(worker.status, 'idle');
+    assert.deepEqual(sent, [{ from: 'worker', text: reply, conversationId: 'dm-worker' }]);
+    assert.equal(worker.sessionIds['dm-worker'], 'pi-long');
+    assert.deepEqual(worker.usage['dm-worker'].sessions['pi-long'], {
+      adapter: 'pi',
+      costUsd: 0.75,
+      totalTokens: 2040,
+    });
+  },
+);
 
 test('an event line that never ends stops the turn at the event-line limit and names that limit', async (t) => {
   const { store, sent, worker } = await streamTurn(t, 'claude', {

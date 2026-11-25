@@ -14,7 +14,7 @@ import {
   stableNodePath,
   uninstall,
 } from '../src/launchd.mjs';
-import { freePort, shortTempDir } from './isolation.mjs';
+import { freePort, shortTempDir, macOSOnly } from './isolation.mjs';
 import { once } from 'node:events';
 
 async function commands(t, names) {
@@ -114,51 +114,55 @@ test('every adapter command must be on the recorded PATH unless it is explicitly
   assert.throws(() => missingCommands(config, bin, ['gemini']), /gemini, which is not an adapter command/);
 });
 
-test('install refuses, before it writes anything, when a CLI is missing, the port is taken, the broker is down or the job exists', async (t) => {
-  const home = await shortTempDir(t, 'home'),
-    root = await shortTempDir(t, 'root');
-  const PATH = await commands(t, ['claude', 'codex', 'pi']);
-  const [port, ircPort] = [await freePort(), await freePort()];
-  const options = {
-    label: 'test.mu.install',
-    root,
-    home,
-    uid: 501,
-    run: notLoaded,
-    shell: await loginShell(t, 'printf %s "$PATH"'),
-  };
-  const env = {
-    PATH,
-    HOME: home,
-    MU_PORT: String(port),
-    MU_IRC_PORT: String(ircPort),
-    MU_DATA_DIR: join(home, 'data'),
-  };
+test(
+  'install refuses, before it writes anything, when a CLI is missing, the port is taken, the broker is down or the job exists',
+  { skip: macOSOnly('launchd agents exist only on macOS, and install and uninstall refuse elsewhere') },
+  async (t) => {
+    const home = await shortTempDir(t, 'home'),
+      root = await shortTempDir(t, 'root');
+    const PATH = await commands(t, ['claude', 'codex', 'pi']);
+    const [port, ircPort] = [await freePort(), await freePort()];
+    const options = {
+      label: 'test.mu.install',
+      root,
+      home,
+      uid: 501,
+      run: notLoaded,
+      shell: await loginShell(t, 'printf %s "$PATH"'),
+    };
+    const env = {
+      PATH,
+      HOME: home,
+      MU_PORT: String(port),
+      MU_IRC_PORT: String(ircPort),
+      MU_DATA_DIR: join(home, 'data'),
+    };
 
-  await assert.rejects(
-    install({ ...options, env: { ...env, PATH: await commands(t, ['claude']) } }),
-    /Not found on PATH: codex, pi\. .*--allow-missing codex,pi/,
-  );
-  await assert.rejects(
-    install({ ...options, env, shell: await resettingShell(t) }),
-    new RegExp(
-      `drops these PATH entries: ${PATH}\\. Codex runs agent commands in that shell.*Record a startup variable that preserves the environment with --env`,
-    ),
-  );
-  await assert.rejects(
-    install({ ...options, env }),
-    new RegExp(`No IRC broker answers on 127.0.0.1:${ircPort}; start it with npm run chat:up`),
-  );
-  const taken = createServer().listen(port, '127.0.0.1');
-  await new Promise((resolve) => taken.once('listening', resolve));
-  t.after(() => taken.close());
-  await assert.rejects(install({ ...options, env }), new RegExp(`Port ${port} is taken`));
-  await assert.rejects(
-    install({ ...options, env, run: () => ({ code: 0, output: '' }) }),
-    /launchd already has gui\/501\/test.mu.install; run npm run service:uninstall -- --label test.mu.install first/,
-  );
-  assert.deepEqual(await readdir(home), [], 'no plist or log was written');
-});
+    await assert.rejects(
+      install({ ...options, env: { ...env, PATH: await commands(t, ['claude']) } }),
+      /Not found on PATH: codex, pi\. .*--allow-missing codex,pi/,
+    );
+    await assert.rejects(
+      install({ ...options, env, shell: await resettingShell(t) }),
+      new RegExp(
+        `drops these PATH entries: ${PATH}\\. Codex runs agent commands in that shell.*Record a startup variable that preserves the environment with --env`,
+      ),
+    );
+    await assert.rejects(
+      install({ ...options, env }),
+      new RegExp(`No IRC broker answers on 127.0.0.1:${ircPort}; start it with npm run chat:up`),
+    );
+    const taken = createServer().listen(port, '127.0.0.1');
+    await new Promise((resolve) => taken.once('listening', resolve));
+    t.after(() => taken.close());
+    await assert.rejects(install({ ...options, env }), new RegExp(`Port ${port} is taken`));
+    await assert.rejects(
+      install({ ...options, env, run: () => ({ code: 0, output: '' }) }),
+      /launchd already has gui\/501\/test.mu.install; run npm run service:uninstall -- --label test.mu.install first/,
+    );
+    assert.deepEqual(await readdir(home), [], 'no plist or log was written');
+  },
+);
 
 // A home directory whose Mu home is initialized, as the user's is, and the shell variables of an install from it.
 async function installFixture(t) {
@@ -185,20 +189,24 @@ async function installFixture(t) {
   };
 }
 
-test('install refuses, before it writes anything, while the checkout still holds the database or the configuration', async (t) => {
-  const { home, root, options, env } = await installFixture(t);
-  await mkdir(join(root, '.mu'));
-  await writeFile(join(root, '.mu/mu.sqlite'), '');
-  await writeFile(join(root, 'mu.config.json'), '{}');
-  await assert.rejects(
-    install({ ...options, env }),
-    new RegExp(
-      `^Error: Mu keeps its data directory in ${join(home, '.mu/data')} and its configuration in ${join(home, '.mu/config.json')}, but the checkout still holds the database .* and the configuration .*\\. Move them with Mu stopped: npm run service:uninstall, then mv `,
-    ),
-  );
-  assert.deepEqual(await readdir(home), ['.mu'], 'no plist or log was written');
-  assert.deepEqual(await readdir(join(home, '.mu')), []);
-});
+test(
+  'install refuses, before it writes anything, while the checkout still holds the database or the configuration',
+  { skip: macOSOnly('launchd agents exist only on macOS, and install and uninstall refuse elsewhere') },
+  async (t) => {
+    const { home, root, options, env } = await installFixture(t);
+    await mkdir(join(root, '.mu'));
+    await writeFile(join(root, '.mu/mu.sqlite'), '');
+    await writeFile(join(root, 'mu.config.json'), '{}');
+    await assert.rejects(
+      install({ ...options, env }),
+      new RegExp(
+        `^Error: Mu keeps its data directory in ${join(home, '.mu/data')} and its configuration in ${join(home, '.mu/config.json')}, but the checkout still holds the database .* and the configuration .*\\. Move them with Mu stopped: npm run service:uninstall, then mv `,
+      ),
+    );
+    assert.deepEqual(await readdir(home), ['.mu'], 'no plist or log was written');
+    assert.deepEqual(await readdir(join(home, '.mu')), []);
+  },
+);
 
 test(
   'install reads the configuration in the home and waits for the credential in its data directory',
@@ -259,30 +267,34 @@ test('the login-shell check reports the PATH entries that the startup files drop
   );
 });
 
-test('uninstall boots out a loaded job, removes its plist, and reports a job that is not installed', async (t) => {
-  const home = await shortTempDir(t, 'home'),
-    calls = [];
-  await assert.rejects(
-    uninstall({ label: 'test.mu', home, uid: 501, run: notLoaded }),
-    /gui\/501\/test.mu is not installed/,
-  );
-  await mkdir(join(home, 'Library/LaunchAgents'), { recursive: true });
-  await writeFile(join(home, 'Library/LaunchAgents/test.mu.plist'), '<plist/>');
-  const run = (...args) => {
-    calls.push(args);
-    return { code: 0, output: '' };
-  };
-  assert.deepEqual(await uninstall({ label: 'test.mu', home, uid: 501, run }), {
-    label: 'test.mu',
-    plistFile: join(home, 'Library/LaunchAgents/test.mu.plist'),
-    stopped: true,
-  });
-  assert.deepEqual(calls, [
-    ['print', 'gui/501/test.mu'],
-    ['bootout', 'gui/501/test.mu'],
-  ]);
-  assert.deepEqual(await readdir(join(home, 'Library/LaunchAgents')), []);
-});
+test(
+  'uninstall boots out a loaded job, removes its plist, and reports a job that is not installed',
+  { skip: macOSOnly('launchd agents exist only on macOS, and install and uninstall refuse elsewhere') },
+  async (t) => {
+    const home = await shortTempDir(t, 'home'),
+      calls = [];
+    await assert.rejects(
+      uninstall({ label: 'test.mu', home, uid: 501, run: notLoaded }),
+      /gui\/501\/test.mu is not installed/,
+    );
+    await mkdir(join(home, 'Library/LaunchAgents'), { recursive: true });
+    await writeFile(join(home, 'Library/LaunchAgents/test.mu.plist'), '<plist/>');
+    const run = (...args) => {
+      calls.push(args);
+      return { code: 0, output: '' };
+    };
+    assert.deepEqual(await uninstall({ label: 'test.mu', home, uid: 501, run }), {
+      label: 'test.mu',
+      plistFile: join(home, 'Library/LaunchAgents/test.mu.plist'),
+      stopped: true,
+    });
+    assert.deepEqual(calls, [
+      ['print', 'gui/501/test.mu'],
+      ['bootout', 'gui/501/test.mu'],
+    ]);
+    assert.deepEqual(await readdir(join(home, 'Library/LaunchAgents')), []);
+  },
+);
 
 test('the installer names the shell variables it leaves out, without turn, job, session or npm variables', () => {
   const env = {

@@ -9,6 +9,7 @@ import { readTurn, turnReply } from '../src/adapters.mjs';
 import { ROOT } from '../src/server.mjs';
 import { attachmentPlaceholder, choicesPlaceholder } from '../src/attachments.mjs';
 import { testIdentity } from './identity-fixture.mjs';
+import { macOSOnly } from './isolation.mjs';
 
 async function until(check) {
   const end = Date.now() + 5000;
@@ -291,23 +292,31 @@ test('turn completion acknowledges all of its messages or none of them', () => {
   store.close();
 });
 
-test('a burst larger than the batch budget is split across turns without losing or reordering a message', async (t) => {
-  const { runs, custom } = await fixture(t);
-  const store = new Store();
-  t.after(() => store.close());
-  team(store);
-  const { runner, acknowledged } = harness(t, store, custom);
-  // Four of these fit the 256 KiB budget of a turn; the fifth does not.
-  const posted = [1, 2, 3, 4, 5].map((index) => post(store, 'lead', `@worker part ${index} ${'x'.repeat(60000)}`));
-  runner.kick();
-  await until(() => !pendingIds(store).length && !runner.active.size);
-  const ids = posted.map(({ id }) => id);
-  assert.deepEqual(acknowledged, [ids.slice(0, 4), ids.slice(4)]);
-  assert.deepEqual(
-    (await runs()).map(({ id }) => id),
-    [ids[3], ids[4]],
-  );
-});
+test(
+  'a burst larger than the batch budget is split across turns without losing or reordering a message',
+  {
+    skip: macOSOnly(
+      'a custom adapter also gets the prompt in MU_PROMPT, and Linux refuses an environment string of 128 KiB or more',
+    ),
+  },
+  async (t) => {
+    const { runs, custom } = await fixture(t);
+    const store = new Store();
+    t.after(() => store.close());
+    team(store);
+    const { runner, acknowledged } = harness(t, store, custom);
+    // Four of these fit the 256 KiB budget of a turn; the fifth does not.
+    const posted = [1, 2, 3, 4, 5].map((index) => post(store, 'lead', `@worker part ${index} ${'x'.repeat(60000)}`));
+    runner.kick();
+    await until(() => !pendingIds(store).length && !runner.active.size);
+    const ids = posted.map(({ id }) => id);
+    assert.deepEqual(acknowledged, [ids.slice(0, 4), ids.slice(4)]);
+    assert.deepEqual(
+      (await runs()).map(({ id }) => id),
+      [ids[3], ids[4]],
+    );
+  },
+);
 
 test('a turn interrupted by shutdown resumes with all of its messages and names them in the prompt', async (t) => {
   const { runs, release, custom } = await fixture(t);
