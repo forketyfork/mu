@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { delimiter, join } from 'node:path';
 import { promisify } from 'node:util';
 import { commandFor } from '../src/adapters.mjs';
 import { ROOT } from '../src/server.mjs';
-import { codexAccess } from '../src/sandbox.mjs';
+import { codexAccess, commandPath } from '../src/sandbox.mjs';
 import { seatbeltSkip, FAKE_MU_HOME } from './isolation.mjs';
 import { codexInstalled, mockModel, mockProvider } from './codex-mock.mjs';
 
@@ -32,10 +32,32 @@ async function lab(t) {
   return { repo, dataDir, privatePath, outside, codexHome, credentialFile };
 }
 
+// The layout of Codex's standalone installer, inside the stand-in private path: a link on the search path to the
+// current release's executable, through a link to that release, with a transcript beside the packages. The
+// executable is a link to the installed Codex, so no step may write through it. The test catches the failure only
+// where the installed Codex is the native binary: an npm install's codex.js starts its vendored binary by that
+// binary's own path, which is not in the private path.
+async function standaloneInstall(privatePath, outside) {
+  const installed = await realpath(commandPath('codex'));
+  const release = join(privatePath, 'packages/standalone/releases/1.0.0');
+  await mkdir(join(release, 'bin'), { recursive: true });
+  await symlink(installed, join(release, 'bin/codex'));
+  await writeFile(join(release, 'codex-package.json'), '{}');
+  await mkdir(join(privatePath, 'sessions'));
+  await writeFile(join(privatePath, 'sessions/rollout.jsonl'), 'transcript');
+  await symlink(release, join(privatePath, 'packages/standalone/current'));
+  const bin = join(outside, 'bin');
+  await mkdir(bin);
+  await symlink(join(privatePath, 'packages/standalone/current/bin/codex'), join(bin, 'codex'));
+  return `${bin}${delimiter}${process.env.PATH}`;
+}
+
 // One managed Codex turn with the arguments Mu builds, pointed at the mock model and a throwaway CODEX_HOME.
-async function turn(t, call, cliArgs = []) {
+// With standalone, the turn runs a Codex installed inside the private path.
+async function turn(t, call, cliArgs = [], { standalone = false } = {}) {
   const paths = await lab(t);
   const { repo, dataDir, privatePath, outside, codexHome, credentialFile } = paths;
+  const searchPath = standalone ? await standaloneInstall(privatePath, outside) : process.env.PATH;
   const script = [
     `touch ${outside}/planted; echo outside=$?`,
     `ls ${dataDir} >/dev/null 2>&1; echo readData=$?`,
@@ -44,13 +66,28 @@ async function turn(t, call, cliArgs = []) {
     `touch ${privatePath}/planted 2>/dev/null; echo writePrivate=$?`,
     `cat ${credentialFile} >/dev/null 2>&1; echo ownCredential=$?`,
     `printf x > .git/hooks/pre-commit 2>/dev/null; echo ownHooks=$?`,
+    ...(standalone
+      ? [
+          `cat ${privatePath}/packages/standalone/releases/1.0.0/codex-package.json >/dev/null 2>&1; echo readPackages=$?`,
+          `cat ${privatePath}/sessions/rollout.jsonl >/dev/null 2>&1; echo readSession=$?`,
+          `touch ${privatePath}/packages/planted 2>/dev/null; echo writePackages=$?`,
+          `ln -sfn /bin ${privatePath}/packages/standalone/current 2>/dev/null; echo relinkCurrent=$?`,
+        ]
+      : []),
   ].join('; ');
   const model = await mockModel(t, { cmd: script, ...call });
   const options = {
     dataDir,
     credentialFile,
     privatePaths: [privatePath],
-    ...codexAccess({ cwd: repo, dataDir, home: FAKE_MU_HOME, role: 'worker', privatePaths: [privatePath] }),
+    ...codexAccess({
+      cwd: repo,
+      dataDir,
+      home: FAKE_MU_HOME,
+      role: 'worker',
+      privatePaths: [privatePath],
+      executable: commandPath('codex', searchPath, repo),
+    }),
   };
   const { args } = commandFor(
     { id: 'worker', role: 'worker', adapter: 'codex', cwd: repo, model: 'mock-model' },
@@ -63,7 +100,7 @@ async function turn(t, call, cliArgs = []) {
   const exec = args.indexOf('exec');
   const child = spawn('codex', [...args.slice(0, exec), ...provider, ...args.slice(exec)], {
     cwd: repo,
-    env: { ...env, CODEX_HOME: codexHome },
+    env: { ...env, CODEX_HOME: codexHome, PATH: searchPath },
     stdio: ['pipe', 'ignore', 'pipe'],
   });
   let stderr = '';
@@ -133,3 +170,41 @@ test('approval_policy="never" in cliArgs.codex turns escalation off', { skip }, 
   assert.match(output, /approval policy is Never; reject command/);
   assert.ok(!plantedOutside);
 });
+
+// Codex 0.163 runs its own executable again inside the sandbox to load the instructions; installed under
+// ~/.codex/packages, a private path, it failed at the start of every turn until Mu reopened that part. The reopened
+// part stays read-only, so an agent cannot relink current and choose the program that Mu runs on the next turn.
+const privateStandalone = {
+  readPrivate: 'denied',
+  writePrivate: 'denied',
+  readSession: 'denied',
+  writePackages: 'denied',
+  relinkCurrent: 'denied',
+};
+
+test(
+  'a Codex installed inside a private path runs and reads its package, which stays read-only, and the rest of that path stays unreadable',
+  { skip },
+  async (t) => {
+    const { results } = await turn(t, {}, [], { standalone: true });
+    assert.deepEqual(pick(results, [...Object.keys(privateStandalone), 'readPackages']), {
+      ...privateStandalone,
+      readPackages: 'ok',
+    });
+  },
+);
+
+test(
+  'an approved escalation of a Codex installed inside a private path gets none of that path, its package included',
+  { skip },
+  async (t) => {
+    const { reviews, results } = await turn(t, escalated, [], { standalone: true });
+    assert.equal(reviews, 1);
+    assert.deepEqual(pick(results, [...Object.keys(privateStandalone), 'readPackages']), {
+      ...privateStandalone,
+      readPackages: 'denied',
+    });
+  },
+);
+
+const pick = (object, keys) => Object.fromEntries(keys.map((key) => [key, object[key]]));

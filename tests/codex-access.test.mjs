@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { delimiter, join } from 'node:path';
 import { promisify } from 'node:util';
 import { codexPermissions } from '../src/adapters.mjs';
 import { AgentSockets } from '../src/identity.mjs';
@@ -11,7 +11,7 @@ import { ROOT, loadConfig } from '../src/server.mjs';
 import { Store } from '../src/store.mjs';
 import { testIdentity } from './identity-fixture.mjs';
 import { offlinePricing } from './offline-pricing.mjs';
-import { GIT_COMMON_WRITABLE, codexAccess } from '../src/sandbox.mjs';
+import { GIT_COMMON_WRITABLE, codexAccess, commandPath, executableAccess } from '../src/sandbox.mjs';
 import { seatbeltSkip, shortTempDir, FAKE_PRIVATE_PATHS, FAKE_MU_HOME, temporaryMuHome } from './isolation.mjs';
 
 const run = promisify(execFile);
@@ -427,4 +427,101 @@ test('a Codex turn gets the configured writable roots and the git grants of its 
     captured.args.includes('--ignore-rules') && captured.args.includes('approvals_reviewer="auto_review"'),
     "the turn ignores the user's execpolicy rules and has a reviewer for escalations",
   );
+});
+
+// Codex's standalone layout: ~/.local/bin/codex links to ~/.codex/packages/standalone/current/bin/codex, and current
+// links to a release. Here both ends are stand-ins, and the executable is a script.
+async function standaloneLayout(t) {
+  await mkdir(join(ROOT, '.tmp'), { recursive: true });
+  const directory = await realpath(await mkdtemp(join(ROOT, '.tmp/codex-install-')));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const privatePath = join(directory, '.codex');
+  const release = join(privatePath, 'packages/standalone/releases/1.0.0');
+  await mkdir(join(release, 'bin'), { recursive: true });
+  await mkdir(join(privatePath, 'sessions'));
+  await writeFile(join(release, 'bin/codex'), '#!/bin/sh\n');
+  await chmod(join(release, 'bin/codex'), 0o755);
+  await symlink(release, join(privatePath, 'packages/standalone/current'));
+  const bin = join(directory, '.local/bin');
+  await mkdir(bin, { recursive: true });
+  await symlink(join(privatePath, 'packages/standalone/current/bin/codex'), join(bin, 'codex'));
+  return { directory, privatePath, bin };
+}
+
+test('the part of a private path that holds the Codex executable becomes readable, and nothing else in it', async (t) => {
+  const { directory, privatePath, bin } = await standaloneLayout(t);
+  const executable = commandPath('codex', [join(directory, 'missing'), bin].join(delimiter));
+  assert.equal(executable, join(bin, 'codex'));
+  assert.deepEqual(executableAccess(executable, [privatePath, join(directory, 'other')]), [
+    join(privatePath, 'packages'),
+  ]);
+  assert.deepEqual(executableAccess(join(bin, 'codex'), [join(directory, 'other')]), []);
+  assert.deepEqual(executableAccess(null, [privatePath]), []);
+  const [, , , profile] = codexPermissions({
+    dataDir: join(directory, 'data'),
+    credentialFile: join(directory, 'data/credentials/worker'),
+    privatePaths: [privatePath],
+    ...codexAccess({
+      cwd: directory,
+      dataDir: join(directory, 'data'),
+      home: FAKE_MU_HOME,
+      role: 'worker',
+      privatePaths: [privatePath],
+      executable,
+    }),
+  });
+  assert.ok(profile.includes(`"${join(privatePath, 'packages')}"="read"`), profile);
+  assert.ok(profile.includes(`"${privatePath}"="deny"`), profile);
+});
+
+test('the search path finds only executable files, and its relative directories count from the given directory', async (t) => {
+  const { directory, bin } = await standaloneLayout(t);
+  await mkdir(join(directory, 'plain'));
+  await writeFile(join(directory, 'plain/codex'), 'not executable');
+  await mkdir(join(directory, 'dir/codex'), { recursive: true });
+  assert.equal(commandPath('codex', ['plain', 'dir', '.local/bin'].join(delimiter), directory), join(bin, 'codex'));
+  assert.equal(commandPath('codex', 'plain', directory), null);
+});
+
+test("a Codex turn may read the part of a private path that holds the executable on the service's search path", async (t) => {
+  const { privatePath, bin } = await standaloneLayout(t);
+  const dataDir = await shortTempDir(t, 'codex-runner');
+  const sockets = new AgentSockets({ dataDir, handler: (request, response) => response.end() });
+  t.after(() => sockets.close());
+  const store = new Store();
+  t.after(() => store.close());
+  store.createAgent({ id: 'lead', role: 'lead', adapter: 'manual', cwd: ROOT, task: '' });
+  store.createAgent({ id: 'worker', role: 'worker', adapter: 'codex', cwd: ROOT, task: 'Implement' });
+  const chat = { state: { connected: true }, async send() {} };
+  const runner = new Runner({
+    home: await temporaryMuHome(t),
+    identity: testIdentity(t),
+    sockets,
+    store,
+    chat,
+    root: ROOT,
+    url: 'http://127.0.0.1:4310',
+    dataDir,
+    pricing: offlinePricing(),
+    privatePaths: [privatePath],
+  });
+  const searchPath = process.env.PATH;
+  process.env.PATH = `${bin}${delimiter}${searchPath}`;
+  t.after(() => {
+    process.env.PATH = searchPath;
+  });
+  /** @type {{args: string[]} | undefined} */
+  let captured;
+  runner.execute = async (command) => {
+    captured = command;
+    throw new Error('stop after the command is built');
+  };
+  store.addMessage('implement', 'user', 'Implement the change', 'dm-worker');
+  runner.kick();
+  const end = Date.now() + 10000;
+  while (!captured && Date.now() < end) await new Promise((resolve) => setTimeout(resolve, 10));
+  runner.close();
+  const profile = captured.args.find((arg) => arg.startsWith('permissions.mu-agent='));
+  assert.ok(profile.includes(`"${join(privatePath, 'packages')}"="read"`), profile);
+  assert.ok(profile.includes(`"${privatePath}"="deny"`), profile);
 });
