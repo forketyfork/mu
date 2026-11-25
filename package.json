@@ -19,6 +19,7 @@
     "pretest": "node scripts/ensure-deps.mjs",
     "prepare": "node scripts/install-hooks.mjs",
     "test": "node --test --test-force-exit tests/*.test.mjs tests/*.integration.mjs public/model.test.js",
+    "test:unit": "node --test --test-force-exit tests/*.test.mjs public/model.test.js",
     "test:integration": "node --test --test-force-exit tests/*.integration.mjs",
     "test:browser": "node --test --test-force-exit --test-timeout=120000 tests/browser/*.browser.mjs",
     "mu": "node src/cli.mjs",

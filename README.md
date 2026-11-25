@@ -128,7 +128,7 @@ Then give the lead its first job. Decisions that wait for you appear at the top 
 | [Model evals](docs/evals.md) | Run private work samples, preview spend and compare saved results |
 | [Security model](docs/security.md) | Who may do what, and how strong each agent's isolation is |
 | [CLI reference](docs/cli.md) | The `node src/cli.mjs` commands |
-| [Development](docs/development.md) | Tests, checks, Git hooks, adding a dashboard theme |
+| [Development](docs/development.md) | Tests, checks, Git hooks, continuous integration, adding a dashboard theme |
 | [Architecture](docs/architecture.md) | Design decisions and how the parts fit together |
 
 ## License

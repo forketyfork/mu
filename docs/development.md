@@ -8,6 +8,7 @@ Mu is plain JavaScript on Node.js, type-checked through JSDoc, with no build ste
 npm run check              # type check, lint and format check
 npm run format             # format JavaScript, CSS, HTML, JSON and YAML
 npm test                   # unit, HTTP and integration tests
+npm run test:unit          # only the unit and HTTP tests; already part of npm test
 npm run test:integration   # only the integration tests; already part of npm test
 ```
 
@@ -48,6 +49,24 @@ Write each assertion of a browser check after the condition it depends on, not a
 ## Git hooks
 
 `npm ci` (or `npm install`) sets `core.hooksPath` to the tracked `.githooks` directory. The `pre-commit` hook runs `npm run check` and then `npm test`, which takes about fifteen seconds and needs a running Docker daemon. For a commit that changes the visual frame or the mention list of the message box it also runs [the browser check](#the-visual-frame-in-a-real-browser). The setting is in the repository's shared configuration, so it applies to every worktree. `npm ci` writes it only when it is not already `.githooks`, so it also works where Git configuration is read-only, as in a Codex agent's turn.
+
+## Continuous integration
+
+Every pull request into `main` runs the workflow in `.github/workflows/ci.yml`, and so do pushes to `main`, the merge queue and a manual start. Its jobs:
+
+| Job | Runner | Runs |
+| --- | --- | --- |
+| Type check, lint and format | Ubuntu | `npm run check` |
+| Lint workflows | Ubuntu | [actionlint](https://github.com/rhysd/actionlint), with ShellCheck on the `run` scripts |
+| Unit and HTTP tests | macOS, Node 24 and 26 | `npm run test:unit` |
+| Integration tests | Ubuntu | `npm run test:integration`, against a throwaway Ergo container |
+| Browser check | macOS | `npm run test:browser` in the runner's Google Chrome; screenshots are uploaded when it fails |
+| Dependency review | Ubuntu | for a pull request only: fails when it adds or changes a package to a version with a known vulnerability of moderate severity or worse |
+| Merge gate | Ubuntu | passes when every other job passed |
+
+The unit tests and the browser check run on macOS because Mu does: the launchd, Seatbelt and process-group tests fail on Linux. GitHub's macOS runners have no Docker, so the integration tests run on Linux, where they need nothing from macOS. Unlike the pre-commit hook, the workflow runs the browser check on every pull request, whatever files it changes.
+
+Branch protection for `main` requires only the **Merge gate** check, so jobs can be added to the workflow or renamed without changing the protection rules. A new job counts only once it is in the gate's `needs` list. The actions are pinned to commits, and Dependabot (`.github/dependabot.yml`) proposes new pins every week.
 
 ## Add a dashboard theme
 
