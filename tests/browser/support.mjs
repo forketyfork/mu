@@ -95,29 +95,38 @@ export async function cdp(port, failure = () => undefined) {
       else resolve(message.result);
     } else for (const listener of listeners) listener(message);
   };
-  return {
-    // A page that the browser treats as hidden never answers input, screenshots or animation frames. Without a deadline,
-    // the test then waits for its own time limit, which says nothing of the call that hung.
-    send(method, params = {}, sessionId = undefined) {
-      next += 1;
-      const id = next;
-      socket.send(JSON.stringify({ id, method, params, sessionId }));
-      return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          pending.delete(id);
-          reject(new Error(`The browser did not answer ${method} within ${ANSWER_LIMIT / 1000} s`));
-        }, ANSWER_LIMIT);
-        pending.set(id, {
-          resolve: (result) => {
-            clearTimeout(timer);
-            resolve(result);
-          },
-          reject: (error) => {
-            clearTimeout(timer);
-            reject(error);
-          },
-        });
+  // A page that the browser treats as hidden never answers input, screenshots or animation frames. Without a deadline,
+  // the test then waits for its own time limit, which says nothing of the call that hung.
+  const call = (method, params = {}, sessionId = undefined) => {
+    next += 1;
+    const id = next;
+    socket.send(JSON.stringify({ id, method, params, sessionId }));
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error(`The browser did not answer ${method} within ${ANSWER_LIMIT / 1000} s`));
+      }, ANSWER_LIMIT);
+      pending.set(id, {
+        resolve: (result) => {
+          clearTimeout(timer);
+          resolve(result);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
       });
+    });
+  };
+  return {
+    async send(method, params = {}, sessionId = undefined) {
+      const result = await call(method, params, sessionId);
+      // Whether a page counts as focused follows which window of the system is active, and the checks run several
+      // browsers at once: a page of the browser that is not active drops the keys of the checks and keeps the focus
+      // where it was. The emulation makes every page count as focused, as a user's page does.
+      if (method === 'Target.attachToTarget')
+        await call('Emulation.setFocusEmulationEnabled', { enabled: true }, result.sessionId);
+      return result;
     },
     on: (listener) => listeners.push(listener),
     close: () => socket.close(),
