@@ -511,6 +511,9 @@ test('the page of an HTML attachment gets the keys the user types right after cl
   await until('the shield back over the page', () =>
     evaluate(`!document.querySelector('.message-attachment-shield').hidden`),
   );
+  // The browser moves the keyboard from the frame to the dashboard in a step of its own, after the click; a user cannot
+  // type within it, but the check could, and the key would go to the page.
+  await until('the keyboard to leave the page', async () => (await inFrame(`document.hasFocus()`)) === false);
   await typeKeys(browser, sessionId, 'x');
   await sleep(300);
   assert.equal(await inFrame(`window.keys`), 'go');
