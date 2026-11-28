@@ -56,6 +56,8 @@ async function whyGone(failure, fallback) {
   return fallback;
 }
 
+const ANSWER_LIMIT = 60_000;
+
 // `failure` returns the error to throw once the browser is known to be gone; polling a port nobody listens on would
 // end in a bare "fetch failed" after ten seconds, and a connection that breaks while opening would say nothing of why.
 export async function cdp(port, failure = () => undefined) {
@@ -94,11 +96,28 @@ export async function cdp(port, failure = () => undefined) {
     } else for (const listener of listeners) listener(message);
   };
   return {
+    // A page that the browser treats as hidden never answers input, screenshots or animation frames. Without a deadline,
+    // the test then waits for its own time limit, which says nothing of the call that hung.
     send(method, params = {}, sessionId = undefined) {
       next += 1;
       const id = next;
       socket.send(JSON.stringify({ id, method, params, sessionId }));
-      return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          pending.delete(id);
+          reject(new Error(`The browser did not answer ${method} within ${ANSWER_LIMIT / 1000} s`));
+        }, ANSWER_LIMIT);
+        pending.set(id, {
+          resolve: (result) => {
+            clearTimeout(timer);
+            resolve(result);
+          },
+          reject: (error) => {
+            clearTimeout(timer);
+            reject(error);
+          },
+        });
+      });
     },
     on: (listener) => listeners.push(listener),
     close: () => socket.close(),
@@ -144,6 +163,12 @@ export async function startBrowser(t, { chrome: binary = CHROME, args = [] } = {
       // The checks expect motion unless they emulate the wish for less; without this, a system set to reduce motion, as
       // GitHub's macOS runners are, makes the browser report it to every page. Emulation still overrides the switch.
       '--force-prefers-no-reduced-motion',
+      // The checks drive a page that no one looks at, and a loaded runner makes the browser judge its window hidden or
+      // covered; it then throttles timers and withholds input and frames from the page.
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--disable-features=CalculateNativeWinOcclusion',
       ...args,
       'about:blank',
     ],

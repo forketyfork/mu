@@ -174,6 +174,13 @@ export function createDashboardStream({
      * @param {string | undefined} lastEventId
      */
     connect(response, lastEventId) {
+      // The server closes only when every response has ended. A dashboard that reconnects after close() has ended the
+      // streams, as a browser does at once, would otherwise hold the shutdown open for good.
+      if (closed) {
+        response.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8', Connection: 'close' });
+        response.end('Mu is shutting down');
+        return;
+      }
       response.writeHead(200, {
         'Content-Type': 'text/event-stream; charset=utf-8',
         'Cache-Control': 'no-store',

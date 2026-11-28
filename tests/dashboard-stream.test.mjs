@@ -699,6 +699,28 @@ test('a dashboard that connects between two changes of one record in one turn st
   dashboard.close();
 });
 
+test('a dashboard that connects after the stream closed is refused, so it cannot hold the shutdown open', () => {
+  const records = { agents: {}, tasks: {}, waiting: {}, activities: {}, conversations: {}, visuals: {} };
+  const { dashboard } = memoryStream(records);
+  dashboard.close();
+  const sent = { head: /** @type {unknown[]} */ ([]), body: '', closeListeners: 0 };
+  dashboard.connect(
+    /** @type {any} */ ({
+      writeHead: (...head) => sent.head.push(...head),
+      flushHeaders() {},
+      write: () => assert.fail('a refused dashboard gets no event'),
+      on: () => (sent.closeListeners += 1),
+      end: (body) => (sent.body = body),
+    }),
+    undefined,
+  );
+  assert.deepEqual(sent, {
+    head: [503, { 'Content-Type': 'text/plain; charset=utf-8', Connection: 'close' }],
+    body: 'Mu is shutting down',
+    closeListeners: 0,
+  });
+});
+
 test('a change named after the stream closed reads no source', async () => {
   const records = {
     agents: { a: { id: 'a' } },

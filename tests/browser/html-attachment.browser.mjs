@@ -491,6 +491,12 @@ async function runAttachment(t, html, { afterRun } = {}) {
   return session;
 }
 
+// The browser moves the keyboard between the dashboard and its out-of-process frame in a step of its own, after the
+// click that took it. A real user cannot type within it; the check would, on a loaded machine, and the key would go to
+// the frame that the dashboard has just left.
+const keyboardLeft = (inFrame) =>
+  until('the keyboard to leave the page', async () => (await inFrame(`document.hasFocus()`)) === false);
+
 test('the page of an HTML attachment can play sound after the user clicked Run', async (t) => {
   const { inFrame } = await runAttachment(t, AUDIO_PAGE);
   await until('the audio running', async () => (await inFrame(`window.audio.state`)) === 'running', 5000);
@@ -511,6 +517,7 @@ test('the page of an HTML attachment gets the keys the user types right after cl
   await until('the shield back over the page', () =>
     evaluate(`!document.querySelector('.message-attachment-shield').hidden`),
   );
+  await keyboardLeft(inFrame);
   await typeKeys(browser, sessionId, 'x');
   await sleep(300);
   assert.equal(await inFrame(`window.keys`), 'go');
@@ -576,6 +583,7 @@ test('a page that the user left right after Run does not get the keyboard when i
       clickAt(browser, sessionId, await centerOf(evaluate, '#message-input')),
   });
   await sleep(500);
+  await keyboardLeft(inFrame);
   await typeKeys(browser, sessionId, 'abc');
   await sleep(300);
   assert.deepEqual(
