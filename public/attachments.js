@@ -133,6 +133,9 @@ export function createAttachments({ document, window, request }) {
     const shield = engaged && parts.get(engaged)?.shield;
     if (shield) shield.hidden = false;
     engaged = null;
+    // The dashboard's own focus is not enough: the browser can leave the keyboard with the page's frame after a click
+    // elsewhere in the dashboard, and the page would get the keys that the user types there.
+    window.focus();
   }
 
   /**
