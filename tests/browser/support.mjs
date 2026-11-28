@@ -56,6 +56,8 @@ async function whyGone(failure, fallback) {
   return fallback;
 }
 
+const ANSWER_LIMIT = 60_000;
+
 // `failure` returns the error to throw once the browser is known to be gone; polling a port nobody listens on would
 // end in a bare "fetch failed" after ten seconds, and a connection that breaks while opening would say nothing of why.
 export async function cdp(port, failure = () => undefined) {
@@ -93,13 +95,31 @@ export async function cdp(port, failure = () => undefined) {
       else resolve(message.result);
     } else for (const listener of listeners) listener(message);
   };
+  // Without a deadline, a call that the browser never answers leaves the test to its own time limit, which says nothing
+  // of the call that hung.
+  const send = (method, params = {}, sessionId = undefined) => {
+    next += 1;
+    const id = next;
+    socket.send(JSON.stringify({ id, method, params, sessionId }));
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error(`The browser did not answer ${method} within ${ANSWER_LIMIT / 1000} s`));
+      }, ANSWER_LIMIT);
+      pending.set(id, {
+        resolve: (result) => {
+          clearTimeout(timer);
+          resolve(result);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      });
+    });
+  };
   return {
-    send(method, params = {}, sessionId = undefined) {
-      next += 1;
-      const id = next;
-      socket.send(JSON.stringify({ id, method, params, sessionId }));
-      return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
-    },
+    send,
     on: (listener) => listeners.push(listener),
     close: () => socket.close(),
   };
@@ -110,8 +130,8 @@ const STDERR_TAIL = 600;
 // A browser that exits before DevTools answers has crashed or been refused at launch. The usual refuser is the sandbox of
 // an agent: Chrome needs system services at start (LaunchServices, the window server), a Codex agent's Seatbelt profile
 // does not allow them, and Chrome aborts in _RegisterApplication. Asking Codex to run the command outside its sandbox
-// does not lift this, because Mu's profile has deny entries and the command stays under Seatbelt. A skip would pass the
-// check the pre-commit hook exists for, so the failure names the cause and what to do instead.
+// does not lift this, because Mu's profile has deny entries and the command stays under Seatbelt. A skip would read as a
+// pass, so the failure names the cause and what to do instead.
 function earlyExit(chrome, { code, signal, stderr, elapsed }) {
   const how = signal ? `signal ${signal}` : `code ${code}`;
   const output = stderr.trim();
@@ -141,6 +161,9 @@ export async function startBrowser(t, { chrome: binary = CHROME, args = [] } = {
       '--no-first-run',
       '--no-default-browser-check',
       '--window-size=1500,1000',
+      // The checks expect motion unless they emulate the wish for less; without this, a system set to reduce motion, as
+      // GitHub's macOS runners are, makes the browser report it to every page. Emulation still overrides the switch.
+      '--force-prefers-no-reduced-motion',
       ...args,
       'about:blank',
     ],

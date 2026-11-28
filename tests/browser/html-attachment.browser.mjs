@@ -1,7 +1,7 @@
 // A check of HTML attachments in a real browser, for what JSDOM cannot show: the sandbox and the policy of the frame
 // that runs an agent's page, and how the dashboard sizes, enlarges and keeps that frame. It starts a throwaway Mu app
 // with a fake chat and drives headless Chrome over the DevTools protocol; `npm run test:browser` runs it, and so does
-// the pre-commit hook when a commit touches what it covers.
+// continuous integration on every pull request.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -511,6 +511,9 @@ test('the page of an HTML attachment gets the keys the user types right after cl
   await until('the shield back over the page', () =>
     evaluate(`!document.querySelector('.message-attachment-shield').hidden`),
   );
+  // The browser moves the keyboard from the frame to the dashboard in a step of its own, after the click; a user cannot
+  // type within it, but the check could, and the key would go to the page.
+  await until('the keyboard to leave the page', async () => (await inFrame(`document.hasFocus()`)) === false);
   await typeKeys(browser, sessionId, 'x');
   await sleep(300);
   assert.equal(await inFrame(`window.keys`), 'go');

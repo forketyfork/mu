@@ -257,7 +257,8 @@ test('the top bar fits the window at every width, and its controls stay in reach
     };
     return {
       barOverflow: bar.scrollWidth - bar.clientWidth,
-      pageOverflow: document.documentElement.scrollWidth - innerWidth,
+      // clientWidth leaves out a classic scrollbar, which innerWidth counts, so this is 0 with either kind of scrollbar.
+      pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       label: (() => {
         const label = document.getElementById('view-label');
         return getComputedStyle(label).display === 'none' || label.scrollWidth <= label.clientWidth;

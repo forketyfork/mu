@@ -22,6 +22,7 @@ import {
   FAKE_PRIVATE_PATHS,
   FAKE_MU_HOME,
   temporaryMuHome,
+  macOSOnly,
 } from './isolation.mjs';
 
 const lines = (events) => events.map((event) => JSON.stringify(event)).join('\n') + '\n';
@@ -87,132 +88,141 @@ const accessPaths = async (dataDir) => {
   return { socket, credentialFile };
 };
 
-test('pi runs in JSON print mode with its model and a Mu-chosen session that later turns reuse', async (t) => {
-  const dataDir = await piHome(t);
-  const options = {
-    pi: {
-      dataDir,
-      home: FAKE_MU_HOME,
-      localPorts: [],
-      privatePaths: FAKE_PRIVATE_PATHS,
-      ...(await accessPaths(dataDir)),
-    },
-  };
-  const fresh = commandFor(piAgent({ sessionId: null }), ROOT, {}, { pi: ['--no-mcp'] }, options);
-  assert.equal(fresh.format, 'pi');
-  const pi = fresh.args.slice(fresh.args.indexOf('pi') + 1);
-  assert.deepEqual(pi.slice(0, 6), [
-    '--no-mcp',
-    '-p',
-    '--mode',
-    'json',
-    '--model',
-    'google-vertex/gemini-3.5-flash-lite',
-  ]);
-  assert.match(pi.at(-1), /^[0-9a-f-]{36}$/);
-  assert.equal(pi.at(-2), '--session-id');
-  assert.equal(commandFor(piAgent({ sessionId: 'existing' }), ROOT, {}, {}, options).args.at(-1), 'existing');
-});
+test(
+  'pi runs in JSON print mode with its model and a Mu-chosen session that later turns reuse',
+  { skip: macOSOnly('the pi adapter runs pi inside the macOS Seatbelt sandbox and refuses elsewhere') },
+  async (t) => {
+    const dataDir = await piHome(t);
+    const options = {
+      pi: {
+        dataDir,
+        home: FAKE_MU_HOME,
+        localPorts: [],
+        privatePaths: FAKE_PRIVATE_PATHS,
+        ...(await accessPaths(dataDir)),
+      },
+    };
+    const fresh = commandFor(piAgent({ sessionId: null }), ROOT, {}, { pi: ['--no-mcp'] }, options);
+    assert.equal(fresh.format, 'pi');
+    const pi = fresh.args.slice(fresh.args.indexOf('pi') + 1);
+    assert.deepEqual(pi.slice(0, 6), [
+      '--no-mcp',
+      '-p',
+      '--mode',
+      'json',
+      '--model',
+      'google-vertex/gemini-3.5-flash-lite',
+    ]);
+    assert.match(pi.at(-1), /^[0-9a-f-]{36}$/);
+    assert.equal(pi.at(-2), '--session-id');
+    assert.equal(commandFor(piAgent({ sessionId: 'existing' }), ROOT, {}, {}, options).args.at(-1), 'existing');
+  },
+);
 
-test('pi runs inside a Seatbelt profile that confines writes to the workspace and its own pi home, and network to listed loopback ports', async (t) => {
-  const dataDir = await piHome(t);
-  const extra = await mkdtemp(join(dataDir, 'extra-'));
-  const access = await accessPaths(dataDir);
-  // The real list for a stand-in home and user ID, which a sandboxed test run can resolve.
-  const privatePaths = privateUserPaths(await mkdtemp(join(dataDir, 'home-')), 999999);
-  const command = commandFor(
-    piAgent(),
-    ROOT,
-    {},
-    {},
-    { pi: { dataDir, home: FAKE_MU_HOME, localPorts: [19516], writableRoots: [extra], privatePaths, ...access } },
-  );
-  assert.equal(command.command, 'sandbox-exec');
-  assert.equal(command.args[0], '-p');
-  assert.equal(command.args[2], 'pi');
-  const profile = command.args[1];
-  const home = await realpath(join(dataDir, 'pi', 'cheap'));
-  const workspace = await realpath(ROOT);
-  assert.match(profile, /^\(version 1\)\n\(deny default\)/);
-  for (const root of [workspace, home, await realpath(extra)]) assert.ok(profile.includes(`(subpath "${root}")`), root);
-  // The checkout's own configuration sets core.hooksPath = .githooks, which is in the work tree.
-  assert.ok(
-    profile.includes(`(deny file-write* (literal "${join(workspace, '.githooks')}")`),
-    'hooks chosen by core.hooksPath',
-  );
-  assert.ok(
-    profile.includes(
-      '(deny file-write* (regex #"/\\.([gG][iI][tT]|[pP][iI]|[cC][lL][aA][uU][dD][eE]|[cC][oO][dD][eE][xX])(/|$)"))',
-    ),
-    'protected entries at any depth',
-  );
-  const order = [
-    `(deny file-write* (subpath "${workspace}"))`,
-    `(allow file-write* (subpath "${home}"))`,
-    '(deny file-write* (regex',
-  ].map((rule) => profile.indexOf(rule));
-  assert.ok(
-    order.every((position, index) => position > (order[index - 1] ?? 0)),
-    'the Mu checkout is read-only, then the pi home is writable, then protected entries are read-only again',
-  );
-  assert.deepEqual(
-    [...profile.matchAll(/network-outbound \(remote ip "([^"]+)"\)/g)].map((match) => match[1]),
-    ['localhost:19516'],
-    'no TCP port of Mu',
-  );
-  assert.deepEqual(
-    [...profile.matchAll(/network-outbound \(remote unix-socket \(path-literal "([^"]+)"\)\)/g)].map(
-      (match) => match[1],
-    ),
-    [await realpath(access.socket)],
-    'only its own socket',
-  );
-  const reads = [
-    `(allow file-read*)`,
-    `(deny file-read* (subpath "${await realpath(dataDir)}"))`,
-    `(allow file-read* (subpath "${await realpath(access.credentialFile)}"))`,
-  ].map((rule) => profile.indexOf(rule));
-  assert.ok(
-    reads.every((position, index) => position > (reads[index - 1] ?? -1)),
-    "the data directory is unreadable, apart from the agent's own files",
-  );
-  for (const path of privatePaths) assert.ok(profile.includes(`(deny file-read* (subpath "${path}"))`), path);
-  assert.ok(
-    ['/.codex', '/.claude.json', '/.pi/agent/sessions', '/Library/Application Support/Google'].every((suffix) =>
-      privatePaths.some((path) => path.endsWith(suffix)),
-    ),
-    'agent CLI state and browser profiles',
-  );
-  assert.deepEqual(command.env, {
-    PI_CODING_AGENT_DIR: home,
-    TMPDIR: join(home, 'tmp'),
-    PI_OFFLINE: '1',
-    PI_SKIP_VERSION_CHECK: '1',
-  });
-  assert.throws(
-    () =>
-      commandFor(
-        piAgent(),
-        ROOT,
-        {},
-        {},
-        { pi: { dataDir, home: FAKE_MU_HOME, localPorts: [], platform: 'linux', privatePaths, ...access } },
+test(
+  'pi runs inside a Seatbelt profile that confines writes to the workspace and its own pi home, and network to listed loopback ports',
+  { skip: macOSOnly('the pi adapter runs pi inside the macOS Seatbelt sandbox and refuses elsewhere') },
+  async (t) => {
+    const dataDir = await piHome(t);
+    const extra = await mkdtemp(join(dataDir, 'extra-'));
+    const access = await accessPaths(dataDir);
+    // The real list for a stand-in home and user ID, which a sandboxed test run can resolve.
+    const privatePaths = privateUserPaths(await mkdtemp(join(dataDir, 'home-')), 999999);
+    const command = commandFor(
+      piAgent(),
+      ROOT,
+      {},
+      {},
+      { pi: { dataDir, home: FAKE_MU_HOME, localPorts: [19516], writableRoots: [extra], privatePaths, ...access } },
+    );
+    assert.equal(command.command, 'sandbox-exec');
+    assert.equal(command.args[0], '-p');
+    assert.equal(command.args[2], 'pi');
+    const profile = command.args[1];
+    const home = await realpath(join(dataDir, 'pi', 'cheap'));
+    const workspace = await realpath(ROOT);
+    assert.match(profile, /^\(version 1\)\n\(deny default\)/);
+    for (const root of [workspace, home, await realpath(extra)])
+      assert.ok(profile.includes(`(subpath "${root}")`), root);
+    // The checkout's own configuration sets core.hooksPath = .githooks, which is in the work tree.
+    assert.ok(
+      profile.includes(`(deny file-write* (literal "${join(workspace, '.githooks')}")`),
+      'hooks chosen by core.hooksPath',
+    );
+    assert.ok(
+      profile.includes(
+        '(deny file-write* (regex #"/\\.([gG][iI][tT]|[pP][iI]|[cC][lL][aA][uU][dD][eE]|[cC][oO][dD][eE][xX])(/|$)"))',
       ),
-    /Seatbelt sandbox, which is not available on linux/,
-  );
-  assert.throws(
-    () => commandFor(piAgent(), ROOT, {}, {}, { pi: { dataDir, home: FAKE_MU_HOME, localPorts: [], privatePaths } }),
-    /needs the agent socket and its credential file/,
-  );
-  assert.throws(
-    () => seatbeltProfile({ writableRoots: ['/a\nb'], protectedPaths: [], localPorts: [] }),
-    /control characters/,
-  );
-  assert.match(
-    seatbeltProfile({ writableRoots: ['/a "b"\\c'], protectedPaths: [], localPorts: [] }),
-    /\(subpath "\/a \\"b\\"\\\\c"\)/,
-  );
-});
+      'protected entries at any depth',
+    );
+    const order = [
+      `(deny file-write* (subpath "${workspace}"))`,
+      `(allow file-write* (subpath "${home}"))`,
+      '(deny file-write* (regex',
+    ].map((rule) => profile.indexOf(rule));
+    assert.ok(
+      order.every((position, index) => position > (order[index - 1] ?? 0)),
+      'the Mu checkout is read-only, then the pi home is writable, then protected entries are read-only again',
+    );
+    assert.deepEqual(
+      [...profile.matchAll(/network-outbound \(remote ip "([^"]+)"\)/g)].map((match) => match[1]),
+      ['localhost:19516'],
+      'no TCP port of Mu',
+    );
+    assert.deepEqual(
+      [...profile.matchAll(/network-outbound \(remote unix-socket \(path-literal "([^"]+)"\)\)/g)].map(
+        (match) => match[1],
+      ),
+      [await realpath(access.socket)],
+      'only its own socket',
+    );
+    const reads = [
+      `(allow file-read*)`,
+      `(deny file-read* (subpath "${await realpath(dataDir)}"))`,
+      `(allow file-read* (subpath "${await realpath(access.credentialFile)}"))`,
+    ].map((rule) => profile.indexOf(rule));
+    assert.ok(
+      reads.every((position, index) => position > (reads[index - 1] ?? -1)),
+      "the data directory is unreadable, apart from the agent's own files",
+    );
+    for (const path of privatePaths) assert.ok(profile.includes(`(deny file-read* (subpath "${path}"))`), path);
+    assert.ok(
+      ['/.codex', '/.claude.json', '/.pi/agent/sessions', '/Library/Application Support/Google'].every((suffix) =>
+        privatePaths.some((path) => path.endsWith(suffix)),
+      ),
+      'agent CLI state and browser profiles',
+    );
+    assert.deepEqual(command.env, {
+      PI_CODING_AGENT_DIR: home,
+      TMPDIR: join(home, 'tmp'),
+      PI_OFFLINE: '1',
+      PI_SKIP_VERSION_CHECK: '1',
+    });
+    assert.throws(
+      () =>
+        commandFor(
+          piAgent(),
+          ROOT,
+          {},
+          {},
+          { pi: { dataDir, home: FAKE_MU_HOME, localPorts: [], platform: 'linux', privatePaths, ...access } },
+        ),
+      /Seatbelt sandbox, which is not available on linux/,
+    );
+    assert.throws(
+      () => commandFor(piAgent(), ROOT, {}, {}, { pi: { dataDir, home: FAKE_MU_HOME, localPorts: [], privatePaths } }),
+      /needs the agent socket and its credential file/,
+    );
+    assert.throws(
+      () => seatbeltProfile({ writableRoots: ['/a\nb'], protectedPaths: [], localPorts: [] }),
+      /control characters/,
+    );
+    assert.match(
+      seatbeltProfile({ writableRoots: ['/a "b"\\c'], protectedPaths: [], localPorts: [] }),
+      /\(subpath "\/a \\"b\\"\\\\c"\)/,
+    );
+  },
+);
 
 // Runs a probe under the generated profile itself, so the test fails if macOS stops enforcing it.
 test(
@@ -528,78 +538,82 @@ test('pi output yields the last assistant text, the session, the model, the cont
   );
 });
 
-test('a resumed pi session adds each turn cost and keeps its session', async (t) => {
-  const dataDir = await piHome(t);
-  const store = new Store();
-  store.createAgent(piAgent({ task: 'Measure' }));
-  const sockets = new AgentSockets({ dataDir, handler: (request, response) => response.end() });
-  t.after(() => sockets.close());
-  const runner = new Runner({
-    home: await temporaryMuHome(t),
-    identity: testIdentity(t),
-    sockets,
-    store,
-    chat: { state: { connected: true }, async send() {} },
-    root: ROOT,
-    url: 'http://127.0.0.1:4310',
-    pricing: offlinePricing(),
-    dataDir,
-    piSandbox: { localPorts: [19516] },
-    privatePaths: FAKE_PRIVATE_PATHS,
-  });
-  const outputs = [
-    piTurn({ session: 'chosen' }),
-    piTurn({ session: 'chosen', calls: [assistant('@lead Again', usage(1500, 20, 0.0003))] }),
-  ];
-  const sessions = [];
-  const commands = [];
-  runner.execute = async (command, agent) => {
-    sessions.push(agent.sessionId);
-    commands.push({ ...command, token: await readFile(command.env.MU_TOKEN_FILE, 'utf8') });
-    return readTurn(command.format, outputs.shift());
-  };
-  t.after(() => {
-    runner.close();
-    store.close();
-  });
-  for (const id of [1, 2]) {
-    store.addMessage(`pi-${id}`, 'user', 'Report', 'dm-cheap');
-    runner.kick();
-    await new Promise((resolve) => {
-      const check = () => (runner.active.size ? setTimeout(check, 5) : resolve());
-      check();
+test(
+  'a resumed pi session adds each turn cost and keeps its session',
+  { skip: macOSOnly('the pi adapter runs pi inside the macOS Seatbelt sandbox and refuses elsewhere') },
+  async (t) => {
+    const dataDir = await piHome(t);
+    const store = new Store();
+    store.createAgent(piAgent({ task: 'Measure' }));
+    const sockets = new AgentSockets({ dataDir, handler: (request, response) => response.end() });
+    t.after(() => sockets.close());
+    const runner = new Runner({
+      home: await temporaryMuHome(t),
+      identity: testIdentity(t),
+      sockets,
+      store,
+      chat: { state: { connected: true }, async send() {} },
+      root: ROOT,
+      url: 'http://127.0.0.1:4310',
+      pricing: offlinePricing(),
+      dataDir,
+      piSandbox: { localPorts: [19516] },
+      privatePaths: FAKE_PRIVATE_PATHS,
     });
-  }
-  assert.deepEqual(sessions, [null, 'chosen']);
-  const socket = await realpath(join(dataDir, 'sockets', 'cheap.sock'));
-  assert.ok(
-    commands.every(
-      (command) =>
-        command.command === 'sandbox-exec' &&
-        !command.args[1].includes('localhost:4310') &&
-        command.args[1].includes(`(remote unix-socket (path-literal "${socket}"))`) &&
-        command.args[1].includes('(remote ip "localhost:19516")'),
-    ),
-    'every turn runs sandboxed and reaches Mu only through its socket, plus the configured port',
-  );
-  assert.ok(
-    commands.every(
-      (command) =>
-        command.env.MU_URL === `unix:${join(dataDir, 'sockets', 'cheap.sock')}` &&
-        /^[0-9a-f]{64}\n$/.test(command.token) &&
-        !('MU_TOKEN' in command.env) &&
-        !('MU_PROMPT' in command.env),
-    ),
-    'the CLI inside the sandbox uses the socket and a credential file, and the environment holds no secret',
-  );
-  assert.notEqual(commands[0].token, commands[1].token, 'each turn has its own credential');
-  assert.equal(runner.identity.agentTokens.size, 0, 'credentials are revoked when their turn ends');
-  await assert.rejects(stat(commands[0].env.MU_TOKEN_FILE), { code: 'ENOENT' }, 'and their files are removed');
-  const recorded = store.agent('cheap').usage['dm-cheap'];
-  assert.equal(recorded.model, 'gemini-3.5-flash-lite');
-  assert.equal(recorded.contextTokens, 1520);
-  assert.ok(Math.abs(recorded.sessions.chosen.costUsd - 0.0012) < 1e-12);
-});
+    const outputs = [
+      piTurn({ session: 'chosen' }),
+      piTurn({ session: 'chosen', calls: [assistant('@lead Again', usage(1500, 20, 0.0003))] }),
+    ];
+    const sessions = [];
+    const commands = [];
+    runner.execute = async (command, agent) => {
+      sessions.push(agent.sessionId);
+      commands.push({ ...command, token: await readFile(command.env.MU_TOKEN_FILE, 'utf8') });
+      return readTurn(command.format, outputs.shift());
+    };
+    t.after(() => {
+      runner.close();
+      store.close();
+    });
+    for (const id of [1, 2]) {
+      store.addMessage(`pi-${id}`, 'user', 'Report', 'dm-cheap');
+      runner.kick();
+      await new Promise((resolve) => {
+        const check = () => (runner.active.size ? setTimeout(check, 5) : resolve());
+        check();
+      });
+    }
+    assert.deepEqual(sessions, [null, 'chosen']);
+    const socket = await realpath(join(dataDir, 'sockets', 'cheap.sock'));
+    assert.ok(
+      commands.every(
+        (command) =>
+          command.command === 'sandbox-exec' &&
+          !command.args[1].includes('localhost:4310') &&
+          command.args[1].includes(`(remote unix-socket (path-literal "${socket}"))`) &&
+          command.args[1].includes('(remote ip "localhost:19516")'),
+      ),
+      'every turn runs sandboxed and reaches Mu only through its socket, plus the configured port',
+    );
+    assert.ok(
+      commands.every(
+        (command) =>
+          command.env.MU_URL === `unix:${join(dataDir, 'sockets', 'cheap.sock')}` &&
+          /^[0-9a-f]{64}\n$/.test(command.token) &&
+          !('MU_TOKEN' in command.env) &&
+          !('MU_PROMPT' in command.env),
+      ),
+      'the CLI inside the sandbox uses the socket and a credential file, and the environment holds no secret',
+    );
+    assert.notEqual(commands[0].token, commands[1].token, 'each turn has its own credential');
+    assert.equal(runner.identity.agentTokens.size, 0, 'credentials are revoked when their turn ends');
+    await assert.rejects(stat(commands[0].env.MU_TOKEN_FILE), { code: 'ENOENT' }, 'and their files are removed');
+    const recorded = store.agent('cheap').usage['dm-cheap'];
+    assert.equal(recorded.model, 'gemini-3.5-flash-lite');
+    assert.equal(recorded.contextTokens, 1520);
+    assert.ok(Math.abs(recorded.sessions.chosen.costUsd - 0.0012) < 1e-12);
+  },
+);
 
 class FakeChat extends EventEmitter {
   constructor(options) {
@@ -616,47 +630,51 @@ class FakeChat extends EventEmitter {
   }
 }
 
-test('the service offers pi and requires a model for it', async (t) => {
-  const dataDir = await shortTempDir(t, 'pi');
-  const port = await freePort();
-  const app = await createApp({
-    home: await temporaryMuHome(t),
-    port,
-    dataDir,
-    chatFactory: (options) => new FakeChat(options),
-    pricing: offlinePricing(),
-  });
-  await app.start();
-  t.after(() => app.close());
-  const post = async (data) => {
-    const response = await fetch(`http://127.0.0.1:${port}/api/agents`, {
-      method: 'POST',
-      headers: userHeaders(app),
-      body: JSON.stringify(data),
+test(
+  'the service offers pi and requires a model for it',
+  { skip: macOSOnly('the pi adapter runs pi inside the macOS Seatbelt sandbox and refuses elsewhere') },
+  async (t) => {
+    const dataDir = await shortTempDir(t, 'pi');
+    const port = await freePort();
+    const app = await createApp({
+      home: await temporaryMuHome(t),
+      port,
+      dataDir,
+      chatFactory: (options) => new FakeChat(options),
+      pricing: offlinePricing(),
     });
-    return { status: response.status, body: await response.json() };
-  };
-  const missing = await post({ id: 'cheap', role: 'worker', adapter: 'pi', cwd: ROOT });
-  assert.equal(missing.status, 400);
-  assert.match(missing.body.error, /pi adapter needs a model/);
-  assert.equal(
-    (
-      await post({
-        id: 'cheap',
-        role: 'worker',
-        adapter: 'pi',
-        model: 'google-vertex/gemini-3.5-flash-lite',
-        cwd: ROOT,
-      })
-    ).status,
-    201,
-  );
-  assert.ok(
-    (await (await fetch(`http://127.0.0.1:${port}/api/state`, { headers: userHeaders(app) })).json()).adapters.includes(
-      'pi',
-    ),
-  );
-});
+    await app.start();
+    t.after(() => app.close());
+    const post = async (data) => {
+      const response = await fetch(`http://127.0.0.1:${port}/api/agents`, {
+        method: 'POST',
+        headers: userHeaders(app),
+        body: JSON.stringify(data),
+      });
+      return { status: response.status, body: await response.json() };
+    };
+    const missing = await post({ id: 'cheap', role: 'worker', adapter: 'pi', cwd: ROOT });
+    assert.equal(missing.status, 400);
+    assert.match(missing.body.error, /pi adapter needs a model/);
+    assert.equal(
+      (
+        await post({
+          id: 'cheap',
+          role: 'worker',
+          adapter: 'pi',
+          model: 'google-vertex/gemini-3.5-flash-lite',
+          cwd: ROOT,
+        })
+      ).status,
+      201,
+    );
+    assert.ok(
+      (
+        await (await fetch(`http://127.0.0.1:${port}/api/state`, { headers: userHeaders(app) })).json()
+      ).adapters.includes('pi'),
+    );
+  },
+);
 
 test('the service refuses a pi agent where the Seatbelt sandbox is unavailable', async (t) => {
   const dataDir = await piHome(t);

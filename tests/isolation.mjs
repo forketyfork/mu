@@ -66,6 +66,12 @@ function insideSandbox() {
 }
 export const sandboxedRun = insideSandbox();
 
+// The skip option of a test of behavior that only macOS has: false on macOS, elsewhere the reason. Mu runs on macOS,
+// and continuous integration runs these tests there.
+export function macOSOnly(reason) {
+  return process.platform === 'darwin' ? false : reason;
+}
+
 // The reason to skip a test that starts a Seatbelt sandbox, or false.
 function seatbeltUnavailable() {
   if (process.platform !== 'darwin') return 'Seatbelt exists only on macOS';

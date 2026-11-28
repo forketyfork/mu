@@ -1,8 +1,8 @@
 // A check of the visual frame in a real browser, for what JSDOM cannot show: the sandbox, the content security
 // policies, module loading from an opaque origin, Mermaid and the highlighter. It starts a throwaway Mu app with a
 // fake chat and drives headless Chrome over the DevTools protocol. It is not part of `npm test`, because it needs
-// Google Chrome; `npm run test:browser` runs it, and so does the pre-commit hook when a commit touches what it
-// covers. CHROME names the browser binary (see support.mjs); the screenshots go to the directory in SHOTS, when it is set.
+// Google Chrome; `npm run test:browser` runs it, and so does continuous integration on every pull request. CHROME
+// names the browser binary (see support.mjs); the screenshots go to the directory in SHOTS, when it is set.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
@@ -1373,11 +1373,11 @@ test('an animated explainer plays its steps in the frame, and its labels stay te
   // One step: the message travels on the timeline of the library, and the step ends in its state.
   await press('.scene-next');
   await until('the message on its way', async () => (await inFrame(facts)).messages === 1);
-  const [first, second] = [
-    await inFrame(`document.querySelector('.scene-message').getAttribute('transform')`),
-    await sleep(150).then(() => inFrame(`document.querySelector('.scene-message')?.getAttribute('transform')`)),
-  ];
-  assert.notEqual(first, second, 'the message moves');
+  const first = await inFrame(`document.querySelector('.scene-message').getAttribute('transform')`);
+  await until(
+    'the message to move',
+    async () => (await inFrame(`document.querySelector('.scene-message')?.getAttribute('transform')`)) !== first,
+  );
   await until('the end of step 1', async () => (await inFrame(facts)).played === 1);
   assert.deepEqual(await inFrame(facts), { ...start, progress: 'Step 1 of 4', current: 0, played: 1, lit: ['mu'] });
   await shot('2-step-1');

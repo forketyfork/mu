@@ -8,6 +8,7 @@ Mu is plain JavaScript on Node.js, type-checked through JSDoc, with no build ste
 npm run check              # type check, lint and format check
 npm run format             # format JavaScript, CSS, HTML, JSON and YAML
 npm test                   # unit, HTTP and integration tests
+npm run test:unit          # only the unit and HTTP tests; already part of npm test
 npm run test:integration   # only the integration tests; already part of npm test
 ```
 
@@ -21,7 +22,9 @@ One test starts a probe script with `python3`, so the tests need it on `PATH`.
 
 The tests can run inside a Codex agent's sandbox. There, the tests that start a Seatbelt sandbox and those that need Docker are skipped with the reason, because macOS cannot start a sandbox inside another and the sandbox cannot reach Docker.
 
-The browser check cannot run there: Chrome aborts at launch, because Codex allows a fixed set of system services and Chrome needs others, such as LaunchServices and the window server, and asking Codex to run the command outside the sandbox does not help ([why](harnesses.md#escalation-outside-the-sandbox)). The check fails and says so instead of being skipped, because a skip would pass the check that the pre-commit hook exists for. Run `npm run test:browser`, and commit changes that touch what it covers, from a Claude agent or your own shell.
+The unit and HTTP tests also run on a system other than macOS, such as Linux. There, the tests of what only macOS has are skipped with the reason (`macOSOnly` in `tests/isolation.mjs`): launchd, the Seatbelt sandbox that the pi adapter needs, the signal that macOS refuses to the group of an exited, unreaped process, and a custom adapter's prompt of 128 KiB or more, which Linux refuses as an environment variable. Continuous integration runs them on macOS.
+
+The browser check cannot run there: Chrome aborts at launch, because Codex allows a fixed set of system services and Chrome needs others, such as LaunchServices and the window server, and asking Codex to run the command outside the sandbox does not help ([why](harnesses.md#escalation-outside-the-sandbox)). The check fails and says so instead of being skipped, because a skip would read as a pass. Run `npm run test:browser` from a Claude agent or your own shell; continuous integration runs it on every pull request.
 
 The `demo` adapter exercises routing and process handling without a model; see [The demo adapter](harnesses.md#the-demo-adapter). Runs with real models also depend on each CLI's account, configuration, permissions and version.
 
@@ -33,9 +36,9 @@ JSDOM cannot show what protects the dashboard from a [visual](visuals.md): the f
 npm run test:browser
 ```
 
-A second check, `tests/browser/lead-shortcut.browser.mjs`, presses the shortcut to the lead's chat from the workspace, a text field, another chat, the visual's frame and a dialog with a form, and types a message; it cannot tell whether a browser gives the page the key before its address bar, because headless Chrome has none and a key sent over the protocol skips the browser's own shortcuts. The helpers that these checks use are in `tests/browser/support.mjs`. `CHROME` names another browser binary. With `SHOTS` set to a directory, the check saves screenshots of each step there. It is not part of `npm test`, which must not need a browser. The pre-commit hook runs it when a commit changes what it covers: `public/visual/`, `public/visuals-view.js`, `public/visual-comments.js`, `public/visual-answers.js`, `public/visual-delivery.js`, `public/app.js`, `public/styles.css`, `src/visual-format.mjs`, `src/visual-patch.mjs`, `src/visual-scene.mjs`, `src/visual-spec.mjs`, `src/browser-policy.mjs` (the policies and the list of files the frame may load), `tests/browser/` or `package-lock.json`. Such a commit therefore needs Google Chrome. The dashboard's script and styles are on the list because the checks of the shortcut and of the drag depend on the layout and the handlers they hold. The fourth test also reads the look of the version buttons from `public/index.html`, which does not start the check; a change there that breaks the test shows in the next commit that starts it.
+A second check, `tests/browser/lead-shortcut.browser.mjs`, presses the shortcut to the lead's chat from the workspace, a text field, another chat, the visual's frame and a dialog with a form, and types a message; it cannot tell whether a browser gives the page the key before its address bar, because headless Chrome has none and a key sent over the protocol skips the browser's own shortcuts. The helpers that these checks use are in `tests/browser/support.mjs`. It starts the browser with `--force-prefers-no-reduced-motion`, so a system set to reduce motion, as GitHub's macOS runners are, does not change what the checks see; a check of the reduced motion emulates it. A call that the browser leaves unanswered for a minute fails with the name of the call instead of running into the time limit of the test. Continuous integration runs the files one at a time (`--test-concurrency=1`), because the checks depend on which window has the keyboard and browsers that run side by side compete for it. `CHROME` names another browser binary. With `SHOTS` set to a directory, the check saves screenshots of each step there. It is not part of `npm test`, which must not need a browser. The pre-commit hook does not run it; [continuous integration](#continuous-integration) runs it on every pull request, so a commit needs no Google Chrome.
 
-A third check, `tests/browser/focus-drag.browser.mjs`, drags cards of the focus list with the browser's own drag (Chrome hands it over through the protocol, and the test replays it as drag events at chosen points) and drops them under a short lane's cards, on its bottom edge and on the other lane's header, over a column that is not the first. JSDOM has no layout, so only a real browser shows which part of a lane box receives a drop. The pre-commit hook runs it with the others.
+A third check, `tests/browser/focus-drag.browser.mjs`, drags cards of the focus list with the browser's own drag (Chrome hands it over through the protocol, and the test replays it as drag events at chosen points) and drops them under a short lane's cards, on its bottom edge and on the other lane's header, over a column that is not the first. JSDOM has no layout, so only a real browser shows which part of a lane box receives a drop. It runs with the others.
 
 A check of the pages, `tests/browser/pages-layout.browser.mjs`, opens the overview, the Brag doc, Model evals and Visuals in a wide and a narrow window and measures what JSDOM cannot: each page fills the content area, no element inside it scrolls by itself (the window's scrollbar belongs at the window's edge), the header fits the window from 1500 down to 360 px with its controls in view, the work samples are framed with the panels' border, and the visual cards flow in the columns of the task cards, with the task link inside the card. It runs with the others.
 
@@ -47,7 +50,24 @@ Write each assertion of a browser check after the condition it depends on, not a
 
 ## Git hooks
 
-`npm ci` (or `npm install`) sets `core.hooksPath` to the tracked `.githooks` directory. The `pre-commit` hook runs `npm run check` and then `npm test`, which takes about fifteen seconds and needs a running Docker daemon. For a commit that changes the visual frame or the mention list of the message box it also runs [the browser check](#the-visual-frame-in-a-real-browser). The setting is in the repository's shared configuration, so it applies to every worktree. `npm ci` writes it only when it is not already `.githooks`, so it also works where Git configuration is read-only, as in a Codex agent's turn.
+`npm ci` (or `npm install`) sets `core.hooksPath` to the tracked `.githooks` directory. The `pre-commit` hook runs `npm run check` and then `npm run test:unit`, which need nothing but Node.js and `python3`. The integration tests, which need Docker, and [the browser check](#the-visual-frame-in-a-real-browser), which needs Google Chrome, run only in [continuous integration](#continuous-integration); run them yourself with `npm run test:integration` and `npm run test:browser` when a change touches what they cover. The setting is in the repository's shared configuration, so it applies to every worktree. `npm ci` writes it only when it is not already `.githooks`, so it also works where Git configuration is read-only, as in a Codex agent's turn.
+
+## Continuous integration
+
+Every pull request into `main` runs the workflow in `.github/workflows/ci.yml`, and so do pushes to `main`, the merge queue and a manual start. Its jobs:
+
+| Job | Runner | Runs |
+| --- | --- | --- |
+| Type check, lint and format | Ubuntu | `npm run check` |
+| Lint workflows | Ubuntu | [actionlint](https://github.com/rhysd/actionlint), with ShellCheck on the `run` scripts |
+| Unit and HTTP tests | macOS, Node 24 and 26 | `npm run test:unit` |
+| Integration tests | Ubuntu | `npm run test:integration`, against a throwaway Ergo container |
+| Browser check | macOS | `npm run test:browser` in the runner's Google Chrome; screenshots are uploaded when it fails |
+| Merge gate | Ubuntu | passes when every other job passed |
+
+The unit tests and the browser check run on macOS because Mu does: elsewhere the tests of launchd, Seatbelt and process groups are skipped. GitHub's macOS runners have no Docker, so the integration tests run on Linux, where they need nothing from macOS. This is the only place where the whole suite runs: the pre-commit hook leaves out the integration tests and the browser check.
+
+Branch protection for `main` requires only the **Merge gate** check, so jobs can be added to the workflow or renamed without changing the protection rules. A new job counts only once it is in the gate's `needs` list. The actions are pinned to commits, and Dependabot (`.github/dependabot.yml`) proposes new pins every week.
 
 ## Add a dashboard theme
 

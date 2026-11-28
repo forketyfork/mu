@@ -1,0 +1,148 @@
+# The merge gate for pull requests into main. Branch protection requires only the "Merge gate" job, which passes
+# when every other job has passed, so adding or renaming a job here never needs a change to the protection rules.
+#
+# Mu runs on macOS (launchd, Seatbelt), so the unit tests and the browser check run there. GitHub's macOS runners
+# have no Docker, so the integration tests, which start a throwaway Ergo container, run on Linux.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  # A new push to a pull request replaces the run of the old head; runs on main and in the merge queue finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The lowest version that package.json supports.
+  NODE_VERSION: '24'
+
+jobs:
+  check:
+    name: Type check, lint and format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+
+  workflows:
+    name: Lint workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run actionlint
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          # The download script of that release.
+          ACTIONLINT_SHA: 914e7df21a07ef503a81201c76d2b11c789d3fca
+        run: |
+          bash <(curl -fsSL "https://raw.githubusercontent.com/rhysd/actionlint/${ACTIONLINT_SHA}/scripts/download-actionlint.bash") "${ACTIONLINT_VERSION}"
+          ./actionlint -color
+
+  unit:
+    name: Unit and HTTP tests (macOS, Node ${{ matrix.node }})
+    runs-on: macos-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['24', '26']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run test:unit
+
+  integration:
+    name: Integration tests (Linux, Docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      # Pulling first keeps the download out of the time limit of the test that starts the first broker.
+      - name: Pull the Ergo image
+        run: docker compose pull --quiet irc
+      - run: npm run test:integration
+
+  browser:
+    name: Browser check (macOS, Chrome)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      # The runner image has Google Chrome at the path that tests/browser/support.mjs uses by default. One file at a
+      # time: the checks send keys and clicks that depend on which window has the keyboard, and browsers that run side
+      # by side compete for it.
+      - name: Run the browser check
+        env:
+          SHOTS: ${{ runner.temp }}/shots
+        run: |
+          mkdir -p "$SHOTS"
+          npm run test:browser -- --test-concurrency=1
+      - name: Upload screenshots
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-screenshots
+          path: ${{ runner.temp }}/shots
+          if-no-files-found: ignore
+          retention-days: 7
+
+  gate:
+    name: Merge gate
+    if: always()
+    needs: [check, workflows, unit, integration, browser]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every job to pass
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        # The script fails closed: if jq itself fails, so does the gate.
+        run: |
+          set -euo pipefail
+          failed=$(jq -r 'to_entries[] | select(.value.result != "success") | "\(.key): \(.value.result)"' <<<"$NEEDS")
+          if [ -n "$failed" ]; then
+            echo "::error::Jobs that did not pass:"
+            echo "$failed"
+            exit 1
+          fi
+          echo "Every job passed."
