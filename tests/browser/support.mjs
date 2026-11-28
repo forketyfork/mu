@@ -95,9 +95,9 @@ export async function cdp(port, failure = () => undefined) {
       else resolve(message.result);
     } else for (const listener of listeners) listener(message);
   };
-  // A page that the browser treats as hidden never answers input, screenshots or animation frames. Without a deadline,
-  // the test then waits for its own time limit, which says nothing of the call that hung.
-  const call = (method, params = {}, sessionId = undefined) => {
+  // Without a deadline, a call that the browser never answers leaves the test to its own time limit, which says nothing
+  // of the call that hung.
+  const send = (method, params = {}, sessionId = undefined) => {
     next += 1;
     const id = next;
     socket.send(JSON.stringify({ id, method, params, sessionId }));
@@ -119,15 +119,7 @@ export async function cdp(port, failure = () => undefined) {
     });
   };
   return {
-    async send(method, params = {}, sessionId = undefined) {
-      const result = await call(method, params, sessionId);
-      // Whether a page counts as focused follows which window of the system is active, and the checks run several
-      // browsers at once: a page of the browser that is not active drops the keys of the checks and keeps the focus
-      // where it was. The emulation makes every page count as focused, as a user's page does.
-      if (method === 'Target.attachToTarget')
-        await call('Emulation.setFocusEmulationEnabled', { enabled: true }, result.sessionId);
-      return result;
-    },
+    send,
     on: (listener) => listeners.push(listener),
     close: () => socket.close(),
   };
@@ -172,12 +164,6 @@ export async function startBrowser(t, { chrome: binary = CHROME, args = [] } = {
       // The checks expect motion unless they emulate the wish for less; without this, a system set to reduce motion, as
       // GitHub's macOS runners are, makes the browser report it to every page. Emulation still overrides the switch.
       '--force-prefers-no-reduced-motion',
-      // The checks drive a page that no one looks at, and a loaded runner makes the browser judge its window hidden or
-      // covered; it then throttles timers and withholds input and frames from the page.
-      '--disable-background-timer-throttling',
-      '--disable-backgrounding-occluded-windows',
-      '--disable-renderer-backgrounding',
-      '--disable-features=CalculateNativeWinOcclusion',
       ...args,
       'about:blank',
     ],
