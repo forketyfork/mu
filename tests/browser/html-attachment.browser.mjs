@@ -494,8 +494,17 @@ async function runAttachment(t, html, { afterRun } = {}) {
 // The browser moves the keyboard between the dashboard and its out-of-process frame in a step of its own, after the
 // click that took it. A real user cannot type within it; the check would, on a loaded machine, and the key would go to
 // the frame that the dashboard has just left.
-const keyboardLeft = (inFrame) =>
-  until('the keyboard to leave the page', async () => (await inFrame(`document.hasFocus()`)) === false);
+async function keyboardLeft(inFrame, evaluate) {
+  const left = async () => (await inFrame(`document.hasFocus()`)) === false;
+  try {
+    await until('the keyboard to leave the page', left);
+  } catch (error) {
+    const where = await evaluate(
+      `({ dashboard: document.hasFocus(), active: document.activeElement?.id || document.activeElement?.tagName })`,
+    );
+    throw new Error(`${error.message}; ${JSON.stringify(where)}`, { cause: error });
+  }
+}
 
 test('the page of an HTML attachment can play sound after the user clicked Run', async (t) => {
   const { inFrame } = await runAttachment(t, AUDIO_PAGE);
@@ -517,7 +526,7 @@ test('the page of an HTML attachment gets the keys the user types right after cl
   await until('the shield back over the page', () =>
     evaluate(`!document.querySelector('.message-attachment-shield').hidden`),
   );
-  await keyboardLeft(inFrame);
+  await keyboardLeft(inFrame, evaluate);
   await typeKeys(browser, sessionId, 'x');
   await sleep(300);
   assert.equal(await inFrame(`window.keys`), 'go');
@@ -583,7 +592,7 @@ test('a page that the user left right after Run does not get the keyboard when i
       clickAt(browser, sessionId, await centerOf(evaluate, '#message-input')),
   });
   await sleep(500);
-  await keyboardLeft(inFrame);
+  await keyboardLeft(inFrame, evaluate);
   await typeKeys(browser, sessionId, 'abc');
   await sleep(300);
   assert.deepEqual(

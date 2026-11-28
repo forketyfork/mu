@@ -108,13 +108,15 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
-      # The runner image has Google Chrome at the path that tests/browser/support.mjs uses by default.
+      # The runner image has Google Chrome at the path that tests/browser/support.mjs uses by default. One file at a
+      # time: the checks send keys and clicks that depend on which window has the keyboard, and browsers that run side
+      # by side compete for it.
       - name: Run the browser check
         env:
           SHOTS: ${{ runner.temp }}/shots
         run: |
           mkdir -p "$SHOTS"
-          npm run test:browser
+          npm run test:browser -- --test-concurrency=1
       - name: Upload screenshots
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
